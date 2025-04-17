@@ -414,13 +414,27 @@ def launch_server_cmd(command: str, host: str = "0.0.0.0", port: int = None):
     """
     Launch the server using the given command.
     If no port is specified, a free port is reserved.
+    If the command already contains a port specification, that one is respected.
     """
-    if port is None:
-        port, lock_socket = reserve_port(host)
+    if "--port" in command:
+        full_command = command
+        parts = command.split()
+        try:
+            port_index = parts.index("--port")
+            if port_index + 1 < len(parts):
+                port = int(parts[port_index + 1])
+        except (ValueError, IndexError):
+            if port is None:
+                port, lock_socket = reserve_port(host)
+            else:
+                lock_socket = None
     else:
-        lock_socket = None
-
-    full_command = f"{command} --port {port}"
+        if port is None:
+            port, lock_socket = reserve_port(host)
+        else:
+            lock_socket = None
+        full_command = f"{command} --port {port}"
+    
     process = execute_shell_command(full_command)
 
     if lock_socket is not None:
