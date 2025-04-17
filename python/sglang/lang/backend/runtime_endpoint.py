@@ -36,6 +36,8 @@ class RuntimeEndpoint(BaseBackend):
         self.base_url = base_url
         self.api_key = api_key
         self.verify = verify
+        # 如果这里export http_proxy的话
+        # client会报错json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
         res = http_request(
             self.base_url + "/get_model_info",
             api_key=self.api_key,
