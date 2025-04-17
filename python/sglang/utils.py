@@ -127,9 +127,19 @@ def http_request(
     if api_key is not None:
         headers["Authorization"] = f"Bearer {api_key}"
 
+    is_local = any(local_addr in url for local_addr in ['localhost', '127.0.0.1', '0.0.0.0'])
+    proxies = None
+    if is_local:
+        proxies = {"http": None, "https": None}
+    
     if stream:
-        return requests.post(url, json=json, stream=True, headers=headers)
+        return requests.post(url, json=json, stream=True, headers=headers, proxies=proxies)
     else:
+        if is_local:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            old_opener = urllib.request._opener
+            urllib.request.install_opener(opener)
+        
         req = urllib.request.Request(url, headers=headers, method=method)
         if json is None:
             data = None
@@ -141,6 +151,9 @@ def http_request(
             return HttpResponse(resp)
         except urllib.error.HTTPError as e:
             return HttpResponse(e)
+        finally:
+            if is_local and old_opener:
+                urllib.request.install_opener(old_opener)
 
 
 def encode_image_base64(image_path: Union[str, bytes]):
@@ -437,11 +450,19 @@ def wait_for_server(base_url: str, timeout: int = None) -> None:
         timeout: Maximum time to wait in seconds. None means wait forever.
     """
     start_time = time.time()
+    
+    is_local = any(local_addr in base_url for local_addr in ['localhost', '127.0.0.1', '0.0.0.0'])
+    
+    proxies = None
+    if is_local:
+        proxies = {"http": None, "https": None}
+    
     while True:
         try:
             response = requests.get(
                 f"{base_url}/v1/models",
                 headers={"Authorization": "Bearer None"},
+                proxies=proxies,
             )
             if response.status_code == 200:
                 time.sleep(5)
