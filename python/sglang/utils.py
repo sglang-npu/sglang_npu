@@ -127,9 +127,11 @@ def http_request(
     if api_key is not None:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    is_local = any(local_addr in url for local_addr in ['localhost', '127.0.0.1', '0.0.0.0'])
-    proxies = None
     if is_local:
+        if os.getenv("http_proxy") or os.getenv("https_proxy"):
+            warnings.warn(
+                "Proxies should not be used for local addresses."
+            )
         proxies = {"http": None, "https": None}
     
     if stream:
