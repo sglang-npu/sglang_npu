@@ -121,6 +121,7 @@ class MooncakeKVManager(BaseKVManager):
         elif self.disaggregation_mode == DisaggregationMode.DECODE:
             self.start_decode_thread()
             self.connection_pool: Dict[str, Dict[str, Union[str, int]]] = {}
+            self.async_http_connector = AsyncHttpConnector(self)
         else:
             raise ValueError(
                 f"Unsupported DisaggregationMode: {self.disaggregation_mode}"
@@ -407,42 +408,24 @@ class MooncakeKVReceiver(BaseKVReceiver):
         self.kv_mgr = mgr
         self.session_id = self.kv_mgr.get_session_id()
         self.kv_mgr.update_status(bootstrap_room, KVPoll.Bootstrapping)
+        self.bootstrap_info: Optional[Dict[str, Union[str, int]]] = None
+        self._init_bootstrap_info()
 
+    def _init_bootstrap_info(self):
         # NOTE: key distinguished by bootstrap_addr and engine_rank
         bootstrap_key = f"{self.bootstrap_addr}_{self.kv_mgr.kv_args.engine_rank}"
 
         if bootstrap_key not in self.kv_mgr.connection_pool:
-            self.bootstrap_info = self._get_bootstrap_info_from_server(
-                self.kv_mgr.kv_args.engine_rank
+            # error is handled by async_http_connector
+            conn_meta = HttpHandshakeMeta(
+                url=f"http://{self.bootstrap_addr}/route?engine_rank={self.kv_mgr.kv_args.engine_rank}",
+                bootstrap_key=bootstrap_key,
+                kv_receiver=self,
             )
-            if self.bootstrap_info is None:
-                logger.error(
-                    f"Could not fetch bootstrap info for engine rank: {self.kv_mgr.kv_args.engine_rank}"
-                )
-            else:
-                self.kv_mgr.connection_pool[bootstrap_key] = self.bootstrap_info
+            self.kv_mgr.async_http_connector.start_http_handshake(conn_meta)
         else:
+            self.kv_mgr.update_status(self.bootstrap_room, KVPoll.WaitingForInput)
             self.bootstrap_info = self.kv_mgr.connection_pool[bootstrap_key]
-
-        assert self.bootstrap_info is not None
-        self.kv_mgr.update_status(bootstrap_room, KVPoll.WaitingForInput)
-
-    def _get_bootstrap_info_from_server(self, engine_rank):
-        """Fetch the bootstrap info from the bootstrap server."""
-        try:
-            url = f"http://{self.bootstrap_addr}/route?engine_rank={engine_rank}"
-            response = requests.get(url)
-            if response.status_code == 200:
-                bootstrap_info = response.json()
-                return bootstrap_info
-            else:
-                logger.error(
-                    f"Failed to get prefill server info: {response.status_code}, {response.text}"
-                )
-                return None
-        except Exception as e:
-            logger.error(f"Error fetching prefill info from bootstrap: {e}")
-            return None
 
     @classmethod
     def _connect(cls, endpoint: str):
@@ -455,6 +438,8 @@ class MooncakeKVReceiver(BaseKVReceiver):
             return cls._socket_cache[endpoint], cls._socket_locks[endpoint]
 
     def init(self, kv_indices: npt.NDArray[np.int64], aux_index: Optional[int] = None):
+        assert self.bootstrap_info is not None
+
         self.prefill_server_url = (
             f"{self.bootstrap_info['rank_ip']}:{self.bootstrap_info['rank_port']}"
         )
@@ -583,3 +568,62 @@ class MooncakeKVBootstrapServer(BaseKVBootstrapServer):
             logger.info("Server thread stopped")
 
     def poll(self) -> KVPoll: ...
+
+
+import aiohttp
+
+
+@dataclasses.dataclass
+class HttpHandshakeMeta:
+    url: str
+    bootstrap_key: str
+    kv_receiver: MooncakeKVReceiver
+
+
+class AsyncHttpConnector:
+    def __init__(self, kv_mgr: MooncakeKVManager):
+        self.buffer: asyncio.Queue = asyncio.Queue()
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(
+            target=self._start_handshake_loop, daemon=True
+        ).start()
+
+        self.kv_mgr = kv_mgr
+
+    def _start_handshake_loop(self):
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_until_complete(self._process_handshake_requests())
+
+    async def _process_handshake_requests(self):
+        async with aiohttp.ClientSession() as session:
+            while True:
+                meta: HttpHandshakeMeta = await self.buffer.get()
+                asyncio.create_task(self._handle_single_handshake(session, meta))
+
+    async def _handle_single_handshake(self, session, meta: HttpHandshakeMeta):
+        # FIXME: when to remove conn in kv_mgr.connection_pool?
+        #    if we remove it as soon as finished, do we really need conn_pool?
+        try:
+            async with session.get(meta.url) as resp:
+                if resp.status == 200:
+                    bootstrap_info = await resp.json()
+                    self.kv_mgr.connection_pool[meta.bootstrap_key] = bootstrap_info
+                    meta.kv_receiver.bootstrap_info = bootstrap_info
+                    # FIXME: do we need lock to protect request_status?
+                    self.kv_mgr.update_status(
+                        meta.kv_receiver.bootstrap_room, KVPoll.WaitingForInput
+                    )
+                else:
+                    result = await resp.text()
+                    self.kv_mgr.request_status[meta.kv_receiver.bootstrap_room] = (
+                        KVPoll.Failed
+                    )
+                    logger.error(
+                        f"Failed to get prefill server info: {resp.status}, {result.text}"
+                    )
+        except Exception as e:
+            self.kv_mgr.request_status[meta.kv_receiver.bootstrap_room] = KVPoll.Failed
+            logger.error(f"Error fetching prefill info from bootstrap: {e}")
+
+    def start_http_handshake(self, conn_meta: HttpHandshakeMeta):
+        asyncio.run_coroutine_threadsafe(self.buffer.put(conn_meta), self.loop)
