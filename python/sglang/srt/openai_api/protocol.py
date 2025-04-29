@@ -458,7 +458,7 @@ class EmbeddingRequest(BaseModel):
     ]
     model: str
     encoding_format: str = "float"
-    dimensions: int = None
+    dimensions: Optional[int] = None
     user: Optional[str] = None
 
 
