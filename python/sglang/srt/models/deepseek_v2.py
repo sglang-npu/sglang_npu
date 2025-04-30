@@ -1406,7 +1406,6 @@ class DeepseekV2Model(nn.Module):
                 input_embeds.device if input_embeds is not None else input_ids.device
             ),
         )
-
         if input_embeds is None:
             hidden_states = self.embed_tokens(input_ids)
         else:
@@ -1495,7 +1494,6 @@ class DeepseekV2ForCausalLM(nn.Module):
         forward_batch: ForwardBatch,
         input_embeds: torch.Tensor = None,
     ) -> torch.Tensor:
-
         hidden_states = self.model(input_ids, positions, forward_batch, input_embeds)
 
         return self.logits_processor(

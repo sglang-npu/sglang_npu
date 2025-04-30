@@ -173,6 +173,8 @@ class TpModelWorker:
         model_worker_batch: ModelWorkerBatch,
         skip_sample: bool = False,
     ) -> Tuple[LogitsProcessorOutput, Optional[torch.Tensor]]:
+        from sglang.srt.model_executor.forward_batch_info import ForwardMode
+
         forward_batch = ForwardBatch.init_new(model_worker_batch, self.model_runner)
         logits_output = self.model_runner.forward(forward_batch)
 

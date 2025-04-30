@@ -764,6 +764,8 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
     extend_num_tokens: int = None
     decoding_reqs: List[Req] = None
     extend_logprob_start_lens: List[int] = None
+    # For POD Attn
+    max_req_input_len: int = None
     # It comes empty list if logprob is not required.
     extend_input_logprob_token_ids: Optional[torch.Tensor] = None
 
@@ -803,6 +805,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
         enable_overlap: bool,
         spec_algorithm: SpeculativeAlgorithm,
         enable_custom_logit_processor: bool,
+        max_req_input_len: int = None,
     ):
         return_logprob = any(req.return_logprob for req in reqs)
 
@@ -820,6 +823,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             spec_algorithm=spec_algorithm,
             enable_custom_logit_processor=enable_custom_logit_processor,
             return_hidden_states=any(req.return_hidden_states for req in reqs),
+            max_req_input_len=max_req_input_len,
         )
 
     def batch_size(self):
@@ -1194,7 +1198,6 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
 
         input_ids = torch.cat([self.input_ids, running_batch.input_ids])
         out_cache_loc = torch.cat([self.out_cache_loc, running_batch.out_cache_loc])
-
         self.merge_batch(running_batch)
         self.input_ids = input_ids
         self.out_cache_loc = out_cache_loc
@@ -1570,6 +1573,10 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
                 )
             ),
             extend_input_logprob_token_ids=self.extend_input_logprob_token_ids,
+            num_decode_reqs=(
+                len(self.decoding_reqs) if self.forward_mode.is_mixed() else 0
+            ),
+            max_req_input_len=self.max_req_input_len,
             launch_done=self.launch_done,
         )
 
@@ -1584,6 +1591,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             decoding_reqs=self.decoding_reqs,
             spec_algorithm=self.spec_algorithm,
             enable_custom_logit_processor=self.enable_custom_logit_processor,
+            max_req_input_len=self.max_req_input_len,
         )
 
     def __str__(self):
@@ -1622,7 +1630,7 @@ class ModelWorkerBatch:
     global_num_tokens_for_logprob: Optional[List[int]]
     can_run_dp_cuda_graph: bool
 
-    # For extend
+    # For extend and chunked prefill
     extend_num_tokens: Optional[int]
     extend_seq_lens: Optional[List[int]]
     extend_prefix_lens: Optional[List[int]]
@@ -1653,6 +1661,9 @@ class ModelWorkerBatch:
     # If set, the output of the batch contains the hidden states of the run.
     capture_hidden_mode: CaptureHiddenMode = None
 
+    # For POD Attn, number of extend-only requests in chunked prefill
+    num_decode_reqs: Optional[int] = 0
+    max_req_input_len: Optional[int] = None
     # Overlap event
     launch_done: Optional[threading.Event] = None
 
