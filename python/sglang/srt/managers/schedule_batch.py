@@ -193,7 +193,7 @@ class MultimodalDataItem:
 
     # the real data, pixel_values or audio_features
     # data: Union[List[torch.Tensor], List[np.ndarray]]
-    pixel_values: Union[torch.Tensor, np.ndarray] = None
+    feature: Union[torch.Tensor, np.ndarray] = None
     image_grid_thw: Union[torch.Tensor, np.ndarray] = None
     video_grid_thws: Union[torch.Tensor, np.ndarray] = None
 
@@ -276,7 +276,7 @@ class MultimodalDataItem:
         elif self.is_audio():
             self.hash = hash_feature(self.audio_features)
         else:
-            self.hash = hash_feature(self.pixel_values)
+            self.hash = hash_feature(self.feature)
 
         assert self.hash is not None
         self.pad_value = self.hash % (1 << 30)
@@ -292,13 +292,13 @@ class MultimodalDataItem:
             self.modality == Modality.IMAGE or self.modality == Modality.MULTI_IMAGES
         ) and (
             self.precomputed_features is not None
-            or not MultimodalDataItem.is_empty_list(self.pixel_values)
+            or not MultimodalDataItem.is_empty_list(self.feature)
         )
 
     def is_video(self):
         return (self.modality == Modality.VIDEO) and (
             self.precomputed_features is not None
-            or not MultimodalDataItem.is_empty_list(self.pixel_values)
+            or not MultimodalDataItem.is_empty_list(self.feature)
         )
 
     def is_valid(self) -> bool:
