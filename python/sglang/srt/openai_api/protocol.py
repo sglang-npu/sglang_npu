@@ -16,7 +16,7 @@
 import time
 from typing import Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, root_validator
+from pydantic import BaseModel, Field, field_validator, root_validator
 from typing_extensions import Literal
 
 
@@ -250,12 +250,25 @@ ChatCompletionMessageContentPart = Union[
 ]
 
 
-class ChatCompletionMessageGenericParam(BaseModel):
+class MessagewithContent(BaseModel):
+    role: str
+    content: Union[str, List[ChatCompletionMessageContentPart]]
+
+    # Avoid openai InternalServerError when input is None
+    @field_validator("content", mode="before")
+    def handle_none_content(cls, v):
+        raise ValueError(
+            "Message content for Chat Completion and Tool Calling cannot be None. "
+            + "Please input a valid string."
+        )
+
+
+class ChatCompletionMessageGenericParam(MessagewithContent, BaseModel):
     role: Literal["system", "assistant", "tool"]
-    content: Union[str, List[ChatCompletionMessageContentTextPart], None]
+    content: Union[str, List[ChatCompletionMessageContentTextPart]]
 
 
-class ChatCompletionMessageUserParam(BaseModel):
+class ChatCompletionMessageUserParam(MessagewithContent, BaseModel):
     role: Literal["user"]
     content: Union[str, List[ChatCompletionMessageContentPart]]
 
@@ -394,7 +407,7 @@ class ToolCall(BaseModel):
     function: FunctionResponse
 
 
-class ChatMessage(BaseModel):
+class ChatMessage(MessagewithContent, BaseModel):
     role: Optional[str] = None
     content: Optional[str] = None
     reasoning_content: Optional[str] = None
@@ -420,7 +433,7 @@ class ChatCompletionResponse(BaseModel):
     usage: UsageInfo
 
 
-class DeltaMessage(BaseModel):
+class DeltaMessage(MessagewithContent, BaseModel):
     role: Optional[str] = None
     content: Optional[str] = None
     reasoning_content: Optional[str] = None
