@@ -38,6 +38,7 @@ from sglang.srt.disaggregation.utils import (
     ReqToMetadataIdxAllocator,
     TransferBackend,
     get_kv_class,
+    get_rdma_devices_by_gpu_no,
     kv_to_page_indices,
     poll_and_all_reduce,
 )
@@ -127,8 +128,14 @@ class DecodePreallocQueue:
         kv_args.aux_item_lens = [
             metadata_buffer[0].nbytes for metadata_buffer in self.metadata_buffers
         ]
-        kv_args.ib_device = self.scheduler.server_args.disaggregation_ib_device
         kv_args.gpu_id = self.scheduler.gpu_id
+        if self.scheduler.server_args.disaggregation_ib_device is None:
+            kv_args.ib_device = get_rdma_devices_by_gpu_no(self.scheduler.gpu_id, n=2)
+            logger.info(
+                f"Using Auto Discoveried RDMA devices: {kv_args.ib_device} for decode"
+            )
+        else:
+            kv_args.ib_device = self.scheduler.server_args.disaggregation_ib_device
         kv_manager_class = get_kv_class(self.transfer_backend, KVClassType.MANAGER)
         kv_manager = kv_manager_class(
             kv_args, DisaggregationMode.DECODE, self.scheduler.server_args
