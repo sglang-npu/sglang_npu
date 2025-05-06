@@ -127,9 +127,21 @@ def http_request(
     if api_key is not None:
         headers["Authorization"] = f"Bearer {api_key}"
 
+    if is_local:
+        if os.getenv("http_proxy") or os.getenv("https_proxy"):
+            warnings.warn(
+                "Proxies should not be used for local addresses."
+            )
+        proxies = {"http": None, "https": None}
+    
     if stream:
-        return requests.post(url, json=json, stream=True, headers=headers)
+        return requests.post(url, json=json, stream=True, headers=headers, proxies=proxies)
     else:
+        if is_local:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            old_opener = urllib.request._opener
+            urllib.request.install_opener(opener)
+        
         req = urllib.request.Request(url, headers=headers, method=method)
         if json is None:
             data = None
@@ -141,6 +153,9 @@ def http_request(
             return HttpResponse(resp)
         except urllib.error.HTTPError as e:
             return HttpResponse(e)
+        finally:
+            if is_local and old_opener:
+                urllib.request.install_opener(old_opener)
 
 
 def encode_image_base64(image_path: Union[str, bytes]):
@@ -401,13 +416,27 @@ def launch_server_cmd(command: str, host: str = "0.0.0.0", port: int = None):
     """
     Launch the server using the given command.
     If no port is specified, a free port is reserved.
+    If the command already contains a port specification, that one is respected.
     """
-    if port is None:
-        port, lock_socket = reserve_port(host)
+    if "--port" in command:
+        full_command = command
+        parts = command.split()
+        try:
+            port_index = parts.index("--port")
+            if port_index + 1 < len(parts):
+                port = int(parts[port_index + 1])
+        except (ValueError, IndexError):
+            if port is None:
+                port, lock_socket = reserve_port(host)
+            else:
+                lock_socket = None
     else:
-        lock_socket = None
-
-    full_command = f"{command} --port {port}"
+        if port is None:
+            port, lock_socket = reserve_port(host)
+        else:
+            lock_socket = None
+        full_command = f"{command} --port {port}"
+    
     process = execute_shell_command(full_command)
 
     if lock_socket is not None:
@@ -437,11 +466,19 @@ def wait_for_server(base_url: str, timeout: int = None) -> None:
         timeout: Maximum time to wait in seconds. None means wait forever.
     """
     start_time = time.time()
+    
+    is_local = any(local_addr in base_url for local_addr in ['localhost', '127.0.0.1', '0.0.0.0'])
+    
+    proxies = None
+    if is_local:
+        proxies = {"http": None, "https": None}
+    
     while True:
         try:
             response = requests.get(
                 f"{base_url}/v1/models",
                 headers={"Authorization": "Bearer None"},
+                proxies=proxies,
             )
             if response.status_code == 200:
                 time.sleep(5)
