@@ -284,7 +284,9 @@ class DeepseekV2MoE(nn.Module):
                 if self.gate.e_score_correction_bias is not None
                 else None
             )
-
+            self.overlap_shared_experts = self.ep_size > 1
+            self.async_finish = True  # TODO
+            self.return_recv_hook = True
             self.deepep_dispatcher = DeepEPDispatcher(
                 group=parallel_state.get_tp_group().device_group,
                 router_topk=self.top_k,
@@ -294,8 +296,8 @@ class DeepseekV2MoE(nn.Module):
                 hidden_size=config.hidden_size,
                 params_dtype=config.torch_dtype,
                 deepep_mode=DeepEPMode[global_server_args_dict["deepep_mode"]],
-                async_finish=True,  # TODO
-                return_recv_hook=True,
+                async_finish=self.async_finish,
+                return_recv_hook=self.return_recv_hook,
             )
 
     def forward(
@@ -331,7 +333,8 @@ class DeepseekV2MoE(nn.Module):
         ):
             # router_logits: (num_tokens, n_experts)
             router_logits = self.gate(hidden_states)
-            shared_output = self._forward_shared_experts(hidden_states)
+            if not self.overlap_shared_experts:
+                shared_output = self._forward_shared_experts(hidden_states)
             topk_weights, topk_idx = select_experts(
                 hidden_states=hidden_states,
                 router_logits=router_logits,
@@ -353,7 +356,7 @@ class DeepseekV2MoE(nn.Module):
         if self.ep_size > 1:
             # TODO(ch-wan): allow users to set num_max_dispatch_tokens_per_rank value
             (
-                hidden_states,
+                hidden_states_dispatched,
                 topk_idx,
                 topk_weights,
                 reorder_topk_ids,
@@ -367,7 +370,7 @@ class DeepseekV2MoE(nn.Module):
                 forward_mode=forward_mode,
             )
         final_hidden_states = self.experts(
-            hidden_states=hidden_states,
+            hidden_states=hidden_states_dispatched,
             reorder_topk_ids=reorder_topk_ids,
             seg_indptr=seg_indptr,
             masked_m=masked_m,
@@ -375,14 +378,22 @@ class DeepseekV2MoE(nn.Module):
             forward_mode=forward_mode,
         )
         if self.ep_size > 1:
-            final_hidden_states = self.deepep_dispatcher.combine(
+            final_hidden_states, event, hook = self.deepep_dispatcher.combine(
                 final_hidden_states,
                 topk_idx,
                 topk_weights,
                 forward_mode,
+                overlap_shared_experts=self.overlap_shared_experts,
             )
-        final_hidden_states *= self.routed_scaling_factor
 
+        if self.overlap_shared_experts:
+            shared_output = self._forward_shared_experts(hidden_states)
+            if hook:
+                hook() if self.return_recv_hook else event.current_stream_wait()
+            else:
+                event.current_stream_wait() if self.async_finish else ()
+
+        final_hidden_states *= self.routed_scaling_factor
         if shared_output is not None:
             final_hidden_states = final_hidden_states + shared_output
 
