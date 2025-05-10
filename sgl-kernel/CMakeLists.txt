@@ -73,6 +73,15 @@ FetchContent_Declare(
     GIT_SHALLOW    OFF
 )
 FetchContent_Populate(repo-flash-attention)
+# FlashMLA
+FetchContent_Declare(
+    repo-flashmla
+    GIT_REPOSITORY https://github.com/deepseek-ai/FlashMLA.git
+    GIT_TAG        9edee0c022cd0938148a18e334203b0aab43aa19
+    GIT_SHALLOW    OFF
+)
+FetchContent_Populate(repo-flashmla)
+
 
 # ccache option
 option(ENABLE_CCACHE "Whether to use ccache" ON)
@@ -90,6 +99,8 @@ include_directories(
     ${repo-cutlass_SOURCE_DIR}/tools/util/include
     ${repo-flashinfer_SOURCE_DIR}/include
     ${repo-flashinfer_SOURCE_DIR}/csrc
+    ${repo-flashmla_SOURCE_DIR}/flash_mla
+    ${repo-flashmla_SOURCE_DIR}/csrc
 )
 
 set(SGL_KERNEL_CUDA_FLAGS
@@ -220,6 +231,10 @@ set(SOURCES
     "${repo-flash-attention_SOURCE_DIR}/csrc/flash_attn/src/flash_fwd_sparse_hdim128_fp16_causal_sm80.cu"
     "${repo-flash-attention_SOURCE_DIR}/csrc/flash_attn/src/flash_fwd_sparse_hdim128_fp16_sm80.cu"
     "${repo-flash-attention_SOURCE_DIR}/csrc/flash_attn/flash_sparse_api.cpp"
+    "${repo-flashmla_SOURCE_DIR}/csrc/flash_api.cpp"
+    "${repo-flashmla_SOURCE_DIR}/csrc/kernels/get_mla_metadata.cu"
+    "${repo-flashmla_SOURCE_DIR}/csrc/kernels/mla_combine.cu"
+    "${repo-flashmla_SOURCE_DIR}/csrc/kernels/splitkv_mla.cu"
 )
 
 Python_add_library(common_ops MODULE USE_SABI ${SKBUILD_SABI_VERSION} WITH_SOABI ${SOURCES})
