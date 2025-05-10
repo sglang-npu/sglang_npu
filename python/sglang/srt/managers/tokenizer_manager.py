@@ -430,14 +430,14 @@ class TokenizerManager:
         if image_inputs and "input_ids" in image_inputs:
             input_ids = image_inputs["input_ids"]
 
-        self._validate_token_len(obj, input_ids)
+        sampling_params = self._validate_token_len(obj, input_ids)
         return self._create_tokenized_object(
-            obj, input_text, input_ids, input_embeds, image_inputs
+            obj, sampling_params, input_text, input_ids, input_embeds, image_inputs
         )
 
     def _validate_token_len(
         self, obj: Union[GenerateReqInput, EmbeddingReqInput], input_ids: List[int]
-    ) -> None:
+    ) -> SamplingParams:
         """Validates that the input token count and the requested token count doesn't exceed the model's context length."""
 
         input_token_num = len(input_ids) if input_ids is not None else 0
@@ -448,25 +448,40 @@ class TokenizerManager:
                 f"model's context length ({self.context_len} tokens)."
             )
 
-        # Check total tokens (input + max_new_tokens)
-        max_new_tokens = obj.sampling_params.get("max_new_tokens")
+        sampling_params = copy.deepcopy(obj.sampling_params)
+        max_new_tokens = sampling_params.get("max_new_tokens")
         if (
             max_new_tokens is not None
-            and (max_new_tokens + input_token_num) >= self.context_len
+            and max_new_tokens + input_token_num >= self.context_len
         ):
             total_tokens = max_new_tokens + input_token_num
-            error_msg = (
-                f"Requested token count exceeds the model's maximum context length "
-                f"of {self.context_len} tokens. You requested a total of {total_tokens} "
-                f"tokens: {input_token_num} tokens from the input messages and "
-                f"{max_new_tokens} tokens for the completion. Please reduce the number "
-                f"of tokens in the input messages or the completion to fit within the limit."
-            )
-            raise ValueError(error_msg)
+            if self.server_args.allow_auto_truncate:
+                logger.warning(
+                    f"Requested token count exceeds the model's maximum context length "
+                    f"of {self.context_len} tokens. You requested a total of {total_tokens} "
+                    f"tokens: {input_token_num} tokens from the input messages and "
+                    f"{max_new_tokens} tokens for the completion. "
+                    f"Truncated max_new_tokens to {self.context_len-input_token_num=}."
+                )
+                sampling_params["max_new_tokens"] = self.context_len - input_token_num
+            else:
+                error_msg = (
+                    f"Requested token count exceeds the model's maximum context length "
+                    f"of {self.context_len} tokens. You requested a total of {total_tokens} "
+                    f"tokens: {input_token_num} tokens from the input messages and "
+                    f"{max_new_tokens} tokens for the completion. Please reduce the number "
+                    f"of tokens in the input messages or the completion to fit within the limit."
+                )
+                raise ValueError(error_msg)
+
+        # Parse sampling parameters
+        sampling_params = SamplingParams(**sampling_params)
+        return sampling_params
 
     def _create_tokenized_object(
         self,
         obj: Union[GenerateReqInput, EmbeddingReqInput],
+        sampling_params: SamplingParams,
         input_text: str,
         input_ids: List[int],
         input_embeds: Optional[Union[List[float], None]] = None,
@@ -482,8 +497,6 @@ class TokenizerManager:
             session_params = (
                 SessionParams(**obj.session_params) if obj.session_params else None
             )
-
-        sampling_params = SamplingParams(**obj.sampling_params)
         sampling_params.normalize(self.tokenizer)
         sampling_params.verify()
 
@@ -537,10 +550,10 @@ class TokenizerManager:
         # Process all requests
         tokenized_objs = []
         for i, req in enumerate(requests):
-            self._validate_token_len(obj[i], input_ids_list[i])
+            sampling_params = self._validate_token_len(obj[i], input_ids_list[i])
             tokenized_objs.append(
                 self._create_tokenized_object(
-                    req, req.text, input_ids_list[i], None, None
+                    req, sampling_params, req.text, input_ids_list[i], None, None
                 )
             )
         logger.debug(f"Completed batch processing for {batch_size} requests")
