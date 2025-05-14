@@ -642,6 +642,13 @@ class ShardedStateLoader(BaseModelLoader):
                         state_dict.pop(key)
             if state_dict:
                 raise ValueError(f"Missing keys {tuple(state_dict)} in loaded state!")
+
+            # Model weight loading consists of two stages:
+            # 1. Initial weight loading.
+            # 2. Post-processing of weights, including assigning specific member variables.
+            if hasattr(model, "post_load_weights"):
+                model.post_load_weights()
+
         return model.eval()
 
     @staticmethod
@@ -1344,6 +1351,12 @@ class RemoteModelLoader(BaseModelLoader):
             state_dict.pop(key)
         if state_dict:
             raise ValueError(f"Missing keys {tuple(state_dict)} in loaded state!")
+
+        # Model weight loading consists of two stages:
+        # 1. Initial weight loading.
+        # 2. Post-processing of weights, including assigning specific member variables.
+        if hasattr(model, "post_load_weights"):
+            model.post_load_weights()
 
     def _load_model_from_remote_fs(
         self, model, client, model_config: ModelConfig, device_config: DeviceConfig
