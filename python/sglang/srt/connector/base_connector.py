@@ -11,18 +11,41 @@ import torch
 
 
 class BaseConnector(ABC):
+    pass
+
+
+class BaseKVConnector(BaseConnector):
+    @abstractmethod
+    def get(
+        self, key: str, target: Optional[torch.Tensor] = None
+    ) -> Optional[torch.Tensor]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def set(self, key: str, value):
+        raise NotImplementedError()
+
+    @abstractmethod
+    def exists(self, key: str) -> bool:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def list(self, prefix: str) -> List[str]:
+        raise NotImplementedError()
+
+
+class BaseWeightConnector(BaseConnector):
     """
-    For fs connector such as s3:
+    For fs connector such as s3, url looks like:
     <connector_type>://<path>/<filename>
 
-    For kv connector such as redis:
+    For kv connector such as redis, url looks like:
     <connector_type>://<host>:<port>/<model_name>/keys/<key>
     <connector_type://<host>:<port>/<model_name>/files/<filename>
     """
 
-    def __init__(self, url: str, device: torch.device = "cpu"):
+    def __init__(self, url: str):
         self.url = url
-        self.device = device
         self.closed = False
         self.local_dir = tempfile.mkdtemp()
         for sig in (signal.SIGINT, signal.SIGTERM):
@@ -73,30 +96,7 @@ class BaseConnector(ABC):
         return new_handler
 
 
-class BaseKVConnector(BaseConnector):
-
-    @abstractmethod
-    def get(self, key: str) -> Optional[torch.Tensor]:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def getstr(self, key: str) -> Optional[str]:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def set(self, key: str, obj: torch.Tensor) -> None:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def setstr(self, key: str, obj: str) -> None:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def list(self, prefix: str) -> List[str]:
-        raise NotImplementedError()
-
-
-class BaseFileConnector(BaseConnector):
+class BaseFileSystemConnector(BaseConnector):
     """
     List full file names from remote fs path and filter by allow pattern.
 
