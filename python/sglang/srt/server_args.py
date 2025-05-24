@@ -301,10 +301,6 @@ class ServerArgs:
 
         if self.attention_backend == "dual_chunk_flash_attn":
             logger.warning(
-                "Cuda graph is disabled because of using dual chunk flash attention backend"
-            )
-            self.disable_cuda_graph = True
-            logger.warning(
                 "Mixed chunk is disabled because of using dual chunk flash attention backend"
             )
             self.enable_mixed_chunk = False
