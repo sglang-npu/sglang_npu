@@ -320,11 +320,19 @@ class EPMoE(torch.nn.Module):
                 else hidden_states_dtype
             ),
         )
+
+        ones_tensor = torch.ones(num_experts_per_partition, dtype=torch.float32)
+        
         if self.w2_input_scale is None and not self.use_block_quant:
-            self.w2_input_scale = torch.ones(
-                self.num_experts_per_partition,
-                dtype=torch.float32,
-                device=hidden_states_device,
+            self.w2_input_scale = torch.nn.Parameter(
+                ones_tensor,
+                requires_grad=False,
+            )
+
+        if self.w2_weight_scale is None and not self.use_block_quant:
+            self.w2_weight_scale = torch.nn.Parameter(
+                ones_tensor,
+                requires_grad=False,
             )
 
         if self.activation == "silu":
@@ -575,21 +583,8 @@ class UnquantizedEPMoEMethod(FusedMoEMethodBase, CustomOp):
         layer.register_parameter("w13_input_scale", None)
         layer.register_parameter("w13_weight_scale", None)
 
-        ones_tensor = torch.ones(num_experts_per_partition, dtype=torch.float32)
-
-        w2_input_scale = torch.nn.Parameter(
-            ones_tensor,
-            requires_grad=False,
-        )
-        layer.register_parameter("w2_input_scale", w2_input_scale)
-        set_weight_attrs(w2_input_scale, extra_weight_attrs)
-
-        w2_weight_scale = torch.nn.Parameter(
-            ones_tensor,
-            requires_grad=False,
-        )
-        layer.register_parameter("w2_weight_scale", w2_weight_scale)
-        set_weight_attrs(w2_weight_scale, extra_weight_attrs)
+        layer.register_parameter("w2_input_scale", None)
+        layer.register_parameter("w2_weight_scale", None)
 
     def apply(
         self,
