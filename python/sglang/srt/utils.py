@@ -768,11 +768,13 @@ def monkey_patch_vllm_gguf_config():
             GGUFConfig,
             GGUFEmbeddingMethod,
             GGUFLinearMethod,
+            GGUFMoEMethod,
         )
     except ImportError:
         return
 
     from sglang.srt.layers.linear import LinearBase
+    from sglang.srt.layers.moe.fused_moe_triton import FusedMoE
     from sglang.srt.layers.vocab_parallel_embedding import VocabParallelEmbedding
 
     def get_quant_method_with_embedding_replaced(
@@ -783,6 +785,8 @@ def monkey_patch_vllm_gguf_config():
         elif isinstance(layer, VocabParallelEmbedding):
             # patch to own VocabParallelEmbedding
             return GGUFEmbeddingMethod(self)
+        elif isinstance(layer, FusedMoE):
+            return GGUFMoEMethod(self)
         return None
 
     setattr(GGUFConfig, "get_quant_method", get_quant_method_with_embedding_replaced)
