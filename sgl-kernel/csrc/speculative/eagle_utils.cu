@@ -284,3 +284,201 @@ void verify_tree_greedy(
       num_spec_step,
       num_draft_tokens);
 }
+
+template <typename IdType>
+__global__ void ProcessAcceptIndexKernel(
+    IdType* accept_index,           // [bs, spec_steps + 1] - input
+    IdType* predict,                // [total_draft_tokens]
+    IdType* accept_length,          // [bs] - output
+    IdType* verified_id,            // [output_size] - output
+    bool* evict_mask,               // [total_draft_tokens] - output
+    IdType* filtered_accept_index,  // [output_size] - output
+    int32_t* output_size,           // [1] - output
+    uint32_t batch_size,
+    uint32_t spec_steps_plus_one,
+    uint32_t total_draft_tokens) {
+  uint32_t bx = blockIdx.x;
+  uint32_t tx = threadIdx.x;
+
+  if (bx >= batch_size) return;
+
+  extern __shared__ uint32_t shared_mem[];
+  IdType* shared_indices = (IdType*)shared_mem;
+  uint32_t* shared_counts = (uint32_t*)(shared_mem + spec_steps_plus_one);
+
+  uint32_t start = bx * blockDim.x + tx;
+  for (uint32_t i = start; i < total_draft_tokens; i += gridDim.x * blockDim.x) {
+    evict_mask[i] = true;
+  }
+
+  __syncthreads();
+
+  uint32_t valid_count = 0;
+  if (tx == 0) {
+    for (uint32_t i = 0; i < spec_steps_plus_one; ++i) {
+      IdType idx = accept_index[bx * spec_steps_plus_one + i];
+      if (idx != -1) {
+        shared_indices[valid_count] = idx;
+        valid_count++;
+      }
+    }
+    shared_counts[0] = valid_count;
+    accept_length[bx] = valid_count > 0 ? valid_count - 1 : -1;
+  }
+
+  __syncthreads();
+  valid_count = shared_counts[0];
+
+  uint32_t global_offset = 0;
+  if (tx == 0 && valid_count > 0) {
+    for (uint32_t b = 0; b < bx; ++b) {
+      for (uint32_t i = 0; i < spec_steps_plus_one; ++i) {
+        if (accept_index[b * spec_steps_plus_one + i] != -1) {
+          global_offset++;
+        }
+      }
+    }
+
+    for (uint32_t i = 0; i < valid_count; ++i) {
+      IdType idx = shared_indices[i];
+      if (idx < total_draft_tokens && (global_offset + i) < total_draft_tokens) {
+        verified_id[global_offset + i] = predict[idx];
+        filtered_accept_index[global_offset + i] = idx;
+        evict_mask[idx] = false;
+      }
+    }
+  }
+
+  if (bx == 0) {
+    __syncthreads();
+
+    if (tx == 0) {
+      uint32_t total_accept_length = 0;
+      for (uint32_t b = 0; b < batch_size; ++b) {
+        IdType accept_len = accept_length[b];
+        if (accept_len >= 0) {
+          total_accept_length += (accept_len + 1);
+        }
+      }
+      *output_size = total_accept_length;
+    }
+  }
+}
+
+void process_accept_index_evict_mask_fused(
+    at::Tensor accept_index,           // [bs, spec_steps + 1] - input
+    at::Tensor predict,                // [total_draft_tokens]
+    at::Tensor accept_length,          // [bs] - output
+    at::Tensor verified_id,            // [output_size] - output
+    at::Tensor evict_mask,             // [total_draft_tokens] - output
+    at::Tensor filtered_accept_index,  // [output_size] - output
+    at::Tensor output_size) {          // [1] - output
+  uint32_t batch_size = accept_index.size(0);
+  uint32_t spec_steps_plus_one = accept_index.size(1);
+  uint32_t total_draft_tokens = predict.size(0);
+
+  CHECK_EQ(batch_size, accept_length.size(0));
+
+  const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+
+  size_t shared_mem_size = spec_steps_plus_one * sizeof(int) + sizeof(uint32_t);
+
+  dim3 grid(batch_size);
+  dim3 block(256);
+
+  ProcessAcceptIndexKernel<int><<<grid, block, shared_mem_size, stream>>>(
+      static_cast<int*>(accept_index.data_ptr()),
+      static_cast<int*>(predict.data_ptr()),
+      static_cast<int*>(accept_length.data_ptr()),
+      static_cast<int*>(verified_id.data_ptr()),
+      static_cast<bool*>(evict_mask.data_ptr()),
+      static_cast<int*>(filtered_accept_index.data_ptr()),
+      static_cast<int32_t*>(output_size.data_ptr()),
+      batch_size,
+      spec_steps_plus_one,
+      total_draft_tokens);
+}
+
+template <typename T>
+__global__ void ProcessOutCacheLocKernel(
+    T* out_cache_loc,       // [total_size] - input
+    bool* evict_mask,       // [total_size] - input
+    int32_t* accept_index,  // [num_accept] - input
+    T* evicted_cache_loc,   // [num_evicted] - output
+    T* accepted_cache_loc,  // [num_accept] - output
+    int32_t* num_evicted,   // [1] - output
+    uint32_t total_size,
+    uint32_t num_accept) {
+  uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (idx < total_size) {
+    if (evict_mask[idx]) {
+      uint32_t evicted_idx = 0;
+      for (uint32_t i = 0; i < idx; ++i) {
+        if (evict_mask[i]) {
+          evicted_idx++;
+        }
+      }
+      evicted_cache_loc[evicted_idx] = out_cache_loc[idx];
+    }
+  }
+
+  if (idx < num_accept) {
+    int32_t index = accept_index[idx];
+    if (index >= 0 && index < total_size) {
+      accepted_cache_loc[idx] = out_cache_loc[index];
+    }
+  }
+
+  if (idx == 0) {
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < total_size; ++i) {
+      if (evict_mask[i]) {
+        count++;
+      }
+    }
+    *num_evicted = count;
+  }
+}
+
+void process_out_cache_loc_with_masks_and_indices(
+    at::Tensor out_cache_loc,       // [total_size] - input
+    at::Tensor evict_mask,          // [total_size] - input
+    at::Tensor accept_index,        // [num_accept] - input
+    at::Tensor evicted_cache_loc,   // [num_evicted] - output
+    at::Tensor accepted_cache_loc,  // [num_accept] - output
+    at::Tensor num_evicted) {       // [1] - output
+  uint32_t total_size = out_cache_loc.size(0);
+  uint32_t num_accept = accept_index.size(0);
+
+  CHECK_EQ(total_size, evict_mask.size(0));
+
+  const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+
+  dim3 block(256);
+  dim3 grid((max(total_size, num_accept) + block.x - 1) / block.x);
+
+  if (out_cache_loc.scalar_type() == at::kInt) {
+    ProcessOutCacheLocKernel<int><<<grid, block, 0, stream>>>(
+        static_cast<int*>(out_cache_loc.data_ptr()),
+        static_cast<bool*>(evict_mask.data_ptr()),
+        static_cast<int32_t*>(accept_index.data_ptr()),
+        static_cast<int*>(evicted_cache_loc.data_ptr()),
+        static_cast<int*>(accepted_cache_loc.data_ptr()),
+        static_cast<int32_t*>(num_evicted.data_ptr()),
+        total_size,
+        num_accept);
+  } else if (out_cache_loc.scalar_type() == at::kLong) {
+    ProcessOutCacheLocKernel<int64_t><<<grid, block, 0, stream>>>(
+        static_cast<int64_t*>(out_cache_loc.data_ptr()),
+        static_cast<bool*>(evict_mask.data_ptr()),
+        static_cast<int32_t*>(accept_index.data_ptr()),
+        static_cast<int64_t*>(evicted_cache_loc.data_ptr()),
+        static_cast<int64_t*>(accepted_cache_loc.data_ptr()),
+        static_cast<int32_t*>(num_evicted.data_ptr()),
+        total_size,
+        num_accept);
+  } else {
+    throw std::runtime_error("Unsupported data type for out_cache_loc");
+  }
+}

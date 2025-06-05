@@ -333,6 +333,25 @@ void build_tree_kernel_efficient(
 void segment_packbits(
     at::Tensor x, at::Tensor input_indptr, at::Tensor output_indptr, at::Tensor y, int64_t cuda_stream);
 
+void process_accept_index_evict_mask_fused(
+    at::Tensor accept_index,           // [bs, spec_steps + 1] - input
+    at::Tensor predict,                // [total_draft_tokens]
+    at::Tensor accept_length,          // [bs] - output
+    at::Tensor verified_id,            // [output_size] - output
+    at::Tensor evict_mask,             // [total_draft_tokens] - output
+    at::Tensor filtered_accept_index,  // [output_size] - output
+    at::Tensor output_size             // [1] - output
+);
+
+void process_out_cache_loc_with_masks_and_indices(
+    at::Tensor out_cache_loc,       // [total_size] - input
+    at::Tensor evict_mask,          // [total_size] - input
+    at::Tensor accept_index,        // [num_accept] - input
+    at::Tensor evicted_cache_loc,   // [num_evicted] - output
+    at::Tensor accepted_cache_loc,  // [num_accept] - output
+    at::Tensor num_evicted          // [1] - output
+);
+
 /*
  * From FlashInfer
  */

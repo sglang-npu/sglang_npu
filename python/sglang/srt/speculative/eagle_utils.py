@@ -26,6 +26,8 @@ from sglang.srt.utils import fast_topk, is_cuda, is_hip, next_power_of_2
 
 if is_cuda():
     from sgl_kernel import (
+        process_accept_index_evict_mask_fused,
+        process_out_cache_loc_with_masks_and_indices,
         top_k_renorm_prob,
         top_p_renorm_prob,
         tree_speculative_sampling_target_only,
@@ -511,14 +513,57 @@ class EagleVerifyInput:
                 unfinished_index.append(i)
             req.spec_verify_ct += 1
 
-        if has_finished:
-            accept_length = (accept_index != -1).sum(dim=1) - 1
+        # Use fused kernel to process accept_index and generate evict_mask
+        # Prepare output tensors
+        max_output_size = bs * (self.spec_steps + 1)
 
-        # Free the KV cache for unaccepted tokens
-        accept_index = accept_index[accept_index != -1]
-        verified_id = predict[accept_index]
-        evict_mask = torch.full_like(self.draft_token, True, dtype=torch.bool)
-        evict_mask[accept_index] = False
+        # Merge torch.int32 tensors into one large allocation
+        int32_total_size = bs + 2 * max_output_size + 2
+        int32_buffer = torch.empty(int32_total_size, dtype=torch.int32, device="cuda")
+
+        # Slice the int32 buffer for individual tensors
+        offset = 0
+        tmp_accept_length = int32_buffer[offset : offset + bs]
+        offset += bs
+        verified_id = int32_buffer[offset : offset + max_output_size]
+        offset += max_output_size
+        filtered_accept_index = int32_buffer[offset : offset + max_output_size]
+        offset += max_output_size
+        output_size = int32_buffer[offset : offset + 1]
+        offset += 1
+        num_evicted = int32_buffer[offset : offset + 1]
+
+        # Bool tensor (single allocation)
+        evict_mask = torch.empty(
+            self.draft_token.shape[0], dtype=torch.bool, device="cuda"
+        )
+
+        # Merge cache location tensors into one large allocation
+        cache_loc_total_size = self.draft_token.shape[0] + max_output_size
+        cache_loc_buffer = torch.empty(
+            cache_loc_total_size, dtype=batch.out_cache_loc.dtype, device="cuda"
+        )
+
+        # Slice the cache location buffer for individual tensors
+        evicted_cache_loc = cache_loc_buffer[: self.draft_token.shape[0]]
+        accepted_cache_loc = cache_loc_buffer[self.draft_token.shape[0] :]
+
+        process_accept_index_evict_mask_fused(
+            accept_index,  # [bs, spec_steps + 1] - input
+            predict,  # [total_draft_tokens]
+            tmp_accept_length,  # [bs] - output
+            verified_id,  # [output_size] - output
+            evict_mask,  # [total_draft_tokens] - output
+            filtered_accept_index,  # [output_size] - output
+            output_size,  # [1] - output
+        )
+
+        # Use output_size directly from kernel (no additional GPU operations needed)
+        verified_id = verified_id[:output_size]
+        accept_index = filtered_accept_index[:output_size]
+
+        if has_finished:
+            accept_length = tmp_accept_length
 
         if page_size != 1:
             align_evict_mask_to_page_size[len(batch.seq_lens),](
@@ -529,11 +574,27 @@ class EagleVerifyInput:
                 next_power_of_2(self.draft_token_num),
             )
 
-        token_to_kv_pool_allocator.free(batch.out_cache_loc[evict_mask])
+        # Use new sgl-kernel API to process out_cache_loc operations
+        # Slice accepted_cache_loc to the actual size needed
+        actual_accepted_cache_loc = accepted_cache_loc[: accept_index.shape[0]]
+
+        process_out_cache_loc_with_masks_and_indices(
+            batch.out_cache_loc,  # [total_size] - input
+            evict_mask,  # [total_size] - input
+            accept_index,  # [num_accept] - input
+            evicted_cache_loc,  # [num_evicted] - output
+            actual_accepted_cache_loc,  # [num_accept] - output
+            num_evicted,  # [1] - output
+        )
+
+        # Free evicted cache locations
+        actual_num_evicted = num_evicted.item()
+        if actual_num_evicted > 0:
+            token_to_kv_pool_allocator.free(evicted_cache_loc[:actual_num_evicted])
 
         # Construct EagleVerifyOutput
         if not has_finished:
-            batch.out_cache_loc = batch.out_cache_loc[accept_index]
+            batch.out_cache_loc = actual_accepted_cache_loc
             assign_req_to_token_pool[(bs,)](
                 batch.req_pool_indices,
                 batch.req_to_token_pool.req_to_token,
@@ -567,7 +628,7 @@ class EagleVerifyInput:
                 batch.req_to_token_pool.req_to_token,
                 batch.seq_lens,
                 batch.seq_lens + accept_length + 1,
-                batch.out_cache_loc[accept_index],
+                actual_accepted_cache_loc,
                 batch.req_to_token_pool.req_to_token.shape[1],
                 next_power_of_2(bs),
             )

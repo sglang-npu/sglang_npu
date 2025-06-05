@@ -99,3 +99,41 @@ def segment_packbits(
         y,
         torch.cuda.current_stream().cuda_stream,
     )
+
+
+def process_accept_index_evict_mask_fused(
+    accept_index: torch.Tensor,  # [bs, spec_steps + 1] - input
+    predict: torch.Tensor,  # [total_draft_tokens]
+    accept_length: torch.Tensor,  # [bs] - output
+    verified_id: torch.Tensor,  # [output_size] - output
+    evict_mask: torch.Tensor,  # [total_draft_tokens] - output
+    filtered_accept_index: torch.Tensor,  # [output_size] - output
+    output_size: torch.Tensor,  # [1] - output
+) -> None:
+    torch.ops.sgl_kernel.process_accept_index_evict_mask_fused.default(
+        accept_index,
+        predict,
+        accept_length,
+        verified_id,
+        evict_mask,
+        filtered_accept_index,
+        output_size,
+    )
+
+
+def process_out_cache_loc_with_masks_and_indices(
+    out_cache_loc: torch.Tensor,  # [total_size] - input
+    evict_mask: torch.Tensor,  # [total_size] - input
+    accept_index: torch.Tensor,  # [num_accept] - input
+    evicted_cache_loc: torch.Tensor,  # [num_evicted] - output
+    accepted_cache_loc: torch.Tensor,  # [num_accept] - output
+    num_evicted: torch.Tensor,  # [1] - output
+) -> None:
+    torch.ops.sgl_kernel.process_out_cache_loc_with_masks_and_indices.default(
+        out_cache_loc,
+        evict_mask,
+        accept_index,
+        evicted_cache_loc,
+        accepted_cache_loc,
+        num_evicted,
+    )

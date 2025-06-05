@@ -65,6 +65,8 @@ from sgl_kernel.sampling import (
 )
 from sgl_kernel.speculative import (
     build_tree_kernel_efficient,
+    process_accept_index_evict_mask_fused,
+    process_out_cache_loc_with_masks_and_indices,
     segment_packbits,
     tree_speculative_sampling_target_only,
     verify_tree_greedy,
