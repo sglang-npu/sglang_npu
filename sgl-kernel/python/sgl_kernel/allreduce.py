@@ -48,7 +48,7 @@ if torch.version.hip is not None:
 
     def get_meta_buffer_ipc_handle(inp: torch.Tensor) -> torch.Tensor:
         return torch.ops.sgl_kernel.get_meta_buffer_ipc_handle.default(inp)
-    
+
     # ROCM quick allreduce
     def init_quick_ar(world_size: int, rank: int) -> int:
         """Initialize the QuickReduce environment and return a Device Comms Handle api."""
@@ -96,7 +96,6 @@ if torch.version.hip is not None:
         context: int, inp: torch.Tensor, out: torch.Tensor, nthreads: int, nblocks: int
     ) -> None:
         raise NotImplementedError()
-
 
 else:
 
