@@ -44,7 +44,7 @@ def is_weak_contiguous(inp: torch.Tensor):
 
 """
 quantization level & int
-ONESHOT_F16 = 0,
+close = 0,
 TWOSHOT_F16 = 1,
 TWOSHOT_FP8 = 2,
 TWOSHOT_Q8 = 3,
@@ -64,7 +64,7 @@ class QuickAllreduce:
         group: ProcessGroup,
         device: Union[int, str, torch.device],
         max_size=1024 * 1024 * 512,
-        min_size=1024 * 1024,
+        min_size=2 * 1024 * 1024,
     ) -> None:
         """
         quick allreduce is accelerated by quantization, currently
@@ -134,6 +134,13 @@ class QuickAllreduce:
             )
             return
 
+        if self.qr_level != 5 and world_size == 8:
+            logger.warning(
+                "When world_size=8, only QUICK_ALL_REDUCE_LEVEL=5 for "
+                "quick allreduce is effective for performance improvement. "
+                "set `envs.QUICK_ALL_REDUCE_LEVEL = 5` for speedup."
+            )
+
         if isinstance(device, int):
             device = torch.device(f"cuda:{device}")
         elif isinstance(device, str):
@@ -168,23 +175,26 @@ class QuickAllreduce:
                 "specify disable_quick_all_reduce=0 explicitly."
             )
             return
-
-        self.max_size = (
-            max_size if self.qr_level > 0 else max_size / self.world_size * 2
-        )
+        # These numbers are based on kernel tests.
+        if world_size == 4:
+            min_size = 8 * 1024 * 1024
+        elif world_size == 8:
+            max_size = 64 * 1024 * 1024
+            min_size = 4 * 1024 * 1024
+        self.max_size = max_size
         self.min_size = min_size
-        if _is_hip:
-            self._ptr = ops.init_quick_ar(world_size, rank)
-            my_handle = ops.qr_get_comm_handle(self._ptr)
 
-            all_handles = [[None] for _ in range(world_size)]
-            all_handles[rank][0] = my_handle
+        self._ptr = ops.init_quick_ar(world_size, rank)
+        my_handle = ops.qr_get_comm_handle(self._ptr)
 
-            for src in range(world_size):
-                dist.broadcast_object_list(all_handles[src], src=src)
-            comm_handles = [h[0] for h in all_handles]
-            ops.qr_set_comm_handles(self._ptr, comm_handles)
-            self.disabled = False
+        all_handles = [[None] for _ in range(world_size)]
+        all_handles[rank][0] = my_handle
+
+        for src in range(world_size):
+            dist.broadcast_object_list(all_handles[src], src=src)
+        comm_handles = [h[0] for h in all_handles]
+        ops.qr_set_comm_handles(self._ptr, comm_handles)
+        self.disabled = False
 
     def should_quick_ar(self, inp: torch.Tensor):
         """
@@ -199,7 +209,7 @@ class QuickAllreduce:
         if not is_weak_contiguous(inp):
             return False
         if inp.dtype == torch.float16:
-            return inp_size <= self.max_size and inp_size > self.min_size
+            return inp_size <= self.max_size and inp_size >= self.min_size
         elif inp.dtype == torch.bfloat16:
             return (
                 inp_size <= self.max_size
