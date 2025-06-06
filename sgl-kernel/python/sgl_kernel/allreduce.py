@@ -63,10 +63,16 @@ if torch.version.hip is not None:
         torch.ops.sgl_kernel.qr_set_comm_handles.default(fa, handles)
 
     def qr_all_reduce(
-        fa: int, profile: int, inp: torch.Tensor, out: torch.Tensor
+        fa: int,
+        profile: int,
+        inp: torch.Tensor,
+        out: torch.Tensor,
+        cast_bf162half: bool,
     ) -> None:
         """Perform all-reduce across devices with optional profile."""
-        torch.ops.sgl_kernel.qr_all_reduce.default(fa, profile, inp, out)
+        torch.ops.sgl_kernel.qr_all_reduce.default(
+            fa, profile, inp, out, cast_bf162half
+        )
 
     def qr_destroy(fa: int) -> None:
         """Clean up and destroy the Device Comms Handle."""

@@ -194,12 +194,14 @@ class QuickAllreduce:
             dist.broadcast_object_list(all_handles[src], src=src)
         comm_handles = [h[0] for h in all_handles]
         ops.qr_set_comm_handles(self._ptr, comm_handles)
+        self.cast_bf162half = True
         self.disabled = False
 
     def should_quick_ar(self, inp: torch.Tensor):
         """
         Check if quickreduce is available
         """
+        return True
         if self.disabled:
             return False
         inp_size = inp.numel() * inp.element_size()
@@ -211,18 +213,22 @@ class QuickAllreduce:
         if inp.dtype == torch.float16:
             return inp_size <= self.max_size and inp_size >= self.min_size
         elif inp.dtype == torch.bfloat16:
-            return (
-                inp_size <= self.max_size
-                and inp_size > 1024 * 1024 * 16
-                and self.world_size == 2
-            )
+            if self.cast_bf162half:
+                return inp_size <= self.max_size and inp_size >= self.min_size
+            else:
+                return (
+                    inp_size <= self.max_size
+                    and inp_size > 1024 * 1024 * 16
+                    and self.world_size == 2
+                )
         return False
 
     def all_reduce(self, inp: torch.Tensor, out: torch.Tensor = None):
         """Performs an out-of-place all reduce."""
         if out is None:
             out = torch.empty_like(inp)
-        ops.qr_all_reduce(self._ptr, self.qr_level, inp, out)
+        ops.qr_all_reduce(self._ptr, self.qr_level, inp, out, self.cast_bf162half)
+
         return out
 
     def quick_all_reduce(self, input: torch.Tensor) -> Optional[torch.Tensor]:

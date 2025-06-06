@@ -2,7 +2,7 @@
 #include <ATen/hip/impl/HIPGuardImplMasqueradingAsCUDA.h>
 #include <hip/hip_runtime.h>
 
-#include "quick_all_reduce.cuh"
+#include "quick_all_reduce.cuh"  //
 
 namespace quickreduce {
 
@@ -81,12 +81,14 @@ __global__ __quickreduce_launch_bounds__ static void allreduce_prototype(
     int rank,
     uint8_t** dbuffer_list,
     long data_offset,
-    int flag_color) {
+    int flag_color,
+    bool cast_bf162half) {
   int block = blockIdx.x;
   int grid = gridDim.x;
 
   while (block < num_blocks) {
-    AllReduceKenel::run(A, B, N, block, num_blocks, world_size, rank, dbuffer_list, data_offset, flag_color);
+    AllReduceKenel::run(
+        A, B, N, block, num_blocks, world_size, rank, dbuffer_list, data_offset, flag_color, cast_bf162half);
     block += grid;
   }
 }
@@ -112,7 +114,8 @@ __global__ __quickreduce_launch_bounds__ static void allreduce_prototype(
         rank,                                               \
         dbuffer_list,                                       \
         data_offset,                                        \
-        flag_color);                                        \
+        flag_color,                                         \
+        cast_bf162half);                                    \
   } else if (world_size == 4) {                             \
     using LineCodec = __codec<4, T>;                        \
     using AllReduceKernel = AllReduceTwoshot<LineCodec, T>; \
@@ -130,7 +133,8 @@ __global__ __quickreduce_launch_bounds__ static void allreduce_prototype(
         rank,                                               \
         dbuffer_list,                                       \
         data_offset,                                        \
-        flag_color);                                        \
+        flag_color,                                         \
+        cast_bf162half);                                    \
   } else if (world_size == 8) {                             \
     using LineCodec = __codec<8, T>;                        \
     using AllReduceKernel = AllReduceTwoshot<LineCodec, T>; \
@@ -148,11 +152,12 @@ __global__ __quickreduce_launch_bounds__ static void allreduce_prototype(
         rank,                                               \
         dbuffer_list,                                       \
         data_offset,                                        \
-        flag_color);                                        \
+        flag_color,                                         \
+        cast_bf162half);                                    \
   }
 
 template <typename T>
-void DeviceComms::allreduce(int profile, hipStream_t stream, T const* A, T* B, int N) {
+void DeviceComms::allreduce(int profile, hipStream_t stream, T const* A, T* B, int N, bool cast_bf162half) {
   static_assert(sizeof(T) == 2, "Template parameter T must be 16 bits (2 bytes) in size.");
   if (world_size != 2 && world_size != 4 && world_size != 8) {
     throw std::runtime_error("All Reduce not supported for world_size = " + std::to_string(world_size));
@@ -178,24 +183,6 @@ void DeviceComms::allreduce(int profile, hipStream_t stream, T const* A, T* B, i
       break;
     case QuickReduceProfile::TWOSHOT_Q4:
       TWOSHOT_DISPATCH(TwoshotQ4LineCodec)
-      break;
-    case QuickReduceProfile::ONESHOT_F16:
-      using AllReduceKernel = AllReduceOneshot<T>;
-      hipLaunchKernelGGL(
-          (allreduce_prototype<AllReduceKernel, T>),
-          dim3(grid),
-          dim3(kBlock),
-          0,
-          stream,
-          A,
-          B,
-          N,
-          num_blocks,
-          world_size,
-          rank,
-          dbuffer_list,
-          data_offset,
-          flag_color);
       break;
     default:
       TWOSHOT_DISPATCH(TwoshotF16LineCodec)
@@ -270,7 +257,7 @@ void qr_set_comm_handles(fptr_t _fa, std::vector<torch::Tensor> const& comm_hand
   fa->open_ipc_handles(ipc_handles);
 }
 
-void qr_all_reduce(fptr_t _fa, int64_t profile, torch::Tensor const& inp, torch::Tensor& out) {
+void qr_all_reduce(fptr_t _fa, int64_t profile, torch::Tensor const& inp, torch::Tensor& out, bool cast_bf162half) {
   quickreduce::DeviceComms* fa = reinterpret_cast<quickreduce::DeviceComms*>(_fa);
   auto stream = c10::cuda::getCurrentCUDAStream().stream();  // hipStream_t
 
@@ -287,14 +274,28 @@ void qr_all_reduce(fptr_t _fa, int64_t profile, torch::Tensor const& inp, torch:
         stream,
         reinterpret_cast<half const*>(inp.data_ptr()),
         reinterpret_cast<half*>(out.data_ptr()),
-        inp.numel());
+        inp.numel(),
+        false);
   } else if (out.scalar_type() == at::ScalarType::BFloat16) {
-    fa->allreduce<nv_bfloat16>(
-        profile,
-        stream,
-        reinterpret_cast<nv_bfloat16 const*>(inp.data_ptr()),
-        reinterpret_cast<nv_bfloat16*>(out.data_ptr()),
-        inp.numel());
+    if (cast_bf162half) {
+      // change dtype in thread.
+      fa->allreduce<half>(
+          profile,
+          stream,
+          reinterpret_cast<half const*>(inp.data_ptr()),
+          reinterpret_cast<half*>(out.data_ptr()),
+          inp.numel(),
+          true);
+    } else {
+      fa->allreduce<nv_bfloat16>(
+          profile,
+          stream,
+          reinterpret_cast<nv_bfloat16 const*>(inp.data_ptr()),
+          reinterpret_cast<nv_bfloat16*>(out.data_ptr()),
+          inp.numel(),
+          false);
+    }
+
   } else {
     throw std::runtime_error("quick allreduce only supports float16 and bfloat16 for now.");
   }

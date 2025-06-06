@@ -55,16 +55,21 @@ TORCH_LIBRARY_EXPAND(sgl_kernel, m) {
   m.impl("get_meta_buffer_ipc_handle", torch::kCPU, &get_meta_buffer_ipc_handle);
 
   m.def("init_quick_ar(int world_size, int rank) -> int");
-  m.def("qr_get_comm_handle(int _fa) -> Tensor");
-  m.def("qr_set_comm_handles(int _fa, Tensor[] handles) -> ()");
-  m.def("qr_all_reduce(int _fa, int profile, Tensor inp, Tensor out) -> ()");
-  m.def("qr_destroy(int _fa) -> ()");
-  m.def("is_quickreduce_available() -> ()");
   m.impl("init_quick_ar", &init_quick_ar);
+
+  m.def("qr_get_comm_handle(int _fa) -> Tensor");
   m.impl("qr_get_comm_handle", &qr_get_comm_handle);
+
+  m.def("qr_set_comm_handles(int _fa, Tensor[] handles) -> ()");
   m.impl("qr_set_comm_handles", &qr_set_comm_handles);
+
+  m.def("qr_all_reduce(int _fa, int profile, Tensor inp, Tensor out, bool cast_bf162half) -> ()");
   m.impl("qr_all_reduce", torch::kCUDA, &qr_all_reduce);
+
+  m.def("qr_destroy(int _fa) -> ()");
   m.impl("qr_destroy", &qr_destroy);
+
+  m.def("is_quickreduce_available() -> ()");
   m.impl("is_quickreduce_available", &is_quickreduce_available);
   /*
    * From csrc/moe

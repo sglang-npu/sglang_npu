@@ -129,10 +129,14 @@ else:
         sgl_kernel.allreduce.qr_set_comm_handles(fa, handles)
 
     def qr_all_reduce(
-        fa: int, profile: int, inp: torch.Tensor, out: torch.Tensor
+        fa: int,
+        profile: int,
+        inp: torch.Tensor,
+        out: torch.Tensor,
+        cast_bf162half: bool,
     ) -> None:
         """Perform all-reduce across devices with optional profile."""
-        sgl_kernel.allreduce.qr_all_reduce(fa, profile, inp, out)
+        sgl_kernel.allreduce.qr_all_reduce(fa, profile, inp, out, cast_bf162half)
 
     def qr_destroy(fa: int) -> None:
         """Clean up and destroy the Device Comms Handle."""
