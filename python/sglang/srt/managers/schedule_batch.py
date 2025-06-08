@@ -225,6 +225,7 @@ class MultimodalDataItem:
         """
 
         def data_hash(data) -> int:
+            # print(f"{type(data)=}")
             hash_bytes = hashlib.sha256(data).digest()[:8]
             return int.from_bytes(hash_bytes, byteorder="big", signed=False)
 

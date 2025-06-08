@@ -492,16 +492,16 @@ class TokenizerManager:
             input_ids = self.tokenizer.encode(input_text)
 
         if self.mm_processor and obj.contains_mm_input():
-            image_inputs = await self.mm_processor.process_mm_data_async(
+            mm_inputs = await self.mm_processor.process_mm_data_async(
                 image_data=obj.image_data,
                 input_text=input_text or input_ids,
                 request_obj=obj,
                 max_req_input_len=self.max_req_input_len,
             )
-            if image_inputs and "input_ids" in image_inputs:
-                input_ids = image_inputs["input_ids"]
+            if mm_inputs and "input_ids" in mm_inputs:
+                input_ids = mm_inputs["input_ids"]
         else:
-            image_inputs: Optional[Dict] = None
+            mm_inputs: Optional[Dict] = None
 
         self._validate_token_len(obj, input_ids)
         return self._create_tokenized_object(
