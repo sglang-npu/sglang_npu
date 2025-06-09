@@ -61,7 +61,6 @@ TORCH_LIBRARY_FRAGMENT(sgl_kernel, m) {
   m.def(
       "cutlass_mla_decode(Tensor! out, Tensor q_nope_and_q_pe, Tensor kv_c_and_k_pe_cache, Tensor seq_lens, Tensor "
       "page_table, Tensor! workspace, int num_kv_splits) -> ()");
-
   m.impl("cutlass_mla_decode", torch::kCUDA, &cutlass_mla_decode);
   m.def("cutlass_mla_get_workspace_size", &cutlass_mla_get_workspace_size);
 
@@ -194,7 +193,6 @@ TORCH_LIBRARY_FRAGMENT(sgl_kernel, m) {
       "()");
   m.impl("prepare_moe_input", torch::kCUDA, &prepare_moe_input);
 
-
   m.def("shuffle_rows(Tensor input, Tensor dst2src_map, Tensor output) -> ()");
   m.impl("shuffle_rows", torch::kCUDA, &shuffle_rows);
   m.def("apply_shuffle_mul_sum(Tensor input, Tensor output, Tensor permutation, Tensor? factors) -> ()");
@@ -209,8 +207,6 @@ TORCH_LIBRARY_FRAGMENT(sgl_kernel, m) {
       "float threshold_single, float threshold_acc, "
       "bool deterministic, int cuda_stream) -> ()");
   m.impl("tree_speculative_sampling_target_only", torch::kCUDA, &tree_speculative_sampling_target_only);
-
-
 
   /*
    * From csrc/speculative

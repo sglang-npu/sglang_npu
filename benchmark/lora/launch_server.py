@@ -78,7 +78,6 @@ if __name__ == "__main__":
         action="store_true",
         help="Enable using mscclpp for small messages for all-reduce kernel and fall back to NCCL.",
     )
-
     args = parser.parse_args()
 
     launch_server(args)

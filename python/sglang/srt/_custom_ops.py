@@ -115,7 +115,6 @@ else:
         return sgl_kernel.allreduce.get_meta_buffer_ipc_handle(inp)
 
     # ROCM quick allreduce
-
     def init_quick_ar(world_size: int, rank: int) -> int:
         """Initialize the QuickReduce environment and return a Device Comms Handle api."""
         return sgl_kernel.allreduce.init_quick_ar(world_size, rank)

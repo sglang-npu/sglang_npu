@@ -43,12 +43,9 @@ from sglang.srt.utils import (
     direct_register_custom_op,
     get_bool_env_var,
     is_cuda_alike,
-    is_hip,
     is_npu,
     supports_custom_op,
 )
-
-_is_hip = is_hip()
 
 
 @dataclass
