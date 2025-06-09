@@ -207,7 +207,6 @@ class MultimodalDataItem:
     # kimi-vl related
     image_grid_hws: Optional[List[torch.Tensor]] = None
 
-    audio_features: Union[torch.Tensor, np.ndarray] = None
     audio_feature_lens: Optional[List[torch.Tensor]] = None
     audio_offsets: Optional[List[Tuple[int, int]]] = None
 
@@ -225,7 +224,6 @@ class MultimodalDataItem:
         """
 
         def data_hash(data) -> int:
-            # print(f"{type(data)=}")
             hash_bytes = hashlib.sha256(data).digest()[:8]
             return int.from_bytes(hash_bytes, byteorder="big", signed=False)
 
@@ -274,8 +272,6 @@ class MultimodalDataItem:
 
         if self.precomputed_features is not None:
             self.hash = hash_feature(self.precomputed_features)
-        elif self.is_audio():
-            self.hash = hash_feature(self.audio_features)
         else:
             self.hash = hash_feature(self.feature)
 
@@ -356,7 +352,6 @@ class MultimodalInputs:
 
         assert isinstance(ret.mm_items, list)
         ret.mm_items = [item for item in ret.mm_items if item.is_valid()]
-
         for item in ret.mm_items:
             item.set_pad_value()
 
