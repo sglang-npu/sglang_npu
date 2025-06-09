@@ -24,7 +24,11 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 import torch
 
-from sglang.srt.managers.mm_utils import TensorTransportMode, deserialize_tensors, serialize_tensors
+from sglang.srt.managers.mm_utils import (
+    TensorTransportMode,
+    deserialize_tensors,
+    serialize_tensors,
+)
 from sglang.srt.mm_utils import has_valid_data
 from sglang.utils import info_once
 

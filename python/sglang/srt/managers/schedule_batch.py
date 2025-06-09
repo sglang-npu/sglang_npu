@@ -1266,9 +1266,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             for mm_item in mm_input.mm_items:
                 feature = getattr(mm_item, "feature", None)
                 if isinstance(feature, torch.Tensor):
-                    mm_item.feature = feature.to(
-                        self.device, non_blocking=True
-                    )
+                    mm_item.feature = feature.to(self.device, non_blocking=True)
         self.multimodal_inputs = multimodal_inputs
         self.seq_lens_sum = sum(seq_lens)
 
