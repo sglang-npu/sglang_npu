@@ -156,6 +156,7 @@ class EAGLEWorker(TpModelWorker):
         if self.server_args.attention_backend == "flashinfer":
             if not global_server_args_dict["use_mla_backend"]:
                 from sglang.srt.layers.attention.flashinfer_backend import (
+                    FlashInferAttnBackend,
                     FlashInferMultiStepDraftBackend,
                 )
 
@@ -164,8 +165,13 @@ class EAGLEWorker(TpModelWorker):
                     self.topk,
                     self.speculative_num_steps,
                 )
+                self.draft_extend_attn_backend = FlashInferAttnBackend(
+                    self.draft_model_runner,
+                    skip_prefill=False,
+                )
             else:
                 from sglang.srt.layers.attention.flashinfer_mla_backend import (
+                    FlashInferMLAAttnBackend,
                     FlashInferMLAMultiStepDraftBackend,
                 )
 
@@ -174,11 +180,15 @@ class EAGLEWorker(TpModelWorker):
                     self.topk,
                     self.speculative_num_steps,
                 )
-            self.draft_extend_attn_backend = None
+                self.draft_extend_attn_backend = FlashInferMLAAttnBackend(
+                    self.draft_model_runner,
+                    skip_prefill=False,
+                )
             self.padded_static_len = self.speculative_num_steps + 1
             self.has_prefill_wrapper_verify = True
         elif self.server_args.attention_backend == "triton":
             from sglang.srt.layers.attention.triton_backend import (
+                TritonAttnBackend,
                 TritonMultiStepDraftBackend,
             )
 
@@ -187,7 +197,10 @@ class EAGLEWorker(TpModelWorker):
                 self.topk,
                 self.speculative_num_steps,
             )
-            self.draft_extend_attn_backend = None
+            self.draft_extend_attn_backend = TritonAttnBackend(
+                self.draft_model_runner,
+                skip_prefill=False,
+            )
             self.padded_static_len = self.speculative_num_steps + 1
             self.has_prefill_wrapper_verify = False
         elif self.server_args.attention_backend == "fa3":
@@ -674,6 +687,7 @@ class EAGLEWorker(TpModelWorker):
         batch.spec_info.prepare_extend_after_decode(
             batch,
             self.speculative_num_steps,
+            self.server_args.context_length,
             pad_input=self.cuda_graph_runner_for_draft_extend is not None,
         )
         batch.spec_info.capture_hidden_mode = CaptureHiddenMode.LAST
