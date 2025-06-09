@@ -168,7 +168,7 @@ void DeviceComms::allreduce(int profile, hipStream_t stream, T const* A, T* B, i
   int num_blocks = divceil(msg_size, kTileSize);
   int grid = min(304 * 4, num_blocks);
 
-  // -------------------------------------------------
+  // -----------------------------------------------------------------
   // All reduce dispatch.
   QuickReduceProfile dprofile = static_cast<QuickReduceProfile>(profile);
   switch (dprofile) {

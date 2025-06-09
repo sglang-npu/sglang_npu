@@ -91,7 +91,10 @@ class QuickAllreduce:
 
         self._IS_CAPTURING = False
         self.disabled = True
-        self.qr_level = int(os.getenv("QUICK_ALL_REDUCE_LEVEL", "2"))
+        self.qr_level = int(os.getenv("QUICK_ALL_REDUCE_LEVEL", "4"))
+        if self.qr_level == 0:
+            logger.info("Quick allreduce is disabled, because qr_level=0")
+            return
         assert self.qr_level in QuickAllreduce._SUPPORTED_LEVEL, (
             "quick allreduce level must be in [1, 2, 3, 4, 5], "
             f"but got {self.qr_level}"
@@ -194,14 +197,14 @@ class QuickAllreduce:
             dist.broadcast_object_list(all_handles[src], src=src)
         comm_handles = [h[0] for h in all_handles]
         ops.qr_set_comm_handles(self._ptr, comm_handles)
-        self.cast_bf162half = True
+        self.cast_bf162half = bool(int(os.getenv("QR_CAST_BF2FP16", "1")))
         self.disabled = False
 
     def should_quick_ar(self, inp: torch.Tensor):
         """
         Check if quickreduce is available
         """
-        return True
+
         if self.disabled:
             return False
         inp_size = inp.numel() * inp.element_size()
@@ -214,6 +217,7 @@ class QuickAllreduce:
             return inp_size <= self.max_size and inp_size >= self.min_size
         elif inp.dtype == torch.bfloat16:
             if self.cast_bf162half:
+                # cast2half, so the same condition
                 return inp_size <= self.max_size and inp_size >= self.min_size
             else:
                 return (
@@ -227,6 +231,7 @@ class QuickAllreduce:
         """Performs an out-of-place all reduce."""
         if out is None:
             out = torch.empty_like(inp)
+        # cast_bf162half=True is invalid when dtype=float16.
         ops.qr_all_reduce(self._ptr, self.qr_level, inp, out, self.cast_bf162half)
 
         return out

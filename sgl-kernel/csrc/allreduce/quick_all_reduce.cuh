@@ -787,6 +787,15 @@ struct AllReduceTwoshot {
     for (int i = 0; i < kAtoms; i++) {
       tA[i] = buffer_load_dwordx4(src_buffer.descriptor, src_offset, 0, 0);
       src_offset += kAtomStride * sizeof(int32x4_t);
+      if (cast_bf162half) {
+        const nv_bfloat162* tmx = reinterpret_cast<const nv_bfloat162*>(&tA[i]);
+        half2 tmx_fp162[4];
+        for (int j = 0; j < 4; ++j) {
+          float2 f = __bfloat1622float2(tmx[j]);
+          tmx_fp162[j] = __float22half2_rn(f);
+        }
+        tA[i] = *reinterpret_cast<const int32x4_t*>(tmx_fp162);
+      }
     }
 
     // --------------------------------------------------------
@@ -882,33 +891,20 @@ struct AllReduceTwoshot {
     BufferResource dst_buffer(B, N * sizeof(T));
     int dst_offset = block * kTileSize + thread * sizeof(int32x4_t);
 
-    if (cast_bf162half) {
-      for (int i = 0; i < kAtoms; i++) {
-        const __half* tmx = reinterpret_cast<const __half*>(&tA[i]);  // 指向 8 个 half
-        __hip_bfloat16 tmx_bf16[8];
-        for (int j = 0; j < 8; ++j) {
-          float f = __half2float(tmx[j]);
-          tmx_bf16[j] = __float2bfloat16(f);
+    for (int i = 0; i < kAtoms; i++) {
+      if (cast_bf162half) {
+        const half2* tmx = reinterpret_cast<const half2*>(&tA[i]);  // 指向 8 个 half
+        nv_bfloat162 tmx_bf16[4];
+        for (int j = 0; j < 4; ++j) {
+          float2 f = __half22float2(tmx[j]);
+          tmx_bf16[j] = __float22bfloat162_rn(f);
         }
-        // method1
         const int32x4_t tmy = *reinterpret_cast<const int32x4_t*>(tmx_bf16);
         buffer_store_dwordx4(tmy, dst_buffer.descriptor, dst_offset, 0, 0);
-        // method2
-        //  PackHelper pack;
-        //  for (int j = 0; j < 8; ++j) {
-        //      pack.bf16[j] = tmx_bf16[j];
-        //  }
-        //  buffer_store_dwordx4(pack.i4, dst_buffer.descriptor, dst_offset, 0, 0);
-        dst_offset += kAtomStride * sizeof(int32x4_t);
-      }
-
-    }
-
-    else {
-      for (int i = 0; i < kAtoms; i++) {
+      } else {
         buffer_store_dwordx4(tA[i], dst_buffer.descriptor, dst_offset, 0, 0);
-        dst_offset += kAtomStride * sizeof(int32x4_t);
       }
+      dst_offset += kAtomStride * sizeof(int32x4_t);
     }
   }
 };
