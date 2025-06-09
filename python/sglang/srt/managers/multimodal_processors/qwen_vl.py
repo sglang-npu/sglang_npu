@@ -13,7 +13,6 @@ from sglang.srt.managers.multimodal_processors.base_processor import (
 from sglang.srt.managers.multimodal_processors.base_processor import (
     MultimodalSpecialTokens,
 )
-from sglang.srt.managers.schedule_batch import Modality, MultimodalDataItem
 from sglang.srt.models.qwen2_5_vl import Qwen2_5_VLForConditionalGeneration
 from sglang.srt.models.qwen2_vl import Qwen2VLForConditionalGeneration
 

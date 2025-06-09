@@ -6,7 +6,7 @@ import os
 import re
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -135,7 +135,7 @@ class BaseMultimodalProcessor(ABC):
         if "pixel_values" in result and isinstance(
             result["pixel_values"], torch.Tensor
         ):
-            result["pixel_values"] = result["pixel_values"].to("cpu")
+            result["feature"] = result["pixel_values"].to("cpu")
         return result
 
     @abstractmethod
@@ -162,7 +162,7 @@ class BaseMultimodalProcessor(ABC):
         estimated_frames_list = []
         for image in image_data:
             if isinstance(image, str) and image.startswith("video:"):
-                path = image[len("video:") :]
+                path = image[len("video:"):]
                 # Estimate frames for the video
                 vr = VideoReader(path, ctx=cpu(0))
                 num_frames = len(vr)
@@ -184,7 +184,7 @@ class BaseMultimodalProcessor(ABC):
             if is_audio:
                 return load_audio(data)
             elif is_video:
-                path = data[len("video:") :]
+                path = data[len("video:"):]
                 return encode_video(path, frame_count_limit)
             else:
                 img, _ = load_image(data)
@@ -448,7 +448,7 @@ class BaseMultimodalProcessor(ABC):
                     elif isinstance(mm_input, dict):
                         if mm_input.get("precomputed_features", None) is not None:
                             has_precomputed_features = True
-                        elif mm_input.get("pixel_values", None) is not None:
+                        elif mm_input.get("feature", None) is not None:
                             has_pixel_values = True
                         else:
                             raise ValueError(
