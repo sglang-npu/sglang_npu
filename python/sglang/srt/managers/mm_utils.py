@@ -47,6 +47,7 @@ class TransportableTensor:
         extra: A dictionary to store metadata required for deserialization,
                such as the tensor's shape, dtype, and IPC handle.
     """
+
     transport_mode: TensorTransportMode
     feature: torch.tensor
     extra: Dict[str, Any] = None
@@ -217,7 +218,7 @@ class MultiModalityDataPaddingPatternTokenPairs(MultiModalityDataPaddingPattern)
             return input_ids
 
         for start_idx, end_idx in zip(start_indices, end_indices):
-            padded_ids.extend(input_ids[last_idx: start_idx + 1])
+            padded_ids.extend(input_ids[last_idx : start_idx + 1])
 
             if input_ids[start_idx] in self.data_start_token_ids:
                 data_idx += 1
@@ -292,8 +293,8 @@ class MultiModalityDataPaddingPatternMultimodalTokens(MultiModalityDataPaddingPa
             num_pad_values = len(pad_values)
             if num_regions > 0 and num_pad_values > 0:
                 pad_values = (pad_values * (num_regions // num_pad_values + 1))[
-                             :num_regions
-                             ]
+                    :num_regions
+                ]
             else:  # If no regions or no pad_values, this loop won't run anyway.
                 pad_values = []  # Ensure pad_values is empty if starts is empty
 
@@ -405,7 +406,7 @@ def _get_chunked_prefill_embedding(
     for i in range(len(items_size) - 1):
         if items_size[i] == items_size[i + 1]:
             continue
-        embedding_items_per_req = embedding_items[items_size[i]: items_size[i + 1]]
+        embedding_items_per_req = embedding_items[items_size[i] : items_size[i + 1]]
         items_offset = items_offset_list[i]
         embedding_items_hash = get_embedding_hash(embedding_items_per_req)
         # if all items has been prefixed, we do not need to calculate embedding
