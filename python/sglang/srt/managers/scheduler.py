@@ -506,6 +506,7 @@ class Scheduler(
         self.disaggregation_mode = DisaggregationMode(
             self.server_args.disaggregation_mode
         )
+        self.kv_manager = None
         self.init_disaggregation()
 
     def maybe_sleep_on_idle(self):
@@ -656,6 +657,7 @@ class Scheduler(
 
             # Metric for pre-allocation
             self.num_tokens_pre_allocated = 0
+            self.kv_manager = self.disagg_decode_prealloc_queue.kv_manager
 
         elif self.disaggregation_mode == DisaggregationMode.PREFILL:
             # *2 for the headroom.
@@ -683,6 +685,7 @@ class Scheduler(
             )
             # The prefill requests that are in the middle of kv sending
             self.disagg_prefill_inflight_queue: List[Req] = []
+            self.kv_manager = self.disagg_prefill_bootstrap_queue.kv_manager
 
     @DynamicGradMode()
     def event_loop_normal(self):
