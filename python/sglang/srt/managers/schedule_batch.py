@@ -193,7 +193,7 @@ class MultimodalDataItem:
 
     # the real data, pixel_values or audio_features
     # data: Union[List[torch.Tensor], List[np.ndarray]]
-    pixel_values: Union[torch.Tensor, np.ndarray] = None
+    feature: Union[torch.Tensor, np.ndarray] = None
     image_grid_thw: Union[torch.Tensor, np.ndarray] = None
     video_grid_thws: Union[torch.Tensor, np.ndarray] = None
 
@@ -207,7 +207,6 @@ class MultimodalDataItem:
     # kimi-vl related
     image_grid_hws: Optional[List[torch.Tensor]] = None
 
-    audio_features: Union[torch.Tensor, np.ndarray] = None
     audio_feature_lens: Optional[List[torch.Tensor]] = None
     audio_offsets: Optional[List[Tuple[int, int]]] = None
 
@@ -241,7 +240,8 @@ class MultimodalDataItem:
                 ]
                 tensor = torch.concat(tensor_list)
             if tensor.is_cuda:
-                return gpu_tensor_hash(tensor)
+                # TODO(mick):
+                return gpu_tensor_hash(tensor.cuda())
             tensor = tensor.detach().contiguous()
 
             if tensor.dtype == torch.bfloat16:
@@ -273,10 +273,8 @@ class MultimodalDataItem:
 
         if self.precomputed_features is not None:
             self.hash = hash_feature(self.precomputed_features)
-        elif self.is_audio():
-            self.hash = hash_feature(self.audio_features)
         else:
-            self.hash = hash_feature(self.pixel_values)
+            self.hash = hash_feature(self.feature)
 
         assert self.hash is not None
         self.pad_value = self.hash % (1 << 30)
@@ -292,13 +290,13 @@ class MultimodalDataItem:
             self.modality == Modality.IMAGE or self.modality == Modality.MULTI_IMAGES
         ) and (
             self.precomputed_features is not None
-            or not MultimodalDataItem.is_empty_list(self.pixel_values)
+            or not MultimodalDataItem.is_empty_list(self.feature)
         )
 
     def is_video(self):
         return (self.modality == Modality.VIDEO) and (
             self.precomputed_features is not None
-            or not MultimodalDataItem.is_empty_list(self.pixel_values)
+            or not MultimodalDataItem.is_empty_list(self.feature)
         )
 
     def is_valid(self) -> bool:
@@ -355,7 +353,6 @@ class MultimodalInputs:
 
         assert isinstance(ret.mm_items, list)
         ret.mm_items = [item for item in ret.mm_items if item.is_valid()]
-
         for item in ret.mm_items:
             item.set_pad_value()
 
@@ -1263,11 +1260,9 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             if mm_input is None:
                 continue
             for mm_item in mm_input.mm_items:
-                pixel_values = getattr(mm_item, "pixel_values", None)
-                if isinstance(pixel_values, torch.Tensor):
-                    mm_item.pixel_values = pixel_values.to(
-                        self.device, non_blocking=True
-                    )
+                feature = getattr(mm_item, "feature", None)
+                if isinstance(feature, torch.Tensor):
+                    mm_item.feature = feature.to(self.device, non_blocking=True)
         self.multimodal_inputs = multimodal_inputs
         self.seq_lens_sum = sum(seq_lens)
 

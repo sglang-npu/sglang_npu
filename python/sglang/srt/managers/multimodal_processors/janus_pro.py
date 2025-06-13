@@ -53,7 +53,7 @@ class JanusProImageProcessor(BaseMultimodalProcessor):
         return {
             "mm_items": [
                 MultimodalDataItem(
-                    pixel_values=res["pixel_values"],
+                    feature=res["pixel_values"],
                     image_emb_mask=res["images_emb_mask"],
                     image_offsets=image_offsets,
                     modality=Modality.IMAGE,

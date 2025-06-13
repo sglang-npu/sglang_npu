@@ -166,7 +166,7 @@ class LlavaImageProcessor(BaseMultimodalProcessor):
         return {
             "mm_items": [
                 MultimodalDataItem(
-                    pixel_values=pixel_values,
+                    feature=pixel_values,
                     image_sizes=image_sizes,
                     modality=modality,
                 )

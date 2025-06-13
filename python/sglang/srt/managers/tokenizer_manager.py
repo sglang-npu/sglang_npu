@@ -438,6 +438,18 @@ class TokenizerManager:
                 f"Receive: obj={dataclass_to_string_truncated(obj, max_length, skip_names=skip_names)}"
             )
 
+        def get_obj_send_size(obj):
+            if isinstance(obj, torch.Tensor):
+                # GPU tensor 也要考虑搬到 CPU 再发
+                return obj.element_size() * obj.nelement()
+            elif isinstance(obj, np.ndarray):
+                return obj.nbytes
+            else:
+                try:
+                    return len(pickle.dumps(obj))
+                except Exception:
+                    return 0
+
         async with self.model_update_lock.reader_lock:
             is_single = obj.is_single
             if is_single:
@@ -480,20 +492,20 @@ class TokenizerManager:
             input_ids = self.tokenizer.encode(input_text)
 
         if self.mm_processor and obj.contains_mm_input():
-            image_inputs = await self.mm_processor.process_mm_data_async(
+            mm_inputs = await self.mm_processor.process_mm_data_async(
                 image_data=obj.image_data,
                 input_text=input_text or input_ids,
                 request_obj=obj,
                 max_req_input_len=self.max_req_input_len,
             )
-            if image_inputs and "input_ids" in image_inputs:
-                input_ids = image_inputs["input_ids"]
+            if mm_inputs and "input_ids" in mm_inputs:
+                input_ids = mm_inputs["input_ids"]
         else:
-            image_inputs: Optional[Dict] = None
+            mm_inputs: Optional[Dict] = None
 
         self._validate_token_len(obj, input_ids)
         return self._create_tokenized_object(
-            obj, input_text, input_ids, input_embeds, image_inputs
+            obj, input_text, input_ids, input_embeds, mm_inputs
         )
 
     def _validate_token_len(
@@ -531,7 +543,7 @@ class TokenizerManager:
         input_text: str,
         input_ids: List[int],
         input_embeds: Optional[Union[List[float], None]] = None,
-        image_inputs: Optional[Dict] = None,
+        mm_inputs: Optional[Dict] = None,
     ) -> Union[TokenizedGenerateReqInput, TokenizedEmbeddingReqInput]:
         """Create a tokenized request object from common parameters."""
 
@@ -569,7 +581,7 @@ class TokenizerManager:
                 obj.rid,
                 input_text,
                 input_ids,
-                image_inputs,
+                mm_inputs,
                 sampling_params,
                 return_logprob,
                 logprob_start_len,
@@ -591,7 +603,7 @@ class TokenizerManager:
                 obj.rid,
                 input_text,
                 input_ids,
-                image_inputs,
+                mm_inputs,
                 sampling_params,
             )
 
@@ -647,6 +659,7 @@ class TokenizerManager:
         tokenized_obj: Union[TokenizedGenerateReqInput, TokenizedEmbeddingReqInput],
         created_time: Optional[float] = None,
     ):
+        current_device_index = torch.cuda.current_device()
         self.send_to_scheduler.send_pyobj(tokenized_obj)
         state = ReqState([], False, asyncio.Event(), obj, created_time=created_time)
         self.rid_to_state[obj.rid] = state
