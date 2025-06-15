@@ -108,7 +108,7 @@ async def async_request_sglang_generate(
     """
     Sends a streaming request to the server. Gathers text token-by-token.
     """
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(6000)) as session:
         headers = {}
         generated_text = ""
         ttft = 0.0

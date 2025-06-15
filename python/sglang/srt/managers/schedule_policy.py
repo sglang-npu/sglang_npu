@@ -357,8 +357,9 @@ class PrefillAdder:
         self.log_input_tokens += extend_input_len
 
     def add_chunked_req(self, req: Req):
-        truncated = req.extend_input_len > self.rem_chunk_tokens
-        req.extend_input_len = min(req.extend_input_len, self.rem_chunk_tokens)
+        rem_tokens_ = min(self.rem_chunk_tokens, int(self.rem_total_tokens))
+        truncated = req.extend_input_len > rem_tokens_
+        req.extend_input_len = min(req.extend_input_len, rem_tokens_)
         req.fill_ids = req.fill_ids[: len(req.prefix_indices) + req.extend_input_len]
         self.can_run_list.append(req)
         self._update_prefill_budget(
@@ -479,7 +480,6 @@ class PrefillAdder:
             return AddReqResult.OTHER
 
         with self._lock_node(req.last_node):
-            # self.rem_total_tokens may decrease after the lock acquisition
             if total_tokens >= self.rem_total_tokens:
                 return AddReqResult.NO_TOKEN
 
