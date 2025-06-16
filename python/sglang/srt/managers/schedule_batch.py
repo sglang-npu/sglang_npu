@@ -38,7 +38,7 @@ import logging
 import threading
 from enum import Enum, auto
 from http import HTTPStatus
-from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
@@ -436,7 +436,7 @@ class Req:
         self,
         rid: str,
         origin_input_text: str,
-        origin_input_ids: Tuple[int],
+        origin_input_ids: List[int],
         sampling_params: SamplingParams,
         return_logprob: bool = False,
         top_logprobs_num: int = 0,
@@ -467,7 +467,7 @@ class Req:
         # Each decode stage's output ids
         self.output_ids = []
         # fill_ids = origin_input_ids + output_ids. Updated if chunked.
-        self.fill_ids = None
+        self.fill_ids: List[int] = []
         self.session_id = session_id
         self.input_embeds = input_embeds
 
@@ -519,13 +519,13 @@ class Req:
 
         # Prefix info
         # The indices to kv cache for the shared prefix.
-        self.prefix_indices = []
+        self.prefix_indices: torch.Tensor = []
         # Number of tokens to run prefill.
         self.extend_input_len = 0
         # The relative logprob_start_len in an extend batch
         self.extend_logprob_start_len = 0
-        self.last_node = None
-        self.last_node_global = None
+        self.last_node: Any = None
+        # self.last_node_global = None
 
         # Whether or not if it is chunked. It increments whenever
         # it is chunked, and decrement whenever chunked request is
@@ -641,32 +641,18 @@ class Req:
         # Whether request reached finished condition
         return self.finished_reason is not None
 
+    def init_next_prefill(self):
+        self.fill_ids = self.origin_input_ids + self.output_ids
+        self.extend_input_len = len(self.fill_ids) - len(self.prefix_indices)
+
     def init_next_round_input(
         self,
-        tree_cache: Optional[BasePrefixCache] = None,
-        enable_hierarchical_cache=False,
+        tree_cache: BasePrefixCache,
     ):
         self.fill_ids = self.origin_input_ids + self.output_ids
-        if tree_cache is not None:
-            # tree cache is None if the prefix is not computed with tree cache.
-            if enable_hierarchical_cache:
-                self.prefix_indices, self.last_node, self.last_node_global = (
-                    tree_cache.match_prefix(
-                        key=self.adjust_max_prefix_ids(), include_evicted=True
-                    )
-                )
-            else:
-                self.prefix_indices, self.last_node = tree_cache.match_prefix(
-                    rid=self.rid, key=self.adjust_max_prefix_ids()
-                )
-        elif enable_hierarchical_cache:
-            # in case last_node is evicted during scheduling, we need to update the prefix_indices
-            while self.last_node.evicted:
-                self.prefix_indices = self.prefix_indices[
-                    : -len(self.last_node.host_value)
-                ]
-                self.last_node = self.last_node.parent
-
+        self.prefix_indices, self.last_node, _, _ = tree_cache.match_prefix(
+            rid=self.rid, key=self.adjust_max_prefix_ids()
+        )
         self.extend_input_len = len(self.fill_ids) - len(self.prefix_indices)
 
     def adjust_max_prefix_ids(self):
@@ -957,6 +943,17 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             )
         return req_pool_indices
 
+    def _raise_and_terminate(self, error_msg: str):
+        """Raise an error. This function will not return."""
+        logger.error(error_msg)
+        if self.tree_cache is not None:
+            try:
+                logger.error("Current tree cache status:")
+                self.tree_cache.pretty_print()
+            except Exception as e:
+                logger.error(f"Failed to pretty print tree cache: {e}")
+        raise RuntimeError(error_msg)
+
     def alloc_token_slots(self, num_tokens: int, backup_state: bool = False):
         if self.token_to_kv_pool_allocator.available_size() < num_tokens:
             if self.tree_cache is not None:
@@ -973,10 +970,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
                 f"Try to allocate {num_tokens} tokens.\n"
                 f"Available tokens: {self.token_to_kv_pool_allocator.available_size() + self.tree_cache.evictable_size()}\n"
             )
-            logger.error(error_msg)
-            if self.tree_cache is not None:
-                self.tree_cache.pretty_print()
-            raise RuntimeError(error_msg)
+            self._raise_and_terminate(error_msg)
 
         if backup_state:
             return out_cache_loc, state
@@ -1016,8 +1010,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
                 f"{self.token_to_kv_pool_allocator.available_size()=}\n"
                 f"{self.tree_cache.evictable_size()=}\n"
             )
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
+            self._raise_and_terminate(error_msg)
 
         if backup_state:
             return out_cache_loc, state
@@ -1051,8 +1044,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
                 f"{self.token_to_kv_pool_allocator.available_size()=}\n"
                 f"{self.tree_cache.evictable_size()=}\n"
             )
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
+            self._raise_and_terminate(error_msg)
 
         if backup_state:
             return out_cache_loc, state
