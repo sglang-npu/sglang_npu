@@ -28,16 +28,19 @@ from sglang.srt.managers.expert_location_dispatch import (
     topk_ids_logical_to_physical,
 )
 from sglang.srt.managers.schedule_batch import global_server_args_dict
-from sglang.srt.utils import get_compiler_backend, is_cuda, is_hip
+from sglang.srt.utils import get_compiler_backend, is_cuda, is_hip, get_bool_env_var
 
 _is_cuda = is_cuda()
 _is_hip = is_hip()
+_use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
 
 if _is_cuda:
     from sgl_kernel import moe_fused_gate
 
 if _is_cuda or _is_hip:
     from sgl_kernel import topk_softmax
+if _use_aiter:
+    from aiter import biased_grouped_topk as aiter_biased_grouped_topk
 
 
 def fused_topk_native(
@@ -298,6 +301,25 @@ def biased_grouped_topk(
             topk_ids = _biased_grouped_topk_postprocess(
                 topk_ids, expert_location_dispatch_info, num_token_non_padded
             )
+        return topk_weights, topk_ids
+    elif _use_aiter:
+        token = gating_output.shape[0]
+        device = gating_output.device
+        assert (
+            hidden_states.shape[0] == gating_output.shape[0]
+        ), "Number of tokens mismatch"
+        topk_weights = torch.empty((token, topk), dtype=torch.float32, device=device)
+        topk_ids = torch.empty((token, topk), dtype=torch.int32, device=device)
+        aiter_biased_grouped_topk(
+            gating_output,
+            correction_bias,
+            topk_weights,
+            topk_ids,
+            num_expert_group,
+            topk_group,
+            renormalize,
+            routed_scaling_factor,
+        )
         return topk_weights, topk_ids
     else:
         biased_grouped_topk_fn = (
