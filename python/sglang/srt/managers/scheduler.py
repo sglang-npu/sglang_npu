@@ -512,6 +512,9 @@ class Scheduler(
         if get_bool_env_var("SGLANG_GC_LOG"):
             configure_gc_logger()
 
+        self.global_log_hit_tokens = 0
+        self.global_log_input_tokens = 0
+
     def maybe_sleep_on_idle(self):
         if self.idle_sleeper is not None:
             self.idle_sleeper.maybe_sleep()
@@ -1283,6 +1286,10 @@ class Scheduler(
             f += f"#running-req: {running_bs}, "
             f += f"#queue-req: {len(self.waiting_queue)}"
 
+        self.global_log_hit_tokens += adder.log_hit_tokens
+        self.global_log_input_tokens += adder.log_input_tokens
+        f += f"\n    #cache_hit_rate: {self.global_log_hit_tokens/(self.global_log_hit_tokens+self.global_log_input_tokens)}"
+
         logger.info(f)
 
         if self.enable_metrics:
@@ -2020,6 +2027,10 @@ class Scheduler(
 
     def flush_cache(self):
         """Flush the memory pool and cache."""
+
+        self.global_log_hit_tokens = 0
+        self.global_log_input_tokens = 0
+
         if (
             len(self.waiting_queue) == 0
             and self.running_batch.is_empty()
