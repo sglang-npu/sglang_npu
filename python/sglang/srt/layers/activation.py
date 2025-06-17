@@ -29,11 +29,12 @@ from sglang.srt.distributed import (
     get_tensor_model_parallel_world_size,
 )
 from sglang.srt.layers.quantization.base_config import QuantizationConfig
-from sglang.srt.utils import is_cuda, is_hip, set_weight_attrs
+from sglang.srt.utils import is_cuda, is_hip, is_npu, set_weight_attrs
 from sglang.utils import resolve_obj_by_qualname
 
 _is_cuda = is_cuda()
 _is_hip = is_hip()
+_is_npu = is_npu()
 if _is_cuda or _is_hip:
     from sgl_kernel import gelu_and_mul, gelu_tanh_and_mul, silu_and_mul
 if _is_hip:
@@ -190,7 +191,7 @@ def get_cross_encoder_activation_function(config: PretrainedConfig):
         return nn.Identity()
 
 
-if not (_is_cuda or _is_hip):
+if not (_is_cuda or _is_hip or _is_npu):
     logger.info(
         "sgl-kernel is not available on Non-NV platforms. Fallback to other kernel libraries."
     )
