@@ -12,20 +12,26 @@ import torch
 import triton
 import triton.language as tl
 
+from sglang.math_utils import ceil_div
 from sglang.srt.layers.moe.topk import select_experts
+from sglang.srt.layers.quantization.fp8_kernel import (
+    per_token_group_quant_fp8,
+    scaled_fp8_quant,
+    sglang_per_token_group_quant_fp8,
+)
+from sglang.srt.layers.quantization.int8_kernel import (
+    per_token_group_quant_int8,
+    per_token_quant_int8,
+    sglang_per_token_group_quant_int8,
+)
 from sglang.srt.utils import (
     direct_register_custom_op,
     get_bool_env_var,
     get_device_name,
     is_cuda,
     is_hip,
-)
-
-logger = logging.getLogger(__name__)
-padding_size = 128 if bool(int(os.getenv("MOE_PADDING", "0"))) else 0
-
-enable_moe_align_block_size_triton = bool(
-    int(os.getenv("ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON", "0"))
+    log_info_on_rank0,
+    next_power_of_2,
 )
 
 _is_hip = is_hip()
@@ -33,25 +39,18 @@ _is_cuda = is_cuda()
 
 if _is_cuda:
     from sgl_kernel import gelu_and_mul, silu_and_mul
-
-    from sglang.srt.layers.quantization.fp8_kernel import (
-        sglang_per_token_group_quant_fp8,
-    )
-    from sgl_kernel import moe_align_block_size as sgl_moe_align_block_size
-
-    from sglang.srt.custom_op import scaled_fp8_quant as sgl_scaled_fp8_quant
-
-elif _is_hip:
-    from vllm import _custom_ops as vllm_ops # TODO: merge #4432
-    from sglang.srt.layers.quantization.fp8_kernel import (
-        per_token_group_quant_fp8,
-    )
-    from sgl_kernel import moe_align_block_size as sgl_moe_align_block_size
-
-    from sglang.srt.custom_op import scaled_fp8_quant as sgl_scaled_fp8_quant
 else:
     from vllm import _custom_ops as vllm_ops
-    
+
+if _is_cuda or _is_hip:
+    from sgl_kernel import moe_align_block_size as sgl_moe_align_block_size
+
+
+logger = logging.getLogger(__name__)
+padding_size = 128 if bool(int(os.getenv("SGLANG_MOE_PADDING", "0"))) else 0
+enable_moe_align_block_size_triton = bool(
+    int(os.getenv("ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON", "0"))
+)
 
 
 @triton.jit
@@ -352,6 +351,7 @@ def fused_moe_kernel(
     use_fp8_w8a8: tl.constexpr,
     use_int8_w8a8: tl.constexpr,
     use_int8_w8a16: tl.constexpr,
+    per_channel_quant: tl.constexpr,
     even_Ks: tl.constexpr,
 ):
     """
@@ -426,20 +426,7 @@ def fused_moe_kernel(
         )
         b_scale = tl.load(b_scale_ptrs)
 
-    if use_fp8_w8a8:
-        # block-wise
-        if group_k > 0 and group_n > 0:
-            a_scale_ptrs = a_scale_ptr + (offs_token // top_k) * stride_asm
-            offs_bsn = offs_bn // group_n
-            b_scale_ptrs = (
-                b_scale_ptr + off_experts * stride_bse + offs_bsn * stride_bsn
-            )
-        # tensor-wise
-        else:
-            a_scale = tl.load(a_scale_ptr)
-            b_scale = tl.load(b_scale_ptr + off_experts)
-
-    if use_int8_w8a8:
+    if use_fp8_w8a8 or use_int8_w8a8:
         # block-wise
         if group_k > 0 and group_n > 0:
             a_scale_ptrs = a_scale_ptr + (offs_token // top_k) * stride_asm
@@ -448,8 +435,7 @@ def fused_moe_kernel(
                 b_scale_ptr + off_experts * stride_bse + offs_bsn * stride_bsn
             )
         # channel-wise
-        else:
-            # Load per-column scale for weights
+        elif per_channel_quant:
             b_scale_ptrs = (
                 b_scale_ptr + off_experts * stride_bse + offs_bn[None, :] * stride_bsn
             )
@@ -457,6 +443,10 @@ def fused_moe_kernel(
             # Load per-token scale for activations
             a_scale_ptrs = a_scale_ptr + (offs_token // top_k) * stride_asm
             a_scale = tl.load(a_scale_ptrs, mask=token_mask, other=0.0)[:, None]
+        # tensor-wise
+        else:
+            a_scale = tl.load(a_scale_ptr)
+            b_scale = tl.load(b_scale_ptr + off_experts)
 
     # -----------------------------------------------------------
     # Iterate to compute a block of the C matrix.
@@ -526,10 +516,6 @@ def fused_moe_kernel(
     c_ptrs = c_ptr + stride_cm * offs_token[:, None] + stride_cn * offs_cn[None, :]
     c_mask = token_mask[:, None] & (offs_cn[None, :] < N)
     tl.store(c_ptrs, accumulator, mask=c_mask)
-
-
-def ceil_div(a, b):
-    return (a + b - 1) // b
 
 
 @triton.jit
@@ -661,6 +647,61 @@ def moe_align_block_size_triton(
     )
 
 
+@triton.jit
+def init_sorted_ids_and_cumsum_buffer_kernel(
+    sorted_ids_ptr,
+    cumsum_buffer_ptr,
+    max_num_tokens_padded,
+    topk_ids_numel,
+    num_experts: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+    ALIGNED_NUM_EXPERTS_P1: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+
+    sorted_ids_blocks = tl.cdiv(max_num_tokens_padded, BLOCK_SIZE)
+
+    if pid < sorted_ids_blocks:
+        mask = offsets < max_num_tokens_padded
+        tl.store(
+            sorted_ids_ptr + offsets,
+            tl.full((BLOCK_SIZE,), topk_ids_numel, dtype=tl.int32),
+            mask=mask,
+        )
+    elif pid == sorted_ids_blocks:
+        offset_e = tl.arange(0, ALIGNED_NUM_EXPERTS_P1)
+        mask_e = offset_e < num_experts + 1
+        tl.store(
+            cumsum_buffer_ptr + offset_e,
+            tl.zeros((ALIGNED_NUM_EXPERTS_P1,), dtype=tl.int32),
+            mask=mask_e,
+        )
+
+
+def init_sorted_ids_and_cumsum_buffer(
+    max_num_tokens_padded: int, topk_ids_numel: int, num_experts: int, device="cuda"
+):
+    sorted_ids = torch.empty((max_num_tokens_padded,), dtype=torch.int32, device=device)
+    cumsum_buffer = torch.empty((num_experts + 1,), dtype=torch.int32, device=device)
+
+    BLOCK_SIZE = 1024
+    sorted_ids_blocks = triton.cdiv(max_num_tokens_padded, BLOCK_SIZE)
+    grid = (sorted_ids_blocks + 1,)
+
+    init_sorted_ids_and_cumsum_buffer_kernel[grid](
+        sorted_ids,
+        cumsum_buffer,
+        max_num_tokens_padded,
+        topk_ids_numel,
+        num_experts,
+        BLOCK_SIZE,
+        next_power_of_2(num_experts + 1),
+    )
+
+    return sorted_ids, cumsum_buffer
+
+
 def moe_align_block_size(
     topk_ids: torch.Tensor, block_size: int, num_experts: int
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -702,10 +743,9 @@ def moe_align_block_size(
         by block_size for proper block matrix operations.
     """
     max_num_tokens_padded = topk_ids.numel() + num_experts * (block_size - 1)
-    sorted_ids = torch.empty(
-        (max_num_tokens_padded,), dtype=torch.int32, device=topk_ids.device
+    sorted_ids, cumsum_buffer = init_sorted_ids_and_cumsum_buffer(
+        max_num_tokens_padded, topk_ids.numel(), num_experts, topk_ids.device
     )
-    sorted_ids.fill_(topk_ids.numel())
     max_num_m_blocks = triton.cdiv(max_num_tokens_padded, block_size)
     expert_ids = torch.empty(
         (max_num_m_blocks,), dtype=torch.int32, device=topk_ids.device
@@ -721,13 +761,10 @@ def moe_align_block_size(
             num_tokens_post_pad,
         )
     else:
-        token_cnts_buffer = torch.zeros(
+        token_cnts_buffer = torch.empty(
             (num_experts + 1) * num_experts,
             dtype=torch.int32,
             device=topk_ids.device,
-        )
-        cumsum_buffer = torch.zeros(
-            num_experts + 1, dtype=torch.int32, device=topk_ids.device
         )
 
         sgl_moe_align_block_size(
@@ -763,19 +800,10 @@ def invoke_fused_moe_kernel(
     use_int8_w8a8: bool,
     use_int8_w8a16: bool,
     use_int4_w4a16: bool,
+    per_channel_quant: bool,
     block_shape: Optional[List[int]] = None,
     no_combine: bool = False,
 ) -> None:
-    from sglang.srt.layers.quantization.int8_kernel import (
-        per_token_group_quant_int8,
-        per_token_quant_int8,
-    )
-
-    if _is_cuda:
-        from sglang.srt.layers.quantization.fp8_kernel import (
-            sglang_per_token_group_quant_fp8,
-        )
-
     assert topk_weights.stride(1) == 1
     assert sorted_token_ids.stride(0) == 1
 
@@ -785,10 +813,10 @@ def invoke_fused_moe_kernel(
         if block_shape is None:
             # activation tensor-wise fp8 quantization, dynamic or static
             padded_size = padding_size
-            if _is_cuda or is_hip:
-                A, A_scale = sgl_scaled_fp8_quant(A, A_scale)
-            else:
-                A, A_scale = vllm_ops.scaled_fp8_quant(A, A_scale)
+            # activations apply per-token quantization when weights apply per-channel quantization by default
+            A, A_scale = scaled_fp8_quant(
+                A, A_scale, use_per_token_if_dynamic=per_channel_quant
+            )
         else:
             # activation block-wise fp8 quantization
             assert len(block_shape) == 2
@@ -804,12 +832,18 @@ def invoke_fused_moe_kernel(
         assert B_scale is not None
         if block_shape is None:
             # activation channel-wise int8 quantization
+            assert (
+                per_channel_quant
+            ), "int8 quantization only supports channel-wise quantization except for block-wise quantization"
             A, A_scale = per_token_quant_int8(A)
         else:
             # activation block-wise int8 quantization
             assert len(block_shape) == 2
             block_n, block_k = block_shape[0], block_shape[1]
-            A, A_scale = per_token_group_quant_int8(A, block_k)
+            if _is_cuda:
+                A, A_scale = sglang_per_token_group_quant_int8(A, block_k)
+            else:
+                A, A_scale = per_token_group_quant_int8(A, block_k)
             assert triton.cdiv(A.shape[-1], block_k) == A_scale.shape[-1]
             assert triton.cdiv(B.shape[-2], block_n) == B_scale.shape[-2]
             assert triton.cdiv(B.shape[-1], block_k) == B_scale.shape[-1]
@@ -912,6 +946,7 @@ def invoke_fused_moe_kernel(
             use_fp8_w8a8=use_fp8_w8a8,
             use_int8_w8a8=use_int8_w8a8,
             use_int8_w8a16=use_int8_w8a16,
+            per_channel_quant=per_channel_quant,
             even_Ks=even_Ks,
             **config,
         )
@@ -944,26 +979,58 @@ def get_moe_configs(
     kernel on a given batch size bs, the closest batch size in the grid should
     be picked and the associated configuration chosen to invoke the kernel.
     """
+    # Supported Triton versions, should be sorted from the newest to the oldest
+    supported_triton_versions = ["3.3.1", "3.2.0", "3.1.0"]
 
     # First look up if an optimized configuration is available in the configs
     # directory
     json_file_name = get_config_file_name(E, N, dtype, [block_n, block_k])
 
+    # We found that using the fused_moe_kernel config from Triton 3.1.0 with Triton 3.2.0 results in negative performance gains,
+    # so we also include the Triton version as a key for finding the fused_moe_kernel config to achieve the best performance.
+    triton_version = triton.__version__
+    version_dir = f"triton_{triton_version.replace('.', '_')}"
     config_file_path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)), "configs", json_file_name
+        os.path.dirname(os.path.realpath(__file__)),
+        "configs",
+        version_dir,
+        json_file_name,
     )
     if os.path.exists(config_file_path):
         with open(config_file_path) as f:
-            logger.info("Using configuration from %s for MoE layer.", config_file_path)
+            # Please note that although we find the config files, performance might still be suboptimal.
+            # This is because the tuning environment might differ from your current environment.
+            # For example, updating the Triton version might cause all old configs to become suboptimal.
+            # To achieve the best performance, consider re-tuning the Triton fused MOE kernel in your environment.
+            # For the tuning method, refer to: https://github.com/sgl-project/sglang/tree/main/benchmark/kernels/fused_moe_triton
+            logger.info(f"Using MoE kernel config from {config_file_path}.")
             # If a configuration has been found, return it
             return {int(key): val for key, val in json.load(f).items()}
+
+    # Searching for other triton versions that supports the same config
+    for try_triton_version in supported_triton_versions:
+        if try_triton_version == triton_version:
+            continue
+        try_config_file_path = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)),
+            "configs",
+            f"triton_{try_triton_version.replace('.', '_')}",
+            json_file_name,
+        )
+        if os.path.exists(try_config_file_path):
+            with open(try_config_file_path) as f:
+                logger.warning(
+                    f"Config file not found at {config_file_path}. Fallback to triton version {try_triton_version} and use MoE kernel config from {try_config_file_path}. Performance might be sub-optimal!",
+                )
+                # If a configuration has been found, return it
+                return {int(key): val for key, val in json.load(f).items()}
 
     # If no optimized configuration is available, we will use the default
     # configuration
     logger.warning(
         (
-            "Using default MoE config. Performance might be sub-optimal! "
-            "Config file not found at %s"
+            "Using default MoE kernel config. Performance might be sub-optimal! "
+            "Config file not found at %s, you can create them with https://github.com/sgl-project/sglang/tree/main/benchmark/kernels/fused_moe_triton"
         ),
         config_file_path,
     )
@@ -1000,7 +1067,7 @@ def get_default_config(
                     "num_stages": 2 if _is_hip else 4,
                 }
         else:
-            # Block-wise quant: BLOCK_SIZE_K must be divisable by block_shape[1]
+            # Block-wise quant: BLOCK_SIZE_K must be divisible by block_shape[1]
             config = {
                 "BLOCK_SIZE_M": 64,
                 "BLOCK_SIZE_N": block_shape[0],
@@ -1094,6 +1161,7 @@ def inplace_fused_experts(
     use_int8_w8a8: bool = False,
     use_int8_w8a16: bool = False,
     use_int4_w4a16: bool = False,
+    per_channel_quant: bool = False,
     w1_scale: Optional[torch.Tensor] = None,
     w2_scale: Optional[torch.Tensor] = None,
     w1_zp: Optional[torch.Tensor] = None,
@@ -1101,6 +1169,7 @@ def inplace_fused_experts(
     a1_scale: Optional[torch.Tensor] = None,
     a2_scale: Optional[torch.Tensor] = None,
     block_shape: Optional[List[int]] = None,
+    routed_scaling_factor: Optional[float] = None,
 ) -> None:
     fused_experts_impl(
         hidden_states,
@@ -1115,6 +1184,7 @@ def inplace_fused_experts(
         use_int8_w8a8,
         use_int8_w8a16,
         use_int4_w4a16,
+        per_channel_quant,
         w1_scale,
         w2_scale,
         w1_zp,
@@ -1122,6 +1192,8 @@ def inplace_fused_experts(
         a1_scale,
         a2_scale,
         block_shape,
+        False,
+        routed_scaling_factor,
     )
 
 
@@ -1137,6 +1209,7 @@ def inplace_fused_experts_fake(
     use_int8_w8a8: bool = False,
     use_int8_w8a16: bool = False,
     use_int4_w4a16: bool = False,
+    per_channel_quant: bool = False,
     w1_scale: Optional[torch.Tensor] = None,
     w2_scale: Optional[torch.Tensor] = None,
     w1_zp: Optional[torch.Tensor] = None,
@@ -1144,6 +1217,7 @@ def inplace_fused_experts_fake(
     a1_scale: Optional[torch.Tensor] = None,
     a2_scale: Optional[torch.Tensor] = None,
     block_shape: Optional[List[int]] = None,
+    routed_scaling_factor: Optional[float] = None,
 ) -> None:
     pass
 
@@ -1168,6 +1242,7 @@ def outplace_fused_experts(
     use_int8_w8a8: bool = False,
     use_int8_w8a16: bool = False,
     use_int4_w4a16: bool = False,
+    per_channel_quant: bool = False,
     w1_scale: Optional[torch.Tensor] = None,
     w2_scale: Optional[torch.Tensor] = None,
     w1_zp: Optional[torch.Tensor] = None,
@@ -1176,6 +1251,7 @@ def outplace_fused_experts(
     a2_scale: Optional[torch.Tensor] = None,
     block_shape: Optional[List[int]] = None,
     no_combine: bool = False,
+    routed_scaling_factor: Optional[float] = None,
 ) -> torch.Tensor:
     return fused_experts_impl(
         hidden_states,
@@ -1190,6 +1266,7 @@ def outplace_fused_experts(
         use_int8_w8a8,
         use_int8_w8a16,
         use_int4_w4a16,
+        per_channel_quant,
         w1_scale,
         w2_scale,
         w1_zp,
@@ -1198,6 +1275,7 @@ def outplace_fused_experts(
         a2_scale,
         block_shape,
         no_combine=no_combine,
+        routed_scaling_factor=routed_scaling_factor,
     )
 
 
@@ -1213,6 +1291,7 @@ def outplace_fused_experts_fake(
     use_int8_w8a8: bool = False,
     use_int8_w8a16: bool = False,
     use_int4_w4a16: bool = False,
+    per_channel_quant: bool = False,
     w1_scale: Optional[torch.Tensor] = None,
     w2_scale: Optional[torch.Tensor] = None,
     w1_zp: Optional[torch.Tensor] = None,
@@ -1221,6 +1300,7 @@ def outplace_fused_experts_fake(
     a2_scale: Optional[torch.Tensor] = None,
     block_shape: Optional[List[int]] = None,
     no_combine: bool = False,
+    routed_scaling_factor: Optional[float] = None,
 ) -> torch.Tensor:
     return torch.empty_like(hidden_states)
 
@@ -1246,6 +1326,7 @@ def fused_experts(
     use_int8_w8a8: bool = False,
     use_int8_w8a16: bool = False,
     use_int4_w4a16: bool = False,
+    per_channel_quant: bool = False,
     w1_scale: Optional[torch.Tensor] = None,
     w2_scale: Optional[torch.Tensor] = None,
     w1_zp: Optional[torch.Tensor] = None,
@@ -1254,7 +1335,9 @@ def fused_experts(
     a2_scale: Optional[torch.Tensor] = None,
     block_shape: Optional[List[int]] = None,
     no_combine: bool = False,
+    routed_scaling_factor: Optional[float] = None,
 ):
+
     if inplace:
         assert not no_combine, "no combine + inplace makes no sense"
         torch.ops.sglang.inplace_fused_experts(
@@ -1269,6 +1352,7 @@ def fused_experts(
             use_int8_w8a8,
             use_int8_w8a16,
             use_int4_w4a16,
+            per_channel_quant,
             w1_scale,
             w2_scale,
             w1_zp,
@@ -1276,6 +1360,7 @@ def fused_experts(
             a1_scale,
             a2_scale,
             block_shape,
+            routed_scaling_factor,
         )
         return hidden_states
     else:
@@ -1291,6 +1376,7 @@ def fused_experts(
             use_int8_w8a8,
             use_int8_w8a16,
             use_int4_w4a16,
+            per_channel_quant,
             w1_scale,
             w2_scale,
             w1_zp,
@@ -1299,7 +1385,100 @@ def fused_experts(
             a2_scale,
             block_shape,
             no_combine=no_combine,
+            routed_scaling_factor=routed_scaling_factor,
         )
+
+
+# _moe_sum_reduce_kernel kernel modified from https://github.com/ModelTC/lightllm/blob/main/lightllm/common/fused_moe/moe_sum_reduce.py
+@triton.jit
+def _moe_sum_reduce_kernel(
+    input_ptr,
+    input_stride_0,
+    input_stride_1,
+    input_stride_2,
+    output_ptr,
+    output_stride_0,
+    output_stride_1,
+    token_num: int,
+    topk_num: int,
+    hidden_dim: int,
+    routed_scaling_factor: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_DIM: tl.constexpr,
+    NUM_STAGE: tl.constexpr,
+):
+    input_stride_0 = tl.cast(input_stride_0, dtype=tl.int64)
+    input_stride_1 = tl.cast(input_stride_1, dtype=tl.int64)
+    output_stride_0 = tl.cast(output_stride_0, dtype=tl.int64)
+
+    token_block_id = tl.program_id(0)
+    dim_block_id = tl.program_id(1)
+
+    token_start = token_block_id * BLOCK_M
+    token_end = min((token_block_id + 1) * BLOCK_M, token_num)
+
+    dim_start = dim_block_id * BLOCK_DIM
+    dim_end = min((dim_block_id + 1) * BLOCK_DIM, hidden_dim)
+
+    offs_dim = dim_start + tl.arange(0, BLOCK_DIM)
+
+    for token_index in range(token_start, token_end):
+        accumulator = tl.zeros((BLOCK_DIM,), dtype=tl.float32)
+        input_t_ptr = input_ptr + token_index * input_stride_0 + offs_dim
+        for i in tl.range(0, topk_num, num_stages=NUM_STAGE):
+            tmp = tl.load(
+                input_t_ptr + i * input_stride_1, mask=offs_dim < dim_end, other=0.0
+            )
+            accumulator += tmp
+        accumulator = accumulator * routed_scaling_factor
+        store_t_ptr = output_ptr + token_index * output_stride_0 + offs_dim
+        tl.store(
+            store_t_ptr,
+            accumulator.to(input_ptr.dtype.element_ty),
+            mask=offs_dim < dim_end,
+        )
+
+
+def moe_sum_reduce_triton(
+    input: torch.Tensor, output: torch.Tensor, routed_scaling_factor: float
+):
+    assert input.is_contiguous()
+    assert output.is_contiguous()
+
+    token_num, topk_num, hidden_dim = input.shape
+    assert output.shape[0] == token_num and output.shape[1] == hidden_dim
+
+    BLOCK_M = 1
+    BLOCK_DIM = 2048
+    NUM_STAGE = 1
+    num_warps = 8
+
+    grid = (
+        triton.cdiv(token_num, BLOCK_M),
+        triton.cdiv(hidden_dim, BLOCK_DIM),
+    )
+
+    _moe_sum_reduce_kernel[grid](
+        input,
+        *input.stride(),
+        output,
+        *output.stride(),
+        token_num=token_num,
+        topk_num=topk_num,
+        hidden_dim=hidden_dim,
+        routed_scaling_factor=routed_scaling_factor,
+        BLOCK_M=BLOCK_M,
+        BLOCK_DIM=BLOCK_DIM,
+        NUM_STAGE=NUM_STAGE,
+        num_warps=num_warps,
+    )
+    return
+
+
+@torch.compile
+def moe_sum_reduce_torch_compile(x, out, routed_scaling_factor):
+    torch.sum(x, dim=1, out=out)
+    out.mul_(routed_scaling_factor)
 
 
 def fused_experts_impl(
@@ -1315,6 +1494,7 @@ def fused_experts_impl(
     use_int8_w8a8: bool = False,
     use_int8_w8a16: bool = False,
     use_int4_w4a16: bool = False,
+    per_channel_quant: bool = False,
     w1_scale: Optional[torch.Tensor] = None,
     w2_scale: Optional[torch.Tensor] = None,
     w1_zp: Optional[torch.Tensor] = None,
@@ -1323,12 +1503,13 @@ def fused_experts_impl(
     a2_scale: Optional[torch.Tensor] = None,
     block_shape: Optional[List[int]] = None,
     no_combine: bool = False,
+    routed_scaling_factor: Optional[float] = None,
 ):
     padded_size = padding_size
     if (
         not (use_fp8_w8a8 or use_int8_w8a8)
         or block_shape is not None
-        or (_is_hip and get_bool_env_var("CK_MOE"))
+        or (_is_hip and get_bool_env_var("SGLANG_USE_AITER"))
     ):
         padded_size = 0
 
@@ -1451,6 +1632,7 @@ def fused_experts_impl(
             use_int8_w8a8=use_int8_w8a8,
             use_int8_w8a16=use_int8_w8a16,
             use_int4_w4a16=use_int4_w4a16,
+            per_channel_quant=per_channel_quant,
             block_shape=block_shape,
         )
         if activation == "silu":
@@ -1494,31 +1676,50 @@ def fused_experts_impl(
             use_int8_w8a8=use_int8_w8a8,
             use_int8_w8a16=use_int8_w8a16,
             use_int4_w4a16=use_int4_w4a16,
+            per_channel_quant=per_channel_quant,
             block_shape=block_shape,
         )
 
+        if routed_scaling_factor is None:
+            routed_scaling_factor = 1.0
+
         if no_combine:
             pass
-        elif _is_hip:
-            from aiter import moe_sum
-            moe_sum(
-                intermediate_cache3.view(*intermediate_cache3.shape),
-                out_hidden_states[begin_chunk_idx:end_chunk_idx],
-            )
-        else:
-            if topk_ids.shape[1] == 1:
+        elif _is_cuda:
+            if topk_ids.shape[1] == 1 and routed_scaling_factor == 1.0:
                 pass  # we write directly into out_hidden_states
-            elif topk_ids.shape[1] == 2:
+            elif topk_ids.shape[1] == 2 and routed_scaling_factor == 1.0:
                 torch.add(
                     intermediate_cache3[:, 0],
                     intermediate_cache3[:, 1],
                     out=out_hidden_states[begin_chunk_idx:end_chunk_idx],
                 ).squeeze(dim=1)
-            elif topk_ids.shape[1] > 2:
-                torch.sum(
+            else:
+                # According to micro benchmark results, torch.compile can get better performance for small token.
+                if tokens_in_chunk <= 32:
+                    moe_sum_reduce_torch_compile(
+                        intermediate_cache3.view(*intermediate_cache3.shape),
+                        out_hidden_states[begin_chunk_idx:end_chunk_idx],
+                        routed_scaling_factor,
+                    )
+                else:
+                    moe_sum_reduce_triton(
+                        intermediate_cache3.view(*intermediate_cache3.shape),
+                        out_hidden_states[begin_chunk_idx:end_chunk_idx],
+                        routed_scaling_factor,
+                    )
+        else:
+            if _is_hip and get_bool_env_var("SGLANG_USE_AITER"):
+                from aiter import moe_sum
+
+                moe_sum(
                     intermediate_cache3.view(*intermediate_cache3.shape),
-                    dim=1,
-                    out=out_hidden_states[begin_chunk_idx:end_chunk_idx],
+                    out_hidden_states[begin_chunk_idx:end_chunk_idx],
+                )
+            else:
+                vllm_ops.moe_sum(
+                    intermediate_cache3.view(*intermediate_cache3.shape),
+                    out_hidden_states[begin_chunk_idx:end_chunk_idx],
                 )
 
     return out_hidden_states
@@ -1535,12 +1736,14 @@ def fused_moe(
     activation: str = "silu",
     use_grouped_topk: bool = False,
     num_expert_group: Optional[int] = None,
+    num_fused_shared_experts: int = 0,
     topk_group: Optional[int] = None,
     custom_routing_function: Optional[Callable] = None,
     use_fp8_w8a8: bool = False,
     use_int8_w8a8: bool = False,
     use_int8_w8a16: bool = False,
     use_int4_w4a16: bool = False,
+    per_channel_quant: bool = False,
     w1_scale: Optional[torch.Tensor] = None,
     w2_scale: Optional[torch.Tensor] = None,
     w1_zp: Optional[torch.Tensor] = None,
@@ -1549,6 +1752,7 @@ def fused_moe(
     a2_scale: Optional[torch.Tensor] = None,
     block_shape: Optional[List[int]] = None,
     no_combine: bool = False,
+    routed_scaling_factor: Optional[float] = None,
 ) -> torch.Tensor:
     """
     This function computes a Mixture of Experts (MoE) layer using two sets of
@@ -1602,7 +1806,9 @@ def fused_moe(
         renormalize=renormalize,
         topk_group=topk_group,
         num_expert_group=num_expert_group,
+        num_fused_shared_experts=num_fused_shared_experts,
         custom_routing_function=custom_routing_function,
+        routed_scaling_factor=routed_scaling_factor,
     )
 
     return fused_experts(
@@ -1617,6 +1823,7 @@ def fused_moe(
         use_int8_w8a8=use_int8_w8a8,
         use_int8_w8a16=use_int8_w8a16,
         use_int4_w4a16=use_int4_w4a16,
+        per_channel_quant=per_channel_quant,
         w1_scale=w1_scale,
         w2_scale=w2_scale,
         w1_zp=w1_zp,
@@ -1625,4 +1832,5 @@ def fused_moe(
         a2_scale=a2_scale,
         block_shape=block_shape,
         no_combine=no_combine,
+        routed_scaling_factor=routed_scaling_factor,
     )

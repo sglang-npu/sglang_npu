@@ -19,15 +19,18 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
+import transformers
 from transformers import (
+    AutoConfig,
     AutoModel,
     AutoModelForCausalLM,
     AutoModelForVision2Seq,
     AutoProcessor,
+    GenerationConfig,
 )
 
+from sglang.srt.entrypoints.engine import Engine
 from sglang.srt.hf_transformers_utils import get_tokenizer
-from sglang.srt.server import Engine
 from sglang.srt.utils import load_image
 from sglang.test.test_utils import DEFAULT_PORT_FOR_SRT_TEST_RUNNER, calculate_rouge_l
 
@@ -38,6 +41,21 @@ DEFAULT_PROMPTS = [
     "AI is a field of computer science focused on",
     # the output of gemma-2-2b from SRT is unstable on the commented prompt
     # "The capital of France is",
+]
+TEST_RERANK_QUERY_DOCS = [
+    {
+        "query": "How many people live in Berlin?",
+        "documents": [
+            "Berlin is well known for its museums.",
+        ],
+    },
+    {
+        "query": "How many people live in Berlin?",
+        "documents": [
+            "Berlin had a population of 3,520,031 registered inhabitants in an area of 891.82 square kilometers.",
+            "Berlin is well known for its museums.",
+        ],
+    },
 ]
 
 dirpath = os.path.dirname(__file__)
@@ -51,6 +69,8 @@ NUM_TOP_LOGPROBS = 5
 def get_dtype_str(torch_dtype):
     if torch_dtype is torch.float16:
         return "float16"
+    if torch_dtype is torch.float32:
+        return "float32"
     else:
         raise NotImplementedError()
 
@@ -188,25 +208,18 @@ class HFRunner:
             if attention_mask is not None:
                 attention_mask = attention_mask.to(inputs_embeds.device)
 
-        outputs = self.model.model(
-            input_ids=None,
+        outputs = self.model(
+            input_ids=input_ids,
             position_ids=position_ids,
             attention_mask=attention_mask,
             past_key_values=past_key_values,
+            output_hidden_states=True,
+            return_dict=True,
             inputs_embeds=inputs_embeds,
+            image_grid_thw=image_grid_thw,
         )
 
-        pooling_mask = attention_mask if pooling_mask is None else pooling_mask
-        left_padding = pooling_mask[:, -1].sum() == pooling_mask.shape[0]  # TODO
-        if left_padding:
-            embeddings = outputs.last_hidden_state[:, -1]
-        else:
-            sequence_lengths = pooling_mask.sum(dim=1) - 1
-            batch_size = outputs.last_hidden_state.shape[0]
-            embeddings = outputs.last_hidden_state[
-                torch.arange(batch_size, device=outputs.last_hidden_state.device),
-                sequence_lengths,
-            ]
+        embeddings = outputs.hidden_states[-1][:, -1]
         embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
         return embeddings.contiguous()
 
@@ -216,7 +229,12 @@ class HFRunner:
 
         # Load the model and tokenizer
         if self.model_type == "generation":
-            self.base_model = AutoModelForCausalLM.from_pretrained(
+            config = AutoConfig.from_pretrained(model_path)
+            if model_archs := getattr(config, "architectures"):
+                model_cls = getattr(transformers, model_archs[0])
+            else:
+                model_cls = AutoModelForCausalLM
+            self.base_model = model_cls.from_pretrained(
                 model_path,
                 torch_dtype=torch_dtype,
                 trust_remote_code=self.trust_remote_code,
@@ -238,7 +256,7 @@ class HFRunner:
                 self.model = _get_sentence_transformer_embedding_model(
                     model_path, torch_dtype
                 )
-        elif self.model_type == "reward":
+        elif self.model_type == "reward" or self.model_type == "cross_encoder":
             from transformers import AutoModelForSequenceClassification
 
             self.model = AutoModelForSequenceClassification.from_pretrained(
@@ -300,6 +318,15 @@ class HFRunner:
                     else:
                         logits = self.model.encode(prompts).tolist()
                     out_queue.put(ModelOutput(embed_logits=logits))
+                elif self.model_type == "cross_encoder":
+                    inputs = self.tokenizer(
+                        prompts, padding=True, return_tensors="pt"
+                    ).to("cuda")
+                    scores = self.model(**inputs).logits
+                    scores = scores.squeeze().tolist()
+                    if not isinstance(scores, list):
+                        scores = [scores]
+                    out_queue.put(ModelOutput(scores=scores))
 
                 elif self.model_type == "reward":
                     scores = []
@@ -319,7 +346,9 @@ class HFRunner:
 
     def forward(
         self,
-        prompts: Union[List[str], List[torch.Tensor]] = DEFAULT_PROMPTS,
+        prompts: Union[
+            List[List[str]], List[str], List[torch.Tensor]
+        ] = DEFAULT_PROMPTS,
         image_data: Optional[List[str]] = None,
         max_new_tokens: int = 8,
         lora_paths: Optional[List[str]] = None,
@@ -380,13 +409,17 @@ class HFRunner:
                 model = base_model
 
             outputs = model.generate(
-                input_ids,
-                do_sample=False,
-                temperature=None,
-                top_p=None,
-                max_new_tokens=max_new_tokens,
-                return_dict_in_generate=True,
-                output_scores=(not output_str_only),
+                input_ids=input_ids,
+                generation_config=GenerationConfig(
+                    do_sample=False,
+                    temperature=None,
+                    top_p=None,
+                    max_new_tokens=max_new_tokens,
+                    return_dict_in_generate=True,
+                    output_scores=(not output_str_only),
+                    # make sure to disable compile
+                    disable_compile=True,
+                ),
             )
 
             text = tokenizer.decode(
@@ -428,6 +461,10 @@ class HFRunner:
                     )
                 del input_logits
 
+            if lora_paths is not None and lora_paths[i] is not None:
+                # Unload the LoRA adapter if it is used
+                model.unload()
+
         return ModelOutput(
             output_strs=output_strs,
             top_input_logprobs=top_input_logprobs,
@@ -444,9 +481,11 @@ class SRTRunner:
         torch_dtype: torch.dtype,
         model_type: str,
         tp_size: int = 1,
+        impl: str = "auto",
         port: int = DEFAULT_PORT_FOR_SRT_TEST_RUNNER,
         lora_paths: List[str] = None,
         max_loras_per_batch: int = 4,
+        attention_backend: Optional[str] = None,
         lora_backend: str = "triton",
         disable_cuda_graph: bool = False,
         disable_radix_cache: bool = False,
@@ -463,6 +502,7 @@ class SRTRunner:
         speculative_num_draft_tokens: Optional[int] = None,
         disable_overlap_schedule: bool = False,
         disable_custom_all_reduce: bool = False,
+        torchao_config: Optional[str] = None,
     ):
         self.model_type = model_type
         self.is_generation = model_type == "generation"
@@ -481,12 +521,15 @@ class SRTRunner:
             tp_size=tp_size,
             dtype=get_dtype_str(torch_dtype),
             port=port,
+            impl=impl,
+            torchao_config=torchao_config,
             mem_fraction_static=mem_fraction_static,
             trust_remote_code=trust_remote_code,
             is_embedding=not self.is_generation,
             lora_paths=lora_paths,
             max_loras_per_batch=max_loras_per_batch,
             lora_backend=lora_backend,
+            attention_backend=attention_backend,
             disable_cuda_graph=disable_cuda_graph,
             disable_radix_cache=disable_radix_cache,
             chunked_prefill_size=chunked_prefill_size,
@@ -509,7 +552,9 @@ class SRTRunner:
 
     def forward(
         self,
-        prompts: Union[List[str], List[torch.Tensor]] = DEFAULT_PROMPTS,
+        prompts: Union[
+            List[List[str]], List[str], List[torch.Tensor]
+        ] = DEFAULT_PROMPTS,
         image_data: Optional[List[str]] = None,
         max_new_tokens: int = 8,
         lora_paths: Optional[List[str]] = None,
@@ -535,6 +580,13 @@ class SRTRunner:
                 else:
                     logits = [response["embedding"]]
                 return ModelOutput(embed_logits=logits)
+            # cross encoder model
+            elif self.model_type == "cross_encoder":
+                response = self.engine.rerank(prompts)
+                if not isinstance(response, list):
+                    response = [response]
+                scores = [x["embedding"] for x in response]
+                return ModelOutput(scores=scores)
             # reward model
             else:
                 response = self.engine.encode(prompts)

@@ -25,7 +25,6 @@ try:
     from vllm.model_executor.layers.quantization.gptq import GPTQLinearMethod
     from vllm.model_executor.layers.quantization.gptq_marlin import (
         GPTQMarlinLinearMethod,
-        GPTQMarlinMoEMethod,
     )
     from vllm.model_executor.layers.quantization.gptq_marlin_24 import (
         GPTQMarlin24Config,
@@ -58,25 +57,31 @@ from sglang.srt.layers.quantization.compressed_tensors.compressed_tensors import
     CompressedTensorsConfig,
 )
 from sglang.srt.layers.quantization.fp8 import Fp8Config
-from sglang.srt.layers.quantization.gptq import GPTQConfig, GPTQMarlinConfig
-from sglang.srt.layers.quantization.modelopt_quant import ModelOptFp8Config
+from sglang.srt.layers.quantization.gptq import (
+    GPTQConfig,
+    GPTQMarlinConfig,
+    GPTQMarlinMoEMethod,
+)
+from sglang.srt.layers.quantization.modelopt_quant import (
+    ModelOptFp4Config,
+    ModelOptFp8Config,
+)
 from sglang.srt.layers.quantization.moe_wna16 import MoeWNA16Config
+from sglang.srt.layers.quantization.qoq import QoQConfig
 from sglang.srt.layers.quantization.w8a8_fp8 import W8A8Fp8Config
 from sglang.srt.layers.quantization.w8a8_int8 import W8A8Int8Config
-from sglang.srt.layers.vocab_parallel_embedding import (
-    ParallelLMHead,
-    UnquantizedEmbeddingMethod,
-)
 
 # Base quantization methods that don't depend on vllm
 BASE_QUANTIZATION_METHODS: Dict[str, Type[QuantizationConfig]] = {
     "fp8": Fp8Config,
     "blockwise_int8": BlockInt8Config,
     "modelopt": ModelOptFp8Config,
+    "modelopt_fp4": ModelOptFp4Config,
     "w8a8_int8": W8A8Int8Config,
     "w8a8_fp8": W8A8Fp8Config,
     "moe_wna16": MoeWNA16Config,
     "compressed-tensors": CompressedTensorsConfig,
+    "qoq": QoQConfig,
 }
 
 # VLLM-dependent quantization methods
@@ -109,7 +114,7 @@ def get_quantization_config(quantization: str) -> Type[QuantizationConfig]:
     if quantization in VLLM_QUANTIZATION_METHODS and not VLLM_AVAILABLE:
         raise ValueError(
             f"{quantization} quantization requires some operators from vllm. "
-            "Pleaes install vllm by `pip install vllm==0.7.2`"
+            "Please install vllm by `pip install vllm==0.9.0.1`"
         )
 
     return QUANTIZATION_METHODS[quantization]
@@ -176,6 +181,13 @@ def get_linear_quant_method(
     prefix: str,
     linear_method_cls: type,
 ):
+    # Move import here to avoid circular import. This is only used in monkey patching
+    # of vllm's QuantizationConfig.
+    from sglang.srt.layers.vocab_parallel_embedding import (
+        ParallelLMHead,
+        UnquantizedEmbeddingMethod,
+    )
+
     cloned_config = deepcopy(config)
     parallel_lm_head_quantized = (
         isinstance(layer, ParallelLMHead) and cloned_config.lm_head_quantized
@@ -277,12 +289,14 @@ def monkey_patch_moe_apply(class_obj: "FusedMoEMethodBase"):
         use_grouped_topk: bool,
         topk_group: Optional[int] = None,
         num_expert_group: Optional[int] = None,
+        num_fused_shared_experts: int = 0,
         custom_routing_function: Optional[Callable] = None,
         correction_bias: Optional[torch.Tensor] = None,
         activation: str = "silu",
         apply_router_weight_on_input: bool = False,
         inplace: bool = True,
         no_combine: bool = False,
+        routed_scaling_factor: Optional[float] = None,
     ):
         assert activation == "silu"
         assert inplace and not no_combine
@@ -302,7 +316,7 @@ def monkey_patch_moe_apply(class_obj: "FusedMoEMethodBase"):
         if correction_bias is not None:
             if not has_correction_bias:
                 raise ValueError(
-                    "Please increase the version of your vllm. Try `pip install vllm==0.7.2`"
+                    "Please increase the version of your vllm. Try `pip install vllm==0.9.0.1`"
                 )
             kwargs["e_score_correction_bias"] = correction_bias
         return original_apply(**kwargs)

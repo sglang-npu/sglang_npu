@@ -341,12 +341,14 @@ class MoeWNA16Method:
         use_grouped_topk: bool = False,
         topk_group: Optional[int] = None,
         num_expert_group: Optional[int] = None,
+        num_fused_shared_experts: int = 0,
         custom_routing_function: Optional[Callable] = None,
         correction_bias: Optional[torch.Tensor] = None,
         activation: str = "silu",
         apply_router_weight_on_input: bool = False,
         inplace: bool = True,
         no_combine: bool = False,
+        routed_scaling_factor: Optional[float] = None,
     ) -> torch.Tensor:
         # avoid circular import
         from sglang.srt.layers.moe.fused_moe_triton.fused_moe import fused_experts
@@ -361,8 +363,10 @@ class MoeWNA16Method:
             renormalize=renormalize,
             topk_group=topk_group,
             num_expert_group=num_expert_group,
+            num_fused_shared_experts=num_fused_shared_experts,
             custom_routing_function=custom_routing_function,
             correction_bias=correction_bias,
+            routed_scaling_factor=routed_scaling_factor,
         )
 
         weight_bits = self.quant_config.weight_bits
@@ -384,6 +388,7 @@ class MoeWNA16Method:
             w2_zp=layer.w2_qzeros if has_zp else None,
             block_shape=[0, layer.group_size],
             no_combine=no_combine,
+            routed_scaling_factor=routed_scaling_factor,
         )
 
     @staticmethod

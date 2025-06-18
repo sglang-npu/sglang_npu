@@ -1,13 +1,6 @@
 from typing import Any, Callable, Dict, List, Optional
 
 import torch
-
-from sglang.srt.utils import is_cuda_available, set_weight_attrs
-
-is_cuda = is_cuda_available()
-if is_cuda:
-    from sgl_kernel import int8_scaled_mm
-
 from torch.nn.parameter import Parameter
 
 from sglang.srt.distributed import get_tensor_model_parallel_world_size
@@ -18,6 +11,11 @@ from sglang.srt.layers.quantization.base_config import (
     QuantizeMethodBase,
 )
 from sglang.srt.layers.quantization.int8_kernel import per_token_quant_int8
+from sglang.srt.utils import is_cuda, set_weight_attrs
+
+_is_cuda = is_cuda()
+if _is_cuda:
+    from sgl_kernel import int8_scaled_mm
 
 
 class W8A8Int8Config(QuantizationConfig):
@@ -227,12 +225,14 @@ class W8A8Int8MoEMethod:
         use_grouped_topk: bool,
         topk_group: Optional[int] = None,
         num_expert_group: Optional[int] = None,
+        num_fused_shared_experts: int = 0,
         custom_routing_function: Optional[Callable] = None,
         correction_bias: Optional[torch.Tensor] = None,
         activation: str = "silu",
         apply_router_weight_on_input: bool = False,
         inplace: bool = True,
         no_combine: bool = False,
+        routed_scaling_factor: Optional[float] = None,
     ) -> torch.Tensor:
         from sglang.srt.layers.moe.fused_moe_triton.fused_moe import fused_experts
         from sglang.srt.layers.moe.topk import select_experts
@@ -246,8 +246,10 @@ class W8A8Int8MoEMethod:
             renormalize=renormalize,
             topk_group=topk_group,
             num_expert_group=num_expert_group,
+            num_fused_shared_experts=num_fused_shared_experts,
             custom_routing_function=custom_routing_function,
             correction_bias=correction_bias,
+            routed_scaling_factor=routed_scaling_factor,
         )
 
         return fused_experts(
@@ -260,9 +262,11 @@ class W8A8Int8MoEMethod:
             activation=activation,
             apply_router_weight_on_input=apply_router_weight_on_input,
             use_int8_w8a8=True,
+            per_channel_quant=True,
             w1_scale=(layer.w13_weight_scale),
             w2_scale=(layer.w2_weight_scale),
             a1_scale=layer.w13_input_scale,
             a2_scale=layer.w2_input_scale,
             no_combine=no_combine,
+            routed_scaling_factor=routed_scaling_factor,
         )

@@ -108,11 +108,15 @@ logger = logging.getLogger(__name__)
 
 
 def _get_quantization_config(
-    model_config: ModelConfig, load_config: LoadConfig
+    model_config: ModelConfig,
+    load_config: LoadConfig,
+    packed_modules_mapping: Dict[str, List[str]],
 ) -> Optional[QuantizationConfig]:
     """Get the quantization config."""
     if model_config.quantization is not None:
-        quant_config = get_quant_config(model_config, load_config)
+        quant_config = get_quant_config(
+            model_config, load_config, packed_modules_mapping
+        )
         major, minor = get_device_capability()
 
         if major is not None and minor is not None:
@@ -142,7 +146,10 @@ def _initialize_model(
 ) -> nn.Module:
     """Initialize a model with the given configurations."""
     model_class, _ = get_model_architecture(model_config)
-    quant_config = _get_quantization_config(model_config, load_config)
+    packed_modules_mapping = getattr(model_class, "packed_modules_mapping", {})
+    quant_config = _get_quantization_config(
+        model_config, load_config, packed_modules_mapping
+    )
     return model_class(
         config=model_config.hf_config,
         quant_config=quant_config,
@@ -189,6 +196,15 @@ class DefaultModelLoader(BaseModelLoader):
 
         fall_back_to_pt: bool = True
         """Whether .pt weights can be used."""
+
+        @classmethod
+        def init_new(cls, model_config: ModelConfig, model):
+            return cls(
+                model_config.model_path,
+                model_config.revision,
+                prefix="",
+                fall_back_to_pt=getattr(model, "fall_back_to_pt_during_load", True),
+            )
 
     def __init__(self, load_config: LoadConfig):
         super().__init__(load_config)
@@ -334,12 +350,7 @@ class DefaultModelLoader(BaseModelLoader):
         model: nn.Module,
     ) -> Generator[Tuple[str, torch.Tensor], None, None]:
 
-        primary_weights = DefaultModelLoader.Source(
-            model_config.model_path,
-            model_config.revision,
-            prefix="",
-            fall_back_to_pt=getattr(model, "fall_back_to_pt_during_load", True),
-        )
+        primary_weights = DefaultModelLoader.Source.init_new(model_config, model)
         yield from self._get_weights_iterator(primary_weights)
 
         secondary_weights = cast(
@@ -367,19 +378,26 @@ class DefaultModelLoader(BaseModelLoader):
                     self.load_config,
                 )
 
-            model.load_weights(self._get_all_weights(model_config, model))
+            self.load_weights_and_postprocess(
+                model, self._get_all_weights(model_config, model), target_device
+            )
 
-            for _, module in model.named_modules():
-                quant_method = getattr(module, "quant_method", None)
-                if quant_method is not None:
-                    # When quant methods need to process weights after loading
-                    # (for repacking, quantizing, etc), they expect parameters
-                    # to be on the global target device. This scope is for the
-                    # case where cpu offloading is used, where we will move the
-                    # parameters onto device for processing and back off after.
-                    with device_loading_context(module, target_device):
-                        quant_method.process_weights_after_loading(module)
         return model.eval()
+
+    @staticmethod
+    def load_weights_and_postprocess(model, weights, target_device):
+        model.load_weights(weights)
+
+        for _, module in model.named_modules():
+            quant_method = getattr(module, "quant_method", None)
+            if quant_method is not None:
+                # When quant methods need to process weights after loading
+                # (for repacking, quantizing, etc), they expect parameters
+                # to be on the global target device. This scope is for the
+                # case where cpu offloading is used, where we will move the
+                # parameters onto device for processing and back off after.
+                with device_loading_context(module, target_device):
+                    quant_method.process_weights_after_loading(module)
 
 
 class LayeredModelLoader(DefaultModelLoader):
@@ -1064,18 +1082,36 @@ class BitsAndBytesModelLoader(BaseModelLoader):
 
         param_dict = dict(model.named_parameters())
         stacked_quant_state_dict: Dict[str, Dict[int, Any]] = {}
+        model_type = model_config.hf_config.model_type
         for quant_param_name in quant_state_dict:
             non_stacked_param_name = quant_param_name
-
+            if model_type == "mllama" and "vision_model" in quant_param_name:
+                # adapt to VisionAttention
+                quant_param_name = quant_param_name.replace(
+                    "self_attn.o_proj", "self_attn.proj"
+                )
             shard_index = 0
             for shard_name, (
                 weight_name,
                 index,
             ) in model.bitsandbytes_stacked_params_mapping.items():
+                if (
+                    model_type in ["qwen2_vl", "qwen2_5_vl"]
+                    and "visual" in quant_param_name
+                ):
+                    break
                 if shard_name in quant_param_name:
                     shard_index = index
                     quant_param_name = quant_param_name.replace(shard_name, weight_name)
                     break
+
+            if (
+                model_type in ["qwen2_vl", "qwen2_5_vl"]
+                and "visual" in quant_param_name
+            ):
+                quant_param_name = quant_param_name.replace(
+                    r"attn.qkv.", r"attn.qkv_proj."
+                )
 
             if quant_param_name not in param_dict:
                 raise ValueError(
@@ -1104,6 +1140,8 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                     num_elements[seq] = math.prod(quant_state.shape) // pack_ratio
 
                 offsets = np.concatenate(([0], np.cumsum(num_elements)))
+                # Make torch infer_schema happy(Compatible with vLLM)
+                offsets = torch.tensor(offsets).cpu()
                 set_weight_attrs(param, {"bnb_shard_offsets": offsets})
 
                 if load_8bit:
@@ -1221,12 +1259,19 @@ class GGUFModelLoader(BaseModelLoader):
         ):
             model_config.hf_config.update({"tie_word_embeddings": True})
 
+        target_device = torch.device(device_config.device)
         with set_default_torch_dtype(model_config.dtype):
-            with torch.device(device_config.device):
+            with target_device:
                 model = _initialize_model(model_config, self.load_config)
             model.load_weights(
                 self._get_weights_iterator(local_model_path, gguf_weights_map)
             )
+
+            for _, module in model.named_modules():
+                quant_method = getattr(module, "quant_method", None)
+                if quant_method is not None:
+                    with device_loading_context(module, target_device):
+                        quant_method.process_weights_after_loading(module)
         return model
 
 

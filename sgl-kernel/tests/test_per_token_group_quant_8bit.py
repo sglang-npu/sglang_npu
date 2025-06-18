@@ -21,7 +21,7 @@ def _per_token_group_quant_fp8(
     y_s_ptr,
     # Stride of input
     y_stride,
-    # Collums of input
+    # Columns of input
     N,
     # Avoid to divide zero
     eps,
@@ -255,7 +255,10 @@ def sglang_per_token_group_quant_8bit(
         f8_info = torch.finfo(dtype)
         fp8_max = f8_info.max
         fp8_min = f8_info.min
-        sgl_per_token_group_quant_fp8(x, x_q, x_s, group_size, eps, fp8_min, fp8_max)
+        scale_ue8m0 = False  # TODO also test true
+        sgl_per_token_group_quant_fp8(
+            x, x_q, x_s, group_size, eps, fp8_min, fp8_max, scale_ue8m0
+        )
 
     return x_q, x_s
 
@@ -304,10 +307,10 @@ def test_per_token_group_quant_with_column_major(
         scale_tma_aligned=scale_tma_aligned,
     )
 
-    assert torch.allclose(
+    torch.testing.assert_close(
         x_q_triton.to(torch.float32), x_q_sglang.to(torch.float32), rtol=1e-3, atol=1e-5
     )
-    assert torch.allclose(
+    torch.testing.assert_close(
         x_s_triton.contiguous(), x_s_sglang.contiguous(), rtol=1e-3, atol=1e-5
     )
 
