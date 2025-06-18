@@ -67,10 +67,10 @@ from sglang.srt.layers.quantization.modelopt_quant import (
     ModelOptFp8Config,
 )
 from sglang.srt.layers.quantization.moe_wna16 import MoeWNA16Config
+from sglang.srt.layers.quantization.petit import PetitNvFp4Config
 from sglang.srt.layers.quantization.qoq import QoQConfig
 from sglang.srt.layers.quantization.w8a8_fp8 import W8A8Fp8Config
 from sglang.srt.layers.quantization.w8a8_int8 import W8A8Int8Config
-from sglang.srt.layers.quantization.petit import PetitNvFp4Config
 
 # Base quantization methods that don't depend on vllm
 BASE_QUANTIZATION_METHODS: Dict[str, Type[QuantizationConfig]] = {
