@@ -1249,8 +1249,8 @@ class Scheduler(
             self.stats.avg_request_queue_latency = total_queue_latency / num_new_seq
 
             if self.disaggregation_mode == DisaggregationMode.PREFILL:
-                self.stats.num_prefill_prealloc_queue_reqs = len(self.disagg_prefill_bootstrap_queue)
-                self.stats.num_prefill_infight_queue_reqs = len(self.disagg_prefill_inflight_queue)
+                self.stats.num_prefill_prealloc_queue_reqs = len(self.disagg_prefill_bootstrap_queue.queue)
+                self.stats.num_prefill_inflight_queue_reqs = len(self.disagg_prefill_inflight_queue)
 
             self.metrics_collector.log_stats(self.stats)
         self._publish_kv_events()
@@ -1315,8 +1315,8 @@ class Scheduler(
             self.stats.spec_accept_length = spec_accept_length
             self.metrics_collector.log_stats(self.stats)
             if self.disaggregation_mode == DisaggregationMode.DECODE:
-                self.stats.num_decode_prealloc_queue_reqs = len(self.disagg_decode_prealloc_queue)
-                self.stats.num_decode_transfer_queue_reqs = len(self.disagg_decode_transfer_queue)
+                self.stats.num_decode_prealloc_queue_reqs = len(self.disagg_decode_prealloc_queue.queue)
+                self.stats.num_decode_transfer_queue_reqs = len(self.disagg_decode_transfer_queue.queue)
 
         self._publish_kv_events()
 

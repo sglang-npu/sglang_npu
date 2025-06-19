@@ -17,7 +17,6 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import numpy.typing as npt
 import requests
-from python.sglang.srt.metrics.collector import SchedulerMetricsCollector
 import zmq
 from aiohttp import web
 
@@ -37,6 +36,7 @@ from sglang.srt.disaggregation.mooncake.transfer_engine import MooncakeTransferE
 from sglang.srt.disaggregation.utils import DisaggregationMode
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.utils import get_free_port, get_int_env_var, get_ip, get_local_ip_auto
+from sglang.srt.metrics.collector import SchedulerMetricsCollector
 
 logger = logging.getLogger(__name__)
 
