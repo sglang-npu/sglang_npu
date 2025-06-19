@@ -312,6 +312,10 @@ class ModelRunner:
             self.init_cublas()
             self.init_attention_backend()
             self.init_cuda_graphs()
+        elif self.device == "cpu":
+            self.init_attention_backend()
+            self.init_cpu_compile()
+            self.cuda_graph_runner = None
         else:
             self.cuda_graph_runner = None
             self.cuda_graph_mem_usage = 0
@@ -517,6 +521,9 @@ class ModelRunner:
                     # Set local size to hint SGLang to use shared memory based AllReduce
                     os.environ["LOCAL_SIZE"] = str(self.tp_size)
                     torch.ops.sgl_kernel.initialize(self.tp_size, self.tp_rank)
+                    @torch.library.register_fake("sgl_kernel::shm_allgather")
+                    def _(data, dim):
+                        return torch.cat([data] * self.tp_size, dim=dim)
                 else:
                     logger.warning(
                         "init_cpu_threads_env and shared memory based AllReduce is disabled since intel amx backend is not available"
@@ -1378,6 +1385,27 @@ class ModelRunner:
             f"mem usage={self.cuda_graph_mem_usage:.2f} GB. avail mem={after_mem:.2f} GB."
         )
 
+    def init_cpu_compile(self):
+        self.cpu_compile_runner = None
+
+        if not self.is_generation:
+            return
+
+        if not self.server_args.enable_torch_compile:
+            return
+
+        tic = time.time()
+        before_mem = get_available_gpu_memory(self.device, self.gpu_id)
+        logger.info(
+            f"CPU compile begin. This can take up to several minutes. avail mem={before_mem:.2f} GB"
+        )
+        self.cpu_compile_runner = CpuCompileRunner(self)
+        after_mem = get_available_gpu_memory(self.device, self.gpu_id)
+        logger.info(
+            f"CPU compile end. Time elapsed: {time.time() - tic:.2f} s. "
+            f"avail mem={after_mem:.2f} GB. mem usage={(before_mem - after_mem):.2f} GB."
+        )
+
     def init_threads_binding(self):
         omp_cpuids = os.environ.get("SGLANG_CPU_OMP_THREADS_BIND", "all")
         if omp_cpuids == "all":
@@ -1495,18 +1523,29 @@ class ModelRunner:
                 skip_attn_backend_init=skip_attn_backend_init,
                 pp_proxy_tensors=pp_proxy_tensors,
             )
-        elif forward_batch.forward_mode.is_decode():
-            ret = self.forward_decode(forward_batch, pp_proxy_tensors=pp_proxy_tensors)
-        elif forward_batch.forward_mode.is_extend():
-            ret = self.forward_extend(
-                forward_batch,
-                skip_attn_backend_init=skip_attn_backend_init,
-                pp_proxy_tensors=pp_proxy_tensors,
-            )
-        elif forward_batch.forward_mode.is_idle():
-            ret = self.forward_idle(forward_batch, pp_proxy_tensors=pp_proxy_tensors)
+
+        # only enable compile for decode
+        if (
+            forward_batch.forward_mode.is_decode()
+            and self.cpu_compile_runner is not None
+            and self.cpu_compile_runner.can_run(forward_batch)
+        ):
+            ret = self.cpu_compile_runner.replay(forward_batch)
         else:
-            raise ValueError(f"Invalid forward mode: {forward_batch.forward_mode}")
+            # disable torch dispatch for the eager mode
+            with torch._C._DisableTorchDispatch():
+                if forward_batch.forward_mode.is_decode():
+                    ret = self.forward_decode(forward_batch, pp_proxy_tensors=pp_proxy_tensors)
+                elif forward_batch.forward_mode.is_extend():
+                    ret = self.forward_extend(
+                        forward_batch,
+                        skip_attn_backend_init=skip_attn_backend_init,
+                        pp_proxy_tensors=pp_proxy_tensors,
+                    )
+                elif forward_batch.forward_mode.is_idle():
+                    ret = self.forward_idle(forward_batch, pp_proxy_tensors=pp_proxy_tensors)
+                else:
+                    raise ValueError(f"Invalid forward mode: {forward_batch.forward_mode}")
 
         return ret, can_run_cuda_graph
 
