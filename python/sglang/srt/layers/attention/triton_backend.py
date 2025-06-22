@@ -109,7 +109,7 @@ class TritonAttnBackend(AttentionBackend):
             get_attention_tp_size()
         )
 
-        self.static_kv_splits = envs.SGLANG_TRITON_DECODE_ATTN_STATIC_KV_SPLITS
+        self.static_kv_splits = envs.SGLANG_TRITON_DECODE_ATTN_STATIC_KV_SPLITS.get()
         self.max_kv_splits = model_runner.server_args.triton_attention_num_kv_splits
         self.v_head_dim = model_runner.token_to_kv_pool.get_value_buffer(0).shape[-1]
 

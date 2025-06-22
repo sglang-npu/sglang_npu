@@ -157,7 +157,7 @@ async def lifespan(fast_api_app: FastAPI):
 # Fast API
 app = FastAPI(
     lifespan=lifespan,
-    openapi_url=None if envs.SGLANG_DISABLE_OPENAPI_DOC else "/openapi.json",
+    openapi_url=None if envs.SGLANG_DISABLE_OPENAPI_DOC.get() else "/openapi.json",
 )
 app.add_middleware(
     CORSMiddleware,

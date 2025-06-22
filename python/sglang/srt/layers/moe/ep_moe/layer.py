@@ -1,7 +1,6 @@
 import logging
 from typing import Callable, List, Optional, Tuple
 
-import einops
 import torch
 from sgl_kernel import silu_and_mul
 from torch.nn import Module

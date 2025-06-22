@@ -23,12 +23,12 @@ class GlobalConfig:
         self.default_backend = None
 
         # Runtime constants: New generation token ratio estimation
-        self.default_init_new_token_ratio = envs.SGLANG_INIT_NEW_TOKEN_RATIO or 0.7
+        self.default_init_new_token_ratio = envs.SGLANG_INIT_NEW_TOKEN_RATIO.get(0.7)
         self.default_min_new_token_ratio_factor = (
-            envs.SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR or 0.14
+            envs.SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR.get(0.14)
         )
         self.default_new_token_ratio_decay_steps = (
-            envs.SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS or 600
+            envs.SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS.get(600)
         )
 
         # Runtime constants: others

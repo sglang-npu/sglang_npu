@@ -1206,7 +1206,7 @@ def initialize_model_parallel(
         group_ranks,
         get_world_group().local_rank,
         backend,
-        use_message_queue_broadcaster=envs.SGLANG_USE_MESSAGE_QUEUE_BROADCASTER,
+        use_message_queue_broadcaster=envs.SGLANG_USE_MESSAGE_QUEUE_BROADCASTER.get(),
         group_name="tp",
     )
 

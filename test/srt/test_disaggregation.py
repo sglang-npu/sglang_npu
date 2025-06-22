@@ -473,7 +473,7 @@ class TestDisaggregationMooncakeSpec(CustomTestCase):
 class TestDisaggregationSimulatedRetract(CustomTestCase):
     @classmethod
     def setUpClass(cls):
-        envs.SGLANG_TEST_RETRACT = True
+        envs.SGLANG_TEST_RETRACT.set(True)
         cls.model = DEFAULT_MODEL_NAME_FOR_TEST
         parsed_url = urlparse(DEFAULT_URL_FOR_TEST)
         cls.base_host = parsed_url.hostname
@@ -570,7 +570,7 @@ class TestDisaggregationSimulatedRetract(CustomTestCase):
 
     @classmethod
     def tearDownClass(cls):
-        envs.SGLANG_TEST_RETRACT = None
+        envs.SGLANG_TEST_RETRACT.clear()
         for process in [cls.process_lb, cls.process_decode, cls.process_prefill]:
             if process:
                 try:

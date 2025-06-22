@@ -133,5 +133,5 @@ class TestRadixCacheNonOverlapLPM(TestRadixCacheFCFS):
 
 
 if __name__ == "__main__":
-    envs.SGLANG_TEST_RETRACT = True
+    envs.SGLANG_TEST_RETRACT.set(True)
     unittest.main()

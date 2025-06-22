@@ -7,12 +7,12 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from tqdm.contrib.concurrent import thread_map
 
+from sglang.environ import envs
 from sglang.srt.layers.quantization.deep_gemm_wrapper.configurer import (
     DEEPGEMM_BLACKWELL,
     ENABLE_JIT_DEEPGEMM,
 )
 from sglang.srt.server_args import ServerArgs
-from sglang.srt.utils import get_bool_env_var, get_int_env_var
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +24,11 @@ if ENABLE_JIT_DEEPGEMM and not DEEPGEMM_BLACKWELL:
 
 
 _BUILTIN_M_LIST = list(range(1, 1024 * 16 + 1))
-_ENABLE_JIT_DEEPGEMM_PRECOMPILE = get_bool_env_var(
-    "SGL_JIT_DEEPGEMM_PRECOMPILE", "true"
-)
+_ENABLE_JIT_DEEPGEMM_PRECOMPILE = envs.SGL_JIT_DEEPGEMM_PRECOMPILE.get()
 _DO_COMPILE_ALL = True
-_IS_FIRST_RANK_ON_NODE = get_bool_env_var("SGL_IS_FIRST_RANK_ON_NODE", "true")
-_COMPILE_WORKERS = get_int_env_var("SGL_JIT_DEEPGEMM_COMPILE_WORKERS", 4)
-_IN_PRECOMPILE_STAGE = get_bool_env_var("SGL_IN_DEEPGEMM_PRECOMPILE_STAGE", "false")
+_IS_FIRST_RANK_ON_NODE = envs.SGL_IS_FIRST_RANK_ON_NODE.get()
+_COMPILE_WORKERS = envs.SGL_JIT_DEEPGEMM_COMPILE_WORKERS.get()
+_IN_PRECOMPILE_STAGE = envs.SGL_IN_DEEPGEMM_PRECOMPILE_STAGE.get()
 
 # Force redirect deep_gemm cache_dir
 os.environ["DG_JIT_CACHE_DIR"] = os.getenv(

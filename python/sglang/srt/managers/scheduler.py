@@ -2618,7 +2618,7 @@ def run_scheduler_process(
     suppress_other_loggers()
 
     # Set cpu affinity to this gpu process
-    if envs.SGLANG_SET_CPU_AFFINITY:
+    if envs.SGLANG_SET_CPU_AFFINITY.get():
         set_gpu_proc_affinity(server_args.tp_size, server_args.nnodes, gpu_id)
 
     embedding_cache_size = 100

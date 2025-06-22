@@ -17,7 +17,7 @@ from sglang.test.test_utils import (
 class TestRetractDecode(CustomTestCase):
     @classmethod
     def setUpClass(cls):
-        envs.SGLANG_TEST_RETRACT = True
+        envs.SGLANG_TEST_RETRACT.set(True)
 
         cls.model = DEFAULT_MODEL_NAME_FOR_TEST
         cls.base_url = DEFAULT_URL_FOR_TEST
@@ -45,7 +45,7 @@ class TestRetractDecode(CustomTestCase):
 class TestRetractDecodeChunkCache(CustomTestCase):
     @classmethod
     def setUpClass(cls):
-        envs.SGLANG_TEST_RETRACT = True
+        envs.SGLANG_TEST_RETRACT.set(True)
 
         cls.model = DEFAULT_MODEL_NAME_FOR_TEST
         cls.base_url = DEFAULT_URL_FOR_TEST

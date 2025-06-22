@@ -7,16 +7,16 @@ class EnvField:
     def __init__(self, default: Any):
         self.default = default
 
-    def parse(self, value: str) -> Any:
-        return value
-
     def __set_name__(self, owner, name):
         self.name = name
 
-    def __get__(self, instance, owner):
+    def parse(self, value: str) -> Any:
+        return value
+
+    def get(self, default: Any = None) -> Any:
         value = os.getenv(self.name)
         if value is None:
-            return self.default
+            return default or self.default
         try:
             return self.parse(value)
         except ValueError as e:
@@ -25,12 +25,12 @@ class EnvField:
             )
             return self.default
 
-    def __set__(self, instance, value):
+    def set(self, value: Any):
         # NOTE: we have to make sure the value is string so that it is compatible with the parser
-        if value is None:
-            os.environ.pop(self.name, None)
-        else:
-            os.environ[self.name] = str(value)
+        os.environ[self.name] = str(value)
+
+    def clear(self):
+        os.environ.pop(self.name, None)
 
 
 class EnvFieldBool(EnvField):
@@ -75,6 +75,15 @@ class EnvVars:
     SGLANG_IS_FLASHINFER_AVAILABLE = EnvFieldBool(True)
     SGLANG_TRITON_DECODE_ATTN_STATIC_KV_SPLITS = EnvFieldBool(False)
     SGLANG_USE_AITER = EnvFieldBool(False)
+    SGL_IS_FIRST_RANK_ON_NODE = EnvFieldBool(True)
+
+    # ================================================
+    # DeepGemm
+    # ================================================
+
+    SGL_JIT_DEEPGEMM_PRECOMPILE = EnvFieldBool(True)
+    SGL_JIT_DEEPGEMM_COMPILE_WORKERS = EnvFieldInt(4)
+    SGL_IN_DEEPGEMM_PRECOMPILE_STAGE = EnvFieldBool(False)
 
     # ================================================
     # Runtime Configuration
@@ -112,9 +121,10 @@ convert_SGL_to_SGLANG()
 
 if __name__ == "__main__":
     # Example usage
-    print(envs.SGLANG_TEST_RETRACT)
-    envs.SGLANG_TEST_RETRACT ^= 1
-    print(envs.SGLANG_TEST_RETRACT)
-    # unset the value, using the default
-    envs.SGLANG_TEST_RETRACT = None
-    print(envs.SGLANG_TEST_RETRACT)
+    envs.SGLANG_TEST_RETRACT.clear()
+    print(f"{envs.SGLANG_TEST_RETRACT.get()=}")
+    print(f"{envs.SGLANG_TEST_RETRACT.get(True)=}")
+    envs.SGLANG_TEST_RETRACT.set(True)
+    print(f"{envs.SGLANG_TEST_RETRACT.get()=}")
+    envs.SGLANG_TEST_RETRACT.clear()
+    print(f"{envs.SGLANG_TEST_RETRACT.get()=}")
