@@ -7,17 +7,23 @@ class EnvField:
     def __init__(self, default: Any):
         self.default = default
 
-    def parser(self, name: str, default: Any) -> Any:
-        value = os.getenv(name)
-        if value is not None:
-            return value
-        return default
+    def parse(self, value: str) -> Any:
+        return value
 
     def __set_name__(self, owner, name):
         self.name = name
 
     def __get__(self, instance, owner):
-        return self.parser(self.name, self.default)
+        value = os.getenv(self.name)
+        if value is None:
+            return self.default
+        try:
+            return self.parse(value)
+        except ValueError as e:
+            warnings.warn(
+                f'Invalid value for {self.name}: {e}, using default "{self.default}"'
+            )
+            return self.default
 
     def __set__(self, instance, value):
         # NOTE: we have to make sure the value is string so that it is compatible with the parser
@@ -28,32 +34,29 @@ class EnvField:
 
 
 class EnvFieldBool(EnvField):
-    def __init__(self, default: bool):
-        super().__init__(default)
-
-    def parser(self, name: str, default: bool) -> bool:
-        value = os.getenv(name)
-        if value is not None:
-            value = value.lower()
-            if value in ["true", "1", "yes", "y"]:
-                return True
-            if value in ["false", "0", "no", "n"]:
-                return False
-        return default
+    def parse(self, value: str) -> bool:
+        value = value.lower()
+        if value in ["true", "1", "yes", "y"]:
+            return True
+        if value in ["false", "0", "no", "n"]:
+            return False
+        raise ValueError(f'"{value}" is not a valid boolean value')
 
 
 class EnvFieldInt(EnvField):
-    def __init__(self, default: int):
-        super().__init__(default)
+    def parse(self, value: str) -> int:
+        try:
+            return int(value)
+        except ValueError:
+            raise ValueError(f'"{value}" is not a valid integer value')
 
-    def parser(self, name: str, default: int) -> int:
-        value = os.getenv(name)
-        if value is not None:
-            try:
-                return int(value)
-            except ValueError:
-                warnings.warn(f"Invalid value for {name}: {value}")
-        return default
+
+class EnvFieldFloat(EnvField):
+    def parse(self, value: str) -> float:
+        try:
+            return float(value)
+        except ValueError:
+            raise ValueError(f'"{value}" is not a valid float value')
 
 
 class EnvVars:
@@ -64,7 +67,14 @@ class EnvVars:
     SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN = EnvFieldBool(True)
 
     # ================================================
-    # Environment variables for testing
+    # Runtime constants
+    # ================================================
+    SGLANG_INIT_NEW_TOKEN_RATIO = EnvFieldFloat(None)
+    SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR = EnvFieldFloat(None)
+    SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS = EnvFieldInt(None)
+
+    # ================================================
+    # Testing environment variables
     # ================================================
 
     SGLANG_TEST_RETRACT = EnvFieldBool(False)
