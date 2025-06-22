@@ -55,13 +55,19 @@ class EnvFieldInt(EnvField):
 
 
 class EnvVars:
+    # fmt: off
+    SGLANG_ENABLE_TORCH_INFERENCE_MODE = EnvFieldBool("SGLANG_ENABLE_TORCH_INFERENCE_MODE", False)
+    SGLANG_SET_CPU_AFFINITY = EnvFieldBool("SGLANG_SET_CPU_AFFINITY", False)
     SGLANG_MOE_PADDING = EnvFieldBool("SGLANG_MOE_PADDING", False)
+    SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN = EnvFieldBool("SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN", True)
 
     # ================================================
     # Environment variables for testing
     # ================================================
 
     SGLANG_TEST_RETRACT = EnvFieldBool("SGLANG_TEST_RETRACT", False)
+
+    # fmt: on
 
 
 envs = EnvVars()

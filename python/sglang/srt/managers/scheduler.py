@@ -33,6 +33,7 @@ import torch
 import zmq
 from torch.distributed import barrier
 
+from sglang.environ import envs
 from sglang.global_config import global_config
 from sglang.srt.configs.model_config import ModelConfig
 from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE, GPU_MEMORY_TYPE_WEIGHTS
@@ -2617,7 +2618,7 @@ def run_scheduler_process(
     suppress_other_loggers()
 
     # Set cpu affinity to this gpu process
-    if get_bool_env_var("SGLANG_SET_CPU_AFFINITY"):
+    if envs.SGLANG_SET_CPU_AFFINITY:
         set_gpu_proc_affinity(server_args.tp_size, server_args.nnodes, gpu_id)
 
     embedding_cache_size = 100

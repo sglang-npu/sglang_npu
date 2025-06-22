@@ -87,6 +87,8 @@ from triton.runtime.cache import (
     default_override_dir,
 )
 
+from sglang.environ import envs
+
 logger = logging.getLogger(__name__)
 
 show_time_cost = False
@@ -183,9 +185,7 @@ def is_flashinfer_available():
     return importlib.util.find_spec("flashinfer") is not None and is_cuda()
 
 
-_ENABLE_TORCH_INFERENCE_MODE = get_bool_env_var(
-    "SGLANG_ENABLE_TORCH_INFERENCE_MODE", "false"
-)
+_ENABLE_TORCH_INFERENCE_MODE = envs.SGLANG_ENABLE_TORCH_INFERENCE_MODE
 
 
 class DynamicGradMode(_DecoratorContextManager):

@@ -12,6 +12,7 @@ import torch
 import triton
 import triton.language as tl
 
+from sglang.environ import envs
 from sglang.math_utils import ceil_div
 from sglang.srt.layers.moe.topk import select_experts
 from sglang.srt.layers.quantization.fp8_kernel import (
@@ -32,7 +33,6 @@ from sglang.srt.utils import (
     is_cpu,
     is_cuda,
     is_hip,
-    log_info_on_rank0,
     next_power_of_2,
 )
 
@@ -54,7 +54,7 @@ if _is_cuda or _is_hip:
 
 
 logger = logging.getLogger(__name__)
-padding_size = 128 if bool(int(os.getenv("SGLANG_MOE_PADDING", "0"))) else 0
+padding_size = 128 if envs.SGLANG_MOE_PADDING else 0
 enable_moe_align_block_size_triton = bool(
     int(os.getenv("ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON", "0"))
 )
