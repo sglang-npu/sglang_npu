@@ -1,5 +1,6 @@
 import os
 import warnings
+from typing import Any, Callable, Optional
 
 
 def _get_bool_env_var(name: str, default: bool) -> bool:
@@ -11,10 +12,6 @@ def _get_bool_env_var(name: str, default: bool) -> bool:
         if value in ["false", "0", "no", "n"]:
             return False
     return default
-
-
-def _set_bool_env_var(name: str, value: bool):
-    os.environ[name] = str(value).lower()
 
 
 def _get_int_env_var(name: str, default: int) -> int:
@@ -34,6 +31,47 @@ def _get_str_env_var(name: str, default: str) -> str:
     return default
 
 
+class EnvField:
+    def __init__(
+        self, name: str, default: bool, parser: Optional[Callable[[str], Any]] = None
+    ):
+        self.name = name
+        self.default = default
+        self.parser = parser
+        if self.parser is None:
+            if type(self.default) == bool:
+                self.parser = _get_bool_env_var
+            elif type(self.default) == int:
+                self.parser = _get_int_env_var
+            elif type(self.default) == str:
+                self.parser = _get_str_env_var
+            else:
+                raise ValueError(f"Unsupported type: {type(self.default)} for {name}")
+
+    def __get__(self, instance, owner):
+        return self.parser(self.name, self.default)
+
+    def __set__(self, instance, value):
+        # NOTE: we have to make sure the value is string so that it is compatible with the parser
+        if value is None:
+            os.environ.pop(self.name, None)
+        else:
+            os.environ[self.name] = str(value)
+
+
+class EnvVars:
+    SGLANG_MOE_PADDING = EnvField("SGLANG_MOE_PADDING", False)
+
+    # ================================================
+    # Environment variables for testing
+    # ================================================
+
+    SGLANG_TEST_RETRACT = EnvField("SGLANG_TEST_RETRACT", False)
+
+
+envs = EnvVars()
+
+
 def convert_SGL_to_SGLANG():
     for key, value in os.environ.items():
         if key.startswith("SGL_"):
@@ -44,30 +82,13 @@ def convert_SGL_to_SGLANG():
             os.environ[new_key] = value
 
 
-class EnvVars:
-    @property
-    def SGLANG_MOE_PADDING(self) -> bool:
-        return _get_bool_env_var("SGLANG_MOE_PADDING", False)
-
-    # ================================================
-    # Environment variables for testing
-    # ================================================
-
-    @property
-    def SGLANG_TEST_RETRACT(self) -> bool:
-        return _get_bool_env_var("SGLANG_TEST_RETRACT", False)
-
-    @SGLANG_TEST_RETRACT.setter
-    def SGLANG_TEST_RETRACT(self, value: bool):
-        _set_bool_env_var("SGLANG_TEST_RETRACT", value)
-
-
-envs = EnvVars()
-
 convert_SGL_to_SGLANG()
 
 if __name__ == "__main__":
     # Example usage
     print(envs.SGLANG_TEST_RETRACT)
     envs.SGLANG_TEST_RETRACT ^= 1
+    print(envs.SGLANG_TEST_RETRACT)
+    # unset the value, using the default
+    envs.SGLANG_TEST_RETRACT = None
     print(envs.SGLANG_TEST_RETRACT)
