@@ -160,9 +160,9 @@ from sglang.utils import TypeBasedDispatcher, get_exception_traceback
 logger = logging.getLogger(__name__)
 
 # Test retract decode for debugging purposes
-TEST_RETRACT = envs.SGLANG_TEST_RETRACT.get()
-RECORD_STEP_TIME = envs.SGLANG_RECORD_STEP_TIME.get()
-GRAMMAR_TIMEOUT = envs.SGLANG_GRAMMAR_TIMEOUT.get()
+TEST_RETRACT = envs.SGLANG_TEST_RETRACT
+RECORD_STEP_TIME = envs.SGLANG_RECORD_STEP_TIME
+GRAMMAR_TIMEOUT = envs.SGLANG_GRAMMAR_TIMEOUT
 
 
 @dataclass
@@ -509,7 +509,7 @@ class Scheduler(
         )
         self.init_disaggregation()
 
-        if envs.SGLANG_GC_LOG.get():
+        if envs.SGLANG_GC_LOG:
             configure_gc_logger()
 
     def maybe_sleep_on_idle(self):
@@ -2617,7 +2617,7 @@ def run_scheduler_process(
     suppress_other_loggers()
 
     # Set cpu affinity to this gpu process
-    if envs.SGLANG_SET_CPU_AFFINITY.get():
+    if envs.SGLANG_SET_CPU_AFFINITY:
         set_gpu_proc_affinity(server_args.tp_size, server_args.nnodes, gpu_id)
 
     embedding_cache_size = 100

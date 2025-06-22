@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Union
 
 from sglang.environ import envs
 
-SGLANG_TEST_REQUEST_TIME_STATS = envs.SGLANG_TEST_REQUEST_TIME_STATS.get()
+SGLANG_TEST_REQUEST_TIME_STATS = envs.SGLANG_TEST_REQUEST_TIME_STATS
 
 
 @dataclass

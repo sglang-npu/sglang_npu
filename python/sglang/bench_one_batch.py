@@ -437,7 +437,7 @@ def latency_test(
     tp_rank,
 ):
     # Set CPU affinity
-    if envs.SGLANG_SET_CPU_AFFINITY.get():
+    if envs.SGLANG_SET_CPU_AFFINITY:
         set_gpu_proc_affinity(server_args.tp_size, server_args.nnodes, tp_rank)
 
     # Configure the logger

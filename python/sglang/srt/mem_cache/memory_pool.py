@@ -197,7 +197,7 @@ class MHATokenToKVPool(KVCache):
         self.head_dim = head_dim
 
         # for disagg with nvlink
-        self.enable_custom_mem_pool = envs.SGLANG_MOONCAKE_CUSTOM_MEM_POOL.get()
+        self.enable_custom_mem_pool = envs.SGLANG_MOONCAKE_CUSTOM_MEM_POOL
         if self.enable_custom_mem_pool:
             # TODO(shangming): abstract custom allocator class for more backends
             from mooncake.allocator import NVLinkAllocator
@@ -525,7 +525,7 @@ class MLATokenToKVPool(KVCache):
         self.qk_rope_head_dim = qk_rope_head_dim
 
         # for disagg with nvlink
-        self.enable_custom_mem_pool = envs.SGLANG_MOONCAKE_CUSTOM_MEM_POOL.get()
+        self.enable_custom_mem_pool = envs.SGLANG_MOONCAKE_CUSTOM_MEM_POOL
         if self.enable_custom_mem_pool:
             # TODO(shangming): abstract custom allocator class for more backends
             from mooncake.allocator import NVLinkAllocator

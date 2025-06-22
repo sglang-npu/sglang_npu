@@ -62,7 +62,7 @@ class ExpertLocationUpdater:
 
 
 def _update_expert_weights(**kwargs):
-    if envs.SGLANG_EXPERT_LOCATION_UPDATER_CANARY.get():
+    if envs.SGLANG_EXPERT_LOCATION_UPDATER_CANARY:
         return _update_expert_weights_with_canary(**kwargs)
     else:
         return _update_expert_weights_raw(**kwargs)
@@ -124,7 +124,7 @@ def _update_expert_weights_raw(
     nnodes: int,
     rank: int,
 ):
-    log_metrics = envs.SGLANG_EXPERT_LOCATION_UPDATER_LOG_METRICS.get()
+    log_metrics = envs.SGLANG_EXPERT_LOCATION_UPDATER_LOG_METRICS
 
     temp_buffers = create_temp_buffers(
         routed_experts_weights_of_layer[update_layer_ids[0]]

@@ -24,7 +24,7 @@ if is_cuda():
 
 logger = logging.getLogger(__name__)
 
-SYNC_TOKEN_IDS_ACROSS_TP = envs.SYNC_TOKEN_IDS_ACROSS_TP.get()
+SYNC_TOKEN_IDS_ACROSS_TP = envs.SYNC_TOKEN_IDS_ACROSS_TP
 
 
 class Sampler(nn.Module):

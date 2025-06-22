@@ -83,8 +83,8 @@ _is_cpu = is_cpu()
 
 _is_fp8_fnuz = is_fp8_fnuz()
 
-_use_hip_int4 = envs.SGLANG_INT4_WEIGHT.get()
-_use_aiter = envs.SGLANG_USE_AITER.get() and _is_hip
+_use_hip_int4 = envs.SGLANG_INT4_WEIGHT
+_use_aiter = envs.SGLANG_USE_AITER and _is_hip
 
 if _is_hip:
     from aiter import ActivationType, QuantType
@@ -204,7 +204,7 @@ class Fp8LinearMethod(LinearMethodBase):
 
         # For GPUs that lack FP8 hardware support, we can leverage the Marlin
         # kernel for fast weight-only FP8 quantization
-        self.use_marlin = envs.SGLANG_FORCE_FP8_MARLIN.get() and MARLIN_FP8_AVAILABLE
+        self.use_marlin = envs.SGLANG_FORCE_FP8_MARLIN and MARLIN_FP8_AVAILABLE
         # Disable marlin for ROCm
         if _is_hip:
             self.use_marlin = False
@@ -578,7 +578,7 @@ class Fp8MoEMethod:
             layer.register_parameter("w2_weight_scale_inv", w2_weight_scale)
             assert self.quant_config.activation_scheme == "dynamic"
             if (
-                envs.SGLANG_CUTLASS_MOE.get()
+                envs.SGLANG_CUTLASS_MOE
                 and self.cutlass_fp8_supported
                 and is_sm100_supported()
             ):
@@ -919,7 +919,7 @@ class Fp8MoEMethod:
             # ROCm (_use_aiter): using column-wise scaling
             layer.w13_weight_scale1 *= layer.w13_weight_scale.unsqueeze(-1)
             layer.w2_weight_scale1 *= layer.w2_weight_scale.unsqueeze(-1)
-        elif envs.SGLANG_MOE_PADDING.get():
+        elif envs.SGLANG_MOE_PADDING:
             # If ROCm, apply weight padding (min. Mem channel contention) only if set
             layer.w13_weight = torch.nn.Parameter(
                 F.pad(layer.w13_weight.data, (0, padding_size), "constant", 0),
@@ -982,7 +982,7 @@ class Fp8MoEMethod:
                 return ret
 
         if (
-            envs.SGLANG_CUTLASS_MOE.get()
+            envs.SGLANG_CUTLASS_MOE
             and self.cutlass_fp8_supported
             and self.block_quant
             and is_sm100_supported()

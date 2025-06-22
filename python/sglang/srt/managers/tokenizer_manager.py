@@ -834,7 +834,7 @@ class TokenizerManager:
         profile_by_stage: bool = False,
     ):
         self.auto_create_handle_loop()
-        env_with_stack: bool = envs.SGLANG_PROFILE_WITH_STACK.get()
+        env_with_stack: bool = envs.SGLANG_PROFILE_WITH_STACK
         with_stack = False if with_stack is False or env_with_stack is False else True
         req = ProfileReq(
             type=ProfileReqType.START_PROFILE,
@@ -1142,7 +1142,7 @@ class TokenizerManager:
                 )
                 break
 
-            elif envs.SGL_FORCE_SHUTDOWN.get():
+            elif envs.SGL_FORCE_SHUTDOWN:
                 # if force shutdown flag set, exit immediately
                 logger.error(
                     "Signal SIGTERM received while force shutdown flag set. Force exiting... remaining number of requests: %d",

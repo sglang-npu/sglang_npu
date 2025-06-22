@@ -296,7 +296,7 @@ class PagedTokenToKVPoolAllocator(BaseTokenToKVPoolAllocator):
     ):
         super().__init__(size, page_size, dtype, device, kvcache)
         self.num_pages = size // page_size
-        self.debug_mode = envs.SGLANG_DEBUG_MEMORY_POOL.get()
+        self.debug_mode = envs.SGLANG_DEBUG_MEMORY_POOL
         self.ret_values = torch.empty((), dtype=torch.int64, device=self.device)
         self.clear()
 

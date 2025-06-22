@@ -39,7 +39,7 @@ _is_hip = is_hip()
 _is_cuda = is_cuda()
 _is_fp8_fnuz = is_fp8_fnuz()
 
-_use_aiter = envs.SGLANG_USE_AITER.get() and _is_hip
+_use_aiter = envs.SGLANG_USE_AITER and _is_hip
 
 if _use_aiter:
     from aiter import gemm_a8w8_blockscale_CK
@@ -47,7 +47,7 @@ if _use_aiter:
 if _is_cuda:
     from sgl_kernel import fp8_blockwise_scaled_mm, fp8_scaled_mm
 
-use_vllm_cutlass_w8a8_fp8_kernel = envs.USE_VLLM_CUTLASS_W8A8_FP8_KERNEL.get()
+use_vllm_cutlass_w8a8_fp8_kernel = envs.USE_VLLM_CUTLASS_W8A8_FP8_KERNEL
 
 # Input scaling factors are no longer optional in _scaled_mm starting
 # from pytorch 2.5. Allocating a dummy tensor to pass as input_scale
@@ -109,7 +109,7 @@ def normalize_e4m3fn_to_e4m3fnuz(
 
 
 def cutlass_block_fp8_supported() -> bool:
-    if not envs.SGLANG_SUPPORT_CUTLASS_BLOCK_FP8.get():
+    if not envs.SGLANG_SUPPORT_CUTLASS_BLOCK_FP8:
         return False
     if _is_cuda:
         major, minor = torch.cuda.get_device_capability()
@@ -122,7 +122,7 @@ def cutlass_block_fp8_supported() -> bool:
 
 CUTLASS_BLOCK_FP8_SUPPORTED = cutlass_block_fp8_supported()
 ENABLE_FLASHINFER_GEMM = (
-    envs.SGLANG_ENABLE_FLASHINFER_GEMM.get()
+    envs.SGLANG_ENABLE_FLASHINFER_GEMM
     and is_sm100_supported()
     and is_flashinfer_available()
 )
@@ -525,7 +525,7 @@ def apply_fp8_linear(
     # We also don't pad when using torch.compile,
     # as it breaks with dynamic shapes.
     if pad_output is None:
-        pad_output = not envs.SGLANG_ENABLE_TORCH_COMPILE.get()
+        pad_output = not envs.SGLANG_ENABLE_TORCH_COMPILE
     output_padding = 17 if pad_output else None
 
     # View input as 2D matrix for fp8 methods

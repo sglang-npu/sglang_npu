@@ -32,6 +32,18 @@ class EnvField:
     def clear(self):
         os.environ.pop(self.name, None)
 
+    def __get__(self, instance, owner):
+        if isinstance(instance, Envs):
+            return self.get()
+
+        return self
+
+    def __set__(self, instance, value):
+        if value is None:
+            self.clear()
+        else:
+            self.set(value)
+
 
 class EnvFieldBool(EnvField):
     def parse(self, value: str) -> bool:
@@ -59,7 +71,7 @@ class EnvFieldFloat(EnvField):
             raise ValueError(f'"{value}" is not a valid float value')
 
 
-class EnvVars:
+class Envs:
     # fmt: off
     SGLANG_ENABLE_TORCH_INFERENCE_MODE = EnvFieldBool(False)
     SGLANG_SET_CPU_AFFINITY = EnvFieldBool(False)
@@ -130,7 +142,7 @@ class EnvVars:
     # fmt: on
 
 
-envs = EnvVars()
+envs = Envs()
 
 
 def convert_SGL_to_SGLANG():
@@ -146,11 +158,15 @@ def convert_SGL_to_SGLANG():
 convert_SGL_to_SGLANG()
 
 if __name__ == "__main__":
-    # Example usage
-    envs.SGLANG_TEST_RETRACT.clear()
-    print(f"{envs.SGLANG_TEST_RETRACT.get()=}")
-    print(f"{envs.SGLANG_TEST_RETRACT.get(True)=}")
-    envs.SGLANG_TEST_RETRACT.set(True)
-    print(f"{envs.SGLANG_TEST_RETRACT.get()=}")
-    envs.SGLANG_TEST_RETRACT.clear()
-    print(f"{envs.SGLANG_TEST_RETRACT.get()=}")
+    # Example usage for envs
+    envs.SGLANG_TEST_RETRACT = None
+    print(f"{envs.SGLANG_TEST_RETRACT=}")
+    envs.SGLANG_TEST_RETRACT ^= True
+    print(f"{envs.SGLANG_TEST_RETRACT=}")
+
+    # Example usage for EnvVars
+    Envs.SGLANG_TEST_RETRACT.clear()
+    print(f"{Envs.SGLANG_TEST_RETRACT.get()=}")
+    print(f"{Envs.SGLANG_TEST_RETRACT.get(True)=}")
+    Envs.SGLANG_TEST_RETRACT.set(True)
+    print(f"{Envs.SGLANG_TEST_RETRACT.get()=}")

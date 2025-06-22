@@ -26,7 +26,7 @@ from sglang.srt.utils import cpu_has_amx_support, is_cpu, is_cuda, is_hip, is_np
 _is_cuda = is_cuda()
 _is_hip = is_hip()
 _is_npu = is_npu()
-_use_aiter = envs.SGLANG_USE_AITER.get() and _is_hip
+_use_aiter = envs.SGLANG_USE_AITER and _is_hip
 _is_cpu_amx_available = cpu_has_amx_support()
 _is_cpu = is_cpu()
 
