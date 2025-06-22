@@ -13,6 +13,10 @@ def _get_bool_env_var(name: str, default: bool) -> bool:
     return default
 
 
+def _set_bool_env_var(name: str, value: bool):
+    os.environ[name] = str(value).lower()
+
+
 def _get_int_env_var(name: str, default: int) -> int:
     value = os.getenv(name)
     if value is not None:
@@ -45,7 +49,25 @@ class EnvVars:
     def SGLANG_MOE_PADDING(self) -> bool:
         return _get_bool_env_var("SGLANG_MOE_PADDING", False)
 
+    # ================================================
+    # Environment variables for testing
+    # ================================================
+
+    @property
+    def SGLANG_TEST_RETRACT(self) -> bool:
+        return _get_bool_env_var("SGLANG_TEST_RETRACT", False)
+
+    @SGLANG_TEST_RETRACT.setter
+    def SGLANG_TEST_RETRACT(self, value: bool):
+        _set_bool_env_var("SGLANG_TEST_RETRACT", value)
+
 
 envs = EnvVars()
 
 convert_SGL_to_SGLANG()
+
+if __name__ == "__main__":
+    # Example usage
+    print(envs.SGLANG_TEST_RETRACT)
+    envs.SGLANG_TEST_RETRACT ^= 1
+    print(envs.SGLANG_TEST_RETRACT)
