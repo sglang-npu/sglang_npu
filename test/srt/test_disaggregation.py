@@ -570,7 +570,7 @@ class TestDisaggregationSimulatedRetract(CustomTestCase):
 
     @classmethod
     def tearDownClass(cls):
-        envs.SGLANG_TEST_RETRACT = False
+        envs.SGLANG_TEST_RETRACT = None
         for process in [cls.process_lb, cls.process_decode, cls.process_prefill]:
             if process:
                 try:
