@@ -145,7 +145,6 @@ from sglang.srt.utils import (
     configure_logger,
     disable_request_logging,
     get_available_gpu_memory,
-    get_bool_env_var,
     get_zmq_socket,
     kill_itself_when_parent_died,
     point_to_point_pyobj,
@@ -161,9 +160,9 @@ from sglang.utils import TypeBasedDispatcher, get_exception_traceback
 logger = logging.getLogger(__name__)
 
 # Test retract decode for debugging purposes
-TEST_RETRACT = get_bool_env_var("SGLANG_TEST_RETRACT")
-RECORD_STEP_TIME = get_bool_env_var("SGLANG_RECORD_STEP_TIME")
-GRAMMAR_TIMEOUT = float(os.environ.get("SGLANG_GRAMMAR_TIMEOUT", 300))
+TEST_RETRACT = envs.SGLANG_TEST_RETRACT.get()
+RECORD_STEP_TIME = envs.SGLANG_RECORD_STEP_TIME.get()
+GRAMMAR_TIMEOUT = envs.SGLANG_GRAMMAR_TIMEOUT.get()
 
 
 @dataclass
@@ -510,7 +509,7 @@ class Scheduler(
         )
         self.init_disaggregation()
 
-        if get_bool_env_var("SGLANG_GC_LOG"):
+        if envs.SGLANG_GC_LOG.get():
             configure_gc_logger()
 
     def maybe_sleep_on_idle(self):

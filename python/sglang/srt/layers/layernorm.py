@@ -19,20 +19,14 @@ from typing import Optional, Tuple, Union
 import torch
 import torch.nn as nn
 
+from sglang.environ import envs
 from sglang.srt.custom_op import CustomOp
-from sglang.srt.utils import (
-    cpu_has_amx_support,
-    get_bool_env_var,
-    is_cpu,
-    is_cuda,
-    is_hip,
-    is_npu,
-)
+from sglang.srt.utils import cpu_has_amx_support, is_cpu, is_cuda, is_hip, is_npu
 
 _is_cuda = is_cuda()
 _is_hip = is_hip()
 _is_npu = is_npu()
-_use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
+_use_aiter = envs.SGLANG_USE_AITER.get() and _is_hip
 _is_cpu_amx_available = cpu_has_amx_support()
 _is_cpu = is_cpu()
 

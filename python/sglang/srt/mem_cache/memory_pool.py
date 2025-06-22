@@ -34,9 +34,10 @@ import torch
 import triton
 import triton.language as tl
 
+from sglang.environ import envs
 from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
 from sglang.srt.layers.radix_attention import RadixAttention
-from sglang.srt.utils import debug_timing, get_bool_env_var, is_cuda, next_power_of_2
+from sglang.srt.utils import debug_timing, is_cuda, next_power_of_2
 
 logger = logging.getLogger(__name__)
 
@@ -196,9 +197,7 @@ class MHATokenToKVPool(KVCache):
         self.head_dim = head_dim
 
         # for disagg with nvlink
-        self.enable_custom_mem_pool = get_bool_env_var(
-            "SGLANG_MOONCAKE_CUSTOM_MEM_POOL", "false"
-        )
+        self.enable_custom_mem_pool = envs.SGLANG_MOONCAKE_CUSTOM_MEM_POOL.get()
         if self.enable_custom_mem_pool:
             # TODO(shangming): abstract custom allocator class for more backends
             from mooncake.allocator import NVLinkAllocator
@@ -526,9 +525,7 @@ class MLATokenToKVPool(KVCache):
         self.qk_rope_head_dim = qk_rope_head_dim
 
         # for disagg with nvlink
-        self.enable_custom_mem_pool = get_bool_env_var(
-            "SGLANG_MOONCAKE_CUSTOM_MEM_POOL", "false"
-        )
+        self.enable_custom_mem_pool = envs.SGLANG_MOONCAKE_CUSTOM_MEM_POOL.get()
         if self.enable_custom_mem_pool:
             # TODO(shangming): abstract custom allocator class for more backends
             from mooncake.allocator import NVLinkAllocator

@@ -67,7 +67,29 @@ class EnvVars:
     SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN = EnvFieldBool(True)
     SGLANG_USE_MODELSCOPE = EnvFieldBool(False)
     SGLANG_DISABLE_REQUEST_LOGGING = EnvFieldBool(False)
-    SGLANG_INT4_WEIGHT: EnvFieldBool = EnvFieldBool(False)
+    SGLANG_INT4_WEIGHT = EnvFieldBool(False)
+    USE_VLLM_CUTLASS_W8A8_FP8_KERNEL = EnvFieldBool(False)
+    SGLANG_SUPPORT_CUTLASS_BLOCK_FP8 = EnvFieldBool(False)
+    SGLANG_ENABLE_TORCH_COMPILE = EnvFieldBool(False)
+    SGLANG_FORCE_FP8_MARLIN = EnvFieldBool(False)
+    SGLANG_CUTLASS_MOE = EnvFieldBool(False)
+    SYNC_TOKEN_IDS_ACROSS_TP = EnvFieldBool(False)
+    SGLANG_GRAMMAR_TIMEOUT = EnvFieldFloat(300)
+    SGLANG_PROFILE_WITH_STACK = EnvFieldBool(True)
+    SGL_FORCE_SHUTDOWN = EnvFieldBool(False)
+    SGLANG_DEBUG_MEMORY_POOL = EnvFieldBool(False)
+    SGLANG_MOONCAKE_CUSTOM_MEM_POOL = EnvFieldBool(False)
+    SGLANG_TEST_REQUEST_TIME_STATS = EnvFieldBool(False)
+    SGLANG_EXPERT_LOCATION_UPDATER_CANARY = EnvFieldBool(False)
+    SGLANG_EXPERT_LOCATION_UPDATER_LOG_METRICS = EnvFieldBool(False)
+    SGLANG_LOG_EXPERT_LOCATION_METADATA = EnvFieldBool(False)
+    SGL_DISABLE_TP_MEMORY_INBALANCE_CHECK = EnvFieldBool(False)
+
+    # ================================================
+    # Logging
+    # ================================================
+    SGLANG_GC_LOG = EnvFieldBool(False)
+
 
     # ================================================
     # Attention / Kernel Backends
@@ -76,6 +98,7 @@ class EnvVars:
     SGLANG_TRITON_DECODE_ATTN_STATIC_KV_SPLITS = EnvFieldBool(False)
     SGLANG_USE_AITER = EnvFieldBool(False)
     SGL_IS_FIRST_RANK_ON_NODE = EnvFieldBool(True)
+    SGLANG_ENABLE_FLASHINFER_GEMM = EnvFieldBool(False)
 
     # ================================================
     # DeepGemm
@@ -84,6 +107,8 @@ class EnvVars:
     SGL_JIT_DEEPGEMM_PRECOMPILE = EnvFieldBool(True)
     SGL_JIT_DEEPGEMM_COMPILE_WORKERS = EnvFieldInt(4)
     SGL_IN_DEEPGEMM_PRECOMPILE_STAGE = EnvFieldBool(False)
+    SGL_ENABLE_JIT_DEEPGEMM = EnvFieldBool(True)
+
 
     # ================================================
     # Runtime Configuration
@@ -99,6 +124,7 @@ class EnvVars:
     # Testing Environment Variables
     # ================================================
     SGLANG_TEST_RETRACT = EnvFieldBool(False)
+    SGLANG_RECORD_STEP_TIME = EnvFieldBool(False)
     SGLANG_IS_IN_CI = EnvFieldBool(False)
 
     # fmt: on
