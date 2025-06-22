@@ -43,6 +43,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse, Response, StreamingResponse
 
+from sglang.environ import envs
 from sglang.srt.disaggregation.utils import (
     FAKE_BOOTSTRAP_HOST,
     register_disaggregation_server,
@@ -93,7 +94,6 @@ from sglang.srt.utils import (
     add_api_key_middleware,
     add_prometheus_middleware,
     delete_directory,
-    get_bool_env_var,
     kill_process_tree,
     set_uvicorn_logging_configs,
 )
@@ -157,7 +157,7 @@ async def lifespan(fast_api_app: FastAPI):
 # Fast API
 app = FastAPI(
     lifespan=lifespan,
-    openapi_url=None if get_bool_env_var("DISABLE_OPENAPI_DOC") else "/openapi.json",
+    openapi_url=None if envs.SGLANG_DISABLE_OPENAPI_DOC else "/openapi.json",
 )
 app.add_middleware(
     CORSMiddleware,

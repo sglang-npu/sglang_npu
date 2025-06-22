@@ -67,23 +67,27 @@ class EnvVars:
     SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN = EnvFieldBool(True)
     SGLANG_USE_MODELSCOPE = EnvFieldBool(False)
     SGLANG_DISABLE_REQUEST_LOGGING = EnvFieldBool(False)
+    SGLANG_INT4_WEIGHT: EnvFieldBool = EnvFieldBool(False)
 
     # ================================================
-    # Hardware compatibility
+    # Attention / Kernel Backends
     # ================================================
     SGLANG_IS_FLASHINFER_AVAILABLE = EnvFieldBool(True)
+    SGLANG_TRITON_DECODE_ATTN_STATIC_KV_SPLITS = EnvFieldBool(False)
+    SGLANG_USE_AITER = EnvFieldBool(False)
 
     # ================================================
-    # Runtime configuration
+    # Runtime Configuration
     # ================================================
     SGLANG_INIT_NEW_TOKEN_RATIO = EnvFieldFloat(None)
     SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR = EnvFieldFloat(None)
     SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS = EnvFieldInt(None)
     SGLANG_DISABLE_OUTLINES_DISK_CACHE = EnvFieldBool(True)
     SGLANG_USE_MESSAGE_QUEUE_BROADCASTER = EnvFieldBool(True)
+    SGLANG_DISABLE_OPENAPI_DOC = EnvFieldBool(False)
 
     # ================================================
-    # Testing environment variables
+    # Testing Environment Variables
     # ================================================
     SGLANG_TEST_RETRACT = EnvFieldBool(False)
     SGLANG_IS_IN_CI = EnvFieldBool(False)

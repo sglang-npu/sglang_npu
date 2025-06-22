@@ -43,13 +43,7 @@ from sglang.srt.managers.expert_location import get_global_expert_location_metad
 from sglang.srt.managers.expert_location_dispatch import ExpertLocationDispatchInfo
 from sglang.srt.managers.schedule_batch import global_server_args_dict
 from sglang.srt.model_executor.forward_batch_info import ForwardMode
-from sglang.srt.utils import (
-    DeepEPMode,
-    dispose_tensor,
-    get_bool_env_var,
-    is_hip,
-    set_weight_attrs,
-)
+from sglang.srt.utils import DeepEPMode, dispose_tensor, is_hip, set_weight_attrs
 
 _is_hip = is_hip()
 _is_fp8_fnuz = is_fp8_fnuz()

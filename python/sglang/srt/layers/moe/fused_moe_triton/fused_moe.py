@@ -28,7 +28,6 @@ from sglang.srt.layers.quantization.int8_kernel import (
 from sglang.srt.utils import (
     cpu_has_amx_support,
     direct_register_custom_op,
-    get_bool_env_var,
     get_device_name,
     is_cpu,
     is_cuda,
@@ -1516,7 +1515,7 @@ def fused_experts_impl(
     if (
         not (use_fp8_w8a8 or use_int8_w8a8)
         or block_shape is not None
-        or (_is_hip and get_bool_env_var("SGLANG_USE_AITER"))
+        or (_is_hip and envs.SGLANG_USE_AITER)
     ):
         padded_size = 0
 
