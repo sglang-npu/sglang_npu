@@ -4,8 +4,7 @@ from typing import Any
 
 
 class EnvField:
-    def __init__(self, name: str, default: Any):
-        self.name = name
+    def __init__(self, default: Any):
         self.default = default
 
     def parser(self, name: str, default: Any) -> Any:
@@ -13,6 +12,9 @@ class EnvField:
         if value is not None:
             return value
         return default
+
+    def __set_name__(self, owner, name):
+        self.name = name
 
     def __get__(self, instance, owner):
         return self.parser(self.name, self.default)
@@ -26,8 +28,8 @@ class EnvField:
 
 
 class EnvFieldBool(EnvField):
-    def __init__(self, name: str, default: bool):
-        super().__init__(name, default)
+    def __init__(self, default: bool):
+        super().__init__(default)
 
     def parser(self, name: str, default: bool) -> bool:
         value = os.getenv(name)
@@ -41,8 +43,8 @@ class EnvFieldBool(EnvField):
 
 
 class EnvFieldInt(EnvField):
-    def __init__(self, name: str, default: int):
-        super().__init__(name, default)
+    def __init__(self, default: int):
+        super().__init__(default)
 
     def parser(self, name: str, default: int) -> int:
         value = os.getenv(name)
@@ -56,16 +58,16 @@ class EnvFieldInt(EnvField):
 
 class EnvVars:
     # fmt: off
-    SGLANG_ENABLE_TORCH_INFERENCE_MODE = EnvFieldBool("SGLANG_ENABLE_TORCH_INFERENCE_MODE", False)
-    SGLANG_SET_CPU_AFFINITY = EnvFieldBool("SGLANG_SET_CPU_AFFINITY", False)
-    SGLANG_MOE_PADDING = EnvFieldBool("SGLANG_MOE_PADDING", False)
-    SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN = EnvFieldBool("SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN", True)
+    SGLANG_ENABLE_TORCH_INFERENCE_MODE = EnvFieldBool(False)
+    SGLANG_SET_CPU_AFFINITY = EnvFieldBool(False)
+    SGLANG_MOE_PADDING = EnvFieldBool(False)
+    SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN = EnvFieldBool(True)
 
     # ================================================
     # Environment variables for testing
     # ================================================
 
-    SGLANG_TEST_RETRACT = EnvFieldBool("SGLANG_TEST_RETRACT", False)
+    SGLANG_TEST_RETRACT = EnvFieldBool(False)
 
     # fmt: on
 
