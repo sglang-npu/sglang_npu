@@ -65,19 +65,28 @@ class EnvVars:
     SGLANG_SET_CPU_AFFINITY = EnvFieldBool(False)
     SGLANG_MOE_PADDING = EnvFieldBool(False)
     SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN = EnvFieldBool(True)
+    SGLANG_USE_MODELSCOPE = EnvFieldBool(False)
+    SGLANG_DISABLE_REQUEST_LOGGING = EnvFieldBool(False)
 
     # ================================================
-    # Runtime constants
+    # Hardware compatibility
+    # ================================================
+    SGLANG_IS_FLASHINFER_AVAILABLE = EnvFieldBool(True)
+
+    # ================================================
+    # Runtime configuration
     # ================================================
     SGLANG_INIT_NEW_TOKEN_RATIO = EnvFieldFloat(None)
     SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR = EnvFieldFloat(None)
     SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS = EnvFieldInt(None)
+    SGLANG_DISABLE_OUTLINES_DISK_CACHE = EnvFieldBool(True)
+    SGLANG_USE_MESSAGE_QUEUE_BROADCASTER = EnvFieldBool(True)
 
     # ================================================
     # Testing environment variables
     # ================================================
-
     SGLANG_TEST_RETRACT = EnvFieldBool(False)
+    SGLANG_IS_IN_CI = EnvFieldBool(False)
 
     # fmt: on
 

@@ -180,7 +180,7 @@ def is_flashinfer_available():
     Check whether flashinfer is available.
     As of Oct. 6, 2024, it is only available on NVIDIA GPUs.
     """
-    if not get_bool_env_var("SGLANG_IS_FLASHINFER_AVAILABLE", default="true"):
+    if not envs.SGLANG_IS_FLASHINFER_AVAILABLE:
         return False
     return importlib.util.find_spec("flashinfer") is not None and is_cuda()
 
@@ -880,7 +880,7 @@ def add_api_key_middleware(app, api_key: str):
 
 
 def prepare_model_and_tokenizer(model_path: str, tokenizer_path: str):
-    if get_bool_env_var("SGLANG_USE_MODELSCOPE"):
+    if envs.SGLANG_USE_MODELSCOPE:
         if not os.path.exists(model_path):
             from modelscope import snapshot_download
 
@@ -1394,7 +1394,7 @@ def init_custom_process_group(
 
 def crash_on_warnings():
     # Crash on warning if we are running CI tests
-    return get_bool_env_var("SGLANG_IS_IN_CI")
+    return envs.SGLANG_IS_IN_CI
 
 
 def print_warning_once(msg: str) -> None:
@@ -1644,7 +1644,7 @@ def set_gpu_proc_affinity(
 
 @lru_cache(maxsize=2)
 def disable_request_logging() -> bool:
-    return get_bool_env_var("SGLANG_DISABLE_REQUEST_LOGGING")
+    return envs.SGLANG_DISABLE_REQUEST_LOGGING
 
 
 def dataclass_to_string_truncated(
