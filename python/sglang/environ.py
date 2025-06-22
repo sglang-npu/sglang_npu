@@ -1,52 +1,18 @@
 import os
 import warnings
-from typing import Any, Callable, Optional
-
-
-def _get_bool_env_var(name: str, default: bool) -> bool:
-    value = os.getenv(name)
-    if value is not None:
-        value = value.lower()
-        if value in ["true", "1", "yes", "y"]:
-            return True
-        if value in ["false", "0", "no", "n"]:
-            return False
-    return default
-
-
-def _get_int_env_var(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is not None:
-        try:
-            return int(value)
-        except ValueError:
-            warnings.warn(f"Invalid value for {name}: {value}")
-    return default
-
-
-def _get_str_env_var(name: str, default: str) -> str:
-    value = os.getenv(name)
-    if value is not None:
-        return value
-    return default
+from typing import Any
 
 
 class EnvField:
-    def __init__(
-        self, name: str, default: bool, parser: Optional[Callable[[str], Any]] = None
-    ):
+    def __init__(self, name: str, default: Any):
         self.name = name
         self.default = default
-        self.parser = parser
-        if self.parser is None:
-            if type(self.default) == bool:
-                self.parser = _get_bool_env_var
-            elif type(self.default) == int:
-                self.parser = _get_int_env_var
-            elif type(self.default) == str:
-                self.parser = _get_str_env_var
-            else:
-                raise ValueError(f"Unsupported type: {type(self.default)} for {name}")
+
+    def parser(self, name: str, default: Any) -> Any:
+        value = os.getenv(name)
+        if value is not None:
+            return value
+        return default
 
     def __get__(self, instance, owner):
         return self.parser(self.name, self.default)
@@ -59,14 +25,43 @@ class EnvField:
             os.environ[self.name] = str(value)
 
 
+class EnvFieldBool(EnvField):
+    def __init__(self, name: str, default: bool):
+        super().__init__(name, default)
+
+    def parser(self, name: str, default: bool) -> bool:
+        value = os.getenv(name)
+        if value is not None:
+            value = value.lower()
+            if value in ["true", "1", "yes", "y"]:
+                return True
+            if value in ["false", "0", "no", "n"]:
+                return False
+        return default
+
+
+class EnvFieldInt(EnvField):
+    def __init__(self, name: str, default: int):
+        super().__init__(name, default)
+
+    def parser(self, name: str, default: int) -> int:
+        value = os.getenv(name)
+        if value is not None:
+            try:
+                return int(value)
+            except ValueError:
+                warnings.warn(f"Invalid value for {name}: {value}")
+        return default
+
+
 class EnvVars:
-    SGLANG_MOE_PADDING = EnvField("SGLANG_MOE_PADDING", False)
+    SGLANG_MOE_PADDING = EnvFieldBool("SGLANG_MOE_PADDING", False)
 
     # ================================================
     # Environment variables for testing
     # ================================================
 
-    SGLANG_TEST_RETRACT = EnvField("SGLANG_TEST_RETRACT", False)
+    SGLANG_TEST_RETRACT = EnvFieldBool("SGLANG_TEST_RETRACT", False)
 
 
 envs = EnvVars()
