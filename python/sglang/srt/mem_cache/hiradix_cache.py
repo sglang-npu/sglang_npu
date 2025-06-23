@@ -17,10 +17,12 @@ from sglang.srt.mem_cache.memory_pool import (
     MLATokenToKVPool,
     ReqToTokenPool,
 )
-from sglang.srt.mem_cache.memory_pool_host import (
+from sglang.srt.mem_cache.memory_pool_disk import (
     MHATokenToKVPoolDisk,
-    MHATokenToKVPoolHost,
     MLATokenToKVPoolDisk,
+)
+from sglang.srt.mem_cache.memory_pool_host import (
+    MHATokenToKVPoolHost,
     MLATokenToKVPoolHost,
 )
 from sglang.srt.mem_cache.radix_cache import RadixCache, TreeNode
@@ -118,16 +120,14 @@ class HiRadixCache(RadixCache):
         return height
 
     def write_backup(self, node: TreeNode, write_back=False, write_disk: bool = True):
-        device_indices = node.value.clone()
-        device_indices = device_indices.cpu()
         host_indices = self.cache_controller.write(
-            device_indices=device_indices,
+            device_indices=node.value,
             node_id=node.id,
         )
         if host_indices is None:
             self.evict_host(len(node.value))
             host_indices = self.cache_controller.write(
-                device_indices=device_indices,
+                device_indices=node.value,
                 node_id=node.id,
             )
         if host_indices is not None:
@@ -140,7 +140,7 @@ class HiRadixCache(RadixCache):
             return 0
 
         return self._write_backup_disk(
-            node, host_indices, device_indices, write_back, write_disk
+            node, host_indices, node.value, write_back, write_disk
         )
 
     def _write_backup_disk(
@@ -478,6 +478,9 @@ class HiRadixCache(RadixCache):
         else:
             value = empty_value
 
+        return self._build_match_result(value, last_node)
+
+    def _build_match_result(self, value, last_node):
         host_hit_length = 0
         last_host_node = last_node
         while last_node.evicted:
@@ -698,15 +701,17 @@ class HiRadixCacheDisk(HiRadixCache):
         if not write_disk:
             return len(host_indices)
 
+        device_indices_cpu = device_indices.cpu()
+
         # write to disk
         disk_indices = self.cache_controller.write_device2disk(
-            device_indices=device_indices,
+            device_indices=device_indices_cpu,
             node_id=node.id,
         )
         if disk_indices is None:
             self.evict_disk(len(node.value))
             disk_indices = self.cache_controller.write_device2disk(
-                device_indices=device_indices,
+                device_indices=device_indices_cpu,
                 node_id=node.id,
             )
         if disk_indices is not None:
@@ -910,6 +915,32 @@ class HiRadixCacheDisk(HiRadixCache):
             self.loading_check_helper()
             self._loading_check_disk_helper()
             time.sleep(0.1)
+
+    def _build_match_result(self, value, last_node):
+        host_hit_length = 0
+        last_host_node = last_node
+        last_host_node_recorded = False
+        disk_hit_length = 0
+        last_disk_node = last_node
+        while last_node.evicted:
+            if not last_node.backuped:
+                disk_hit_length += len(last_node.disk_value)
+                last_node = last_node.parent
+            else:
+                if not last_host_node_recorded:
+                    last_host_node = last_node
+                    last_host_node_recorded = True
+                host_hit_length += len(last_node.host_value)
+                last_node = last_node.parent
+
+        return MatchResult(
+            device_indices=value,
+            last_device_node=last_node,
+            last_host_node=last_host_node,
+            host_hit_length=host_hit_length,
+            last_disk_node=last_disk_node,
+            disk_hit_length=disk_hit_length,
+        )
 
     def _split_node_disk(self, new_node: TreeNode, child: TreeNode, split_len: int):
         new_node.loading_disk2host = child.loading_disk2host

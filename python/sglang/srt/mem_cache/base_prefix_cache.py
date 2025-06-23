@@ -20,12 +20,17 @@ class MatchResult(NamedTuple):
                             this **must** be the same as `last_device_node`.
         host_hit_length :   Length of the KV cache hit on the host, if applicable.
                             0 if HiCache is not enabled.
+        last_disk_node  :   The last TreeNode on the disk that was matched.
+        disk_hit_length :   Length of the KV cache hit on the disk, if applicable.
+                            0 if HiCache is not enabled.
     """
 
     device_indices: torch.Tensor
     last_device_node: Any
     last_host_node: Any
     host_hit_length: int = 0
+    last_disk_node: Any = None
+    disk_hit_length: int = 0
 
 
 class BasePrefixCache(ABC):

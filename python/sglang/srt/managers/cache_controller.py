@@ -24,12 +24,8 @@ import torch
 
 if TYPE_CHECKING:
     from sglang.srt.mem_cache.allocator import BaseTokenToKVPoolAllocator
+    from sglang.srt.mem_cache.memory_pool_disk import DiskKVCache
     from sglang.srt.mem_cache.memory_pool_host import HostKVCache
-from sglang.srt.mem_cache.memory_pool import (
-    DiskKVCache,
-    HostKVCache,
-    TokenToKVPoolAllocator,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -286,12 +282,11 @@ class HiCacheController:
         device_indices = self.mem_pool_device_allocator.alloc(len(host_indices))
         if device_indices is None:
             return None
-        device_indices_cpu = device_indices.cpu()
         self.mem_pool_host.protect_load(host_indices)
         # to ensure the device indices are ready before accessed by another CUDA stream
         torch.cuda.current_stream().synchronize()
         self.load_queue.put(
-            CacheOperation(host_indices, device_indices_cpu, node_id, priority)
+            CacheOperation(host_indices, device_indices, node_id, priority)
         )
         return device_indices
 
@@ -575,7 +570,7 @@ class HiCacheControllerDisk(HiCacheController):
 
     def __init__(
         self,
-        token_to_kv_pool_allocator: TokenToKVPoolAllocator,
+        token_to_kv_pool_allocator: BaseTokenToKVPoolAllocator,
         mem_pool_host: HostKVCache,
         mem_pool_disk: DiskKVCache,
         page_size: int,

@@ -165,9 +165,14 @@ class SchedulePolicy:
             prefix_ids = r.adjust_max_prefix_ids()
 
             # NOTE: the prefix_indices must always be aligned with last_node
-            r.prefix_indices, r.last_node, r.last_host_node, r.host_hit_length = (
-                self.tree_cache.match_prefix(rid=r.rid, key=prefix_ids)
-            )
+            (
+                r.prefix_indices,
+                r.last_node,
+                r.last_host_node,
+                r.host_hit_length,
+                r.last_disk_node,
+                r.disk_hit_length,
+            ) = self.tree_cache.match_prefix(rid=r.rid, key=prefix_ids)
 
             # NOTE(sang): This logic is for in-batch prefix caching;
             # If there are more than 1 request that have small matching prefix from
@@ -177,7 +182,7 @@ class SchedulePolicy:
             # threshold means we cannot use in-batch prefix caching for short prefixes.
             # It is kind of common when the engine is long running (e.g., imagine the prefix "the").
             if len(r.prefix_indices) <= IN_BATCH_PREFIX_CACHING_CHECK_THRESHOLD:
-                in_batch_matching_prefixes, _, _, _ = (
+                in_batch_matching_prefixes, _, _, _, _, _ = (
                     self.waiting_queue_radix_tree.match_prefix(
                         rid=r.rid, key=prefix_ids
                     )
@@ -484,6 +489,7 @@ class PrefillAdder:
             return AddReqResult.OTHER
 
         with self._lock_node(req.last_node):
+            # self.rem_total_tokens may decrease after the lock acquisition
             if total_tokens >= self.rem_total_tokens:
                 return AddReqResult.NO_TOKEN
 

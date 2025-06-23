@@ -1288,7 +1288,7 @@ class Scheduler(
 
         self.global_log_hit_tokens += adder.log_hit_tokens
         self.global_log_input_tokens += adder.log_input_tokens
-        f += f"\n    #cache_hit_rate: {self.global_log_hit_tokens/(self.global_log_hit_tokens+self.global_log_input_tokens)}"
+        f += f", #cache-hit-rate: {self.global_log_hit_tokens/(self.global_log_hit_tokens+self.global_log_input_tokens)}"
 
         logger.info(f)
 

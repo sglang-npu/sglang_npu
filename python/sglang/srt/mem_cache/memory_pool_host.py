@@ -261,6 +261,7 @@ class MHATokenToKVPoolHost(HostKVCache):
 
     def write_page_all_layers(self, host_indices, device_indices, device_pool):
         device_indices_cpu = device_indices[:: self.page_size].cpu()
+        torch.cuda.current_stream().synchronize()
         for i in range(len(device_indices_cpu)):
             h_index = host_indices[i * self.page_size]
             d_index = device_indices_cpu[i]
@@ -276,6 +277,7 @@ class MHATokenToKVPoolHost(HostKVCache):
 
     def load_page_per_layer(self, host_indices, device_indices, device_pool, layer_id):
         device_indices_cpu = device_indices[:: self.page_size].cpu()
+        torch.cuda.current_stream().synchronize()
         for i in range(len(device_indices_cpu)):
             h_index = host_indices[i * self.page_size]
             d_index = device_indices_cpu[i]
@@ -356,6 +358,7 @@ class MLATokenToKVPoolHost(HostKVCache):
 
     def write_page_all_layers(self, host_indices, device_indices, device_pool):
         device_indices_cpu = device_indices[:: self.page_size].cpu()
+        torch.cuda.current_stream().synchronize()
         for i in range(len(device_indices_cpu)):
             h_index = host_indices[i * self.page_size]
             d_index = device_indices_cpu[i]
@@ -367,6 +370,7 @@ class MLATokenToKVPoolHost(HostKVCache):
 
     def load_page_per_layer(self, host_indices, device_indices, device_pool, layer_id):
         device_indices_cpu = device_indices[:: self.page_size].cpu()
+        torch.cuda.current_stream().synchronize()
         for i in range(len(device_indices_cpu)):
             h_index = host_indices[i * self.page_size]
             d_index = device_indices_cpu[i]
