@@ -14,18 +14,23 @@ from sglang.srt.layers.quantization.fp8_kernel import is_fp8_fnuz, scaled_fp8_qu
 from sglang.srt.layers.quantization.fp8_utils import normalize_e4m3fn_to_e4m3fnuz
 from sglang.srt.layers.quantization.utils import (
     all_close_1d,
+    cpu_has_amx_support,
     per_tensor_dequantize,
     replace_parameter,
 )
-from sglang.srt.utils import is_cuda, is_hip, set_weight_attrs
+from sglang.srt.utils import is_cpu, is_cuda, is_hip, is_npu, set_weight_attrs
 
 _is_cuda = is_cuda()
 _is_hip = is_hip()
+_is_npu = is_npu()
+_is_cpu_amx_available = cpu_has_amx_support()
+_is_cpu = is_cpu()
 
-if not (_is_cuda or _is_hip):
-    from vllm._custom_ops import scaled_fp8_quant
-if not _is_cuda:
+# TODO: remove vllm dependency for _is_hip=True
+if not (_is_cuda or _is_npu or (_is_cpu and _is_cpu_amx_available)):
     from vllm import _custom_ops as vllm_ops
+if not (_is_cuda or _is_npu or (_is_cpu and _is_cpu_amx_available) or _is_hip):
+    from vllm._custom_ops import scaled_fp8_quant
 
 try:
     import vllm
