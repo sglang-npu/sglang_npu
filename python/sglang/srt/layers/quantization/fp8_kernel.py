@@ -1129,7 +1129,6 @@ def per_token_group_quant_mla_deep_gemm_masked_fp8(
 
 
 if _is_cuda:
-    from sgl_kernel import sgl_per_tensor_quant_fp8, sgl_per_token_quant_fp8
 
     def scaled_fp8_quant(
         input: torch.Tensor,
