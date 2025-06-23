@@ -27,6 +27,7 @@ from sglang.math_utils import align
 from sglang.srt.layers.quantization import deep_gemm_wrapper
 from sglang.srt.utils import (
     direct_register_custom_op,
+    get_bool_env_var,
     get_device_core_count,
     get_device_name,
     is_cuda,
@@ -35,8 +36,21 @@ from sglang.srt.utils import (
     supports_custom_op,
 )
 
-_is_hip = is_hip()
 _is_cuda = is_cuda()
+_is_hip = is_hip()
+_use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
+if _is_hip:
+    if _use_aiter:
+        try:
+            from aiter import (  # v0.1.3
+                dynamic_per_tensor_quant,
+                dynamic_per_token_scaled_quant,
+                static_per_tensor_quant,
+            )
+        except ImportError:
+            raise ImportError("aiter is required when SGLANG_USE_AITER is set to True")
+    else:
+        import vllm._C
 
 if _is_cuda:
     from sgl_kernel import (
@@ -1147,10 +1161,9 @@ if _is_cuda:
         """
         assert input.ndim == 2, f"Expected 2D input tensor, got {input.ndim}D"
         shape = input.shape
-        out_dtype = torch.float8_e4m3fnuz if _is_hip else torch.float8_e4m3fn
         if num_token_padding:
             shape = (max(num_token_padding, input.shape[0]), shape[1])
-        output = torch.empty(shape, device=input.device, dtype=out_dtype)
+        output = torch.empty(shape, device=input.device, dtype=fp8_dtype)
 
         if scale is None:
             # Dynamic scaling
@@ -1176,7 +1189,6 @@ if _is_cuda:
         return output, scale
 
 elif _is_hip:
-    from aiter import dynamic_per_token_scaled_fp8_quant, static_scaled_fp8_quant
 
     def scaled_fp8_quant(
         input: torch.Tensor,
@@ -1206,11 +1218,9 @@ elif _is_hip:
         """
         assert input.ndim == 2, f"Expected 2D input tensor, got {input.ndim}D"
         shape = input.shape
-        # TODO (hubertlu-tw): account for various gfx targets
-        out_dtype = torch.float8_e4m3fnuz if _is_hip else torch.float8_e4m3fn
         if num_token_padding:
             shape = (max(num_token_padding, input.shape[0]), shape[1])
-        output = torch.empty(shape, device=input.device, dtype=out_dtype)
+        output = torch.empty(shape, device=input.device, dtype=fp8_dtype)
 
         if scale is None:
             # Dynamic scaling
@@ -1218,15 +1228,26 @@ elif _is_hip:
                 scale = torch.empty(
                     (shape[0], 1), device=input.device, dtype=torch.float32
                 )
-                dynamic_per_token_scaled_fp8_quant(output, input, scale)
+                if _use_aiter:
+                    dynamic_per_token_scaled_quant(output, input, scale)
+                else:
+                    torch.ops._C.dynamic_per_token_scaled_fp8_quant(
+                        output, input.contiguous(), scale, None
+                    )
             else:
                 scale = torch.zeros(1, device=input.device, dtype=torch.float32)
-                static_scaled_fp8_quant(output, input, scale)
+                if _use_aiter:
+                    dynamic_per_tensor_quant(output, input, scale)
+                else:
+                    torch.ops._C.dynamic_scaled_fp8_quant(output, input, scale)
         else:
             # Static scaling
             assert (
                 scale.numel() == 1
             ), f"Expected scalar scale, got numel={scale.numel()}"
-            static_scaled_fp8_quant(output, input, scale)
+            if _use_aiter:
+                static_per_tensor_quant(output, input, scale)
+            else:
+                torch.ops._C.static_scaled_fp8_quant(output, input, scale)
 
         return output, scale
