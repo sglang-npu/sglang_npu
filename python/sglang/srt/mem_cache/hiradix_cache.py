@@ -925,13 +925,12 @@ class HiRadixCacheDisk(HiRadixCache):
         while last_node.evicted:
             if not last_node.backuped:
                 disk_hit_length += len(last_node.disk_value)
-                last_node = last_node.parent
             else:
                 if not last_host_node_recorded:
                     last_host_node = last_node
                     last_host_node_recorded = True
                 host_hit_length += len(last_node.host_value)
-                last_node = last_node.parent
+            last_node = last_node.parent
 
         return MatchResult(
             device_indices=value,

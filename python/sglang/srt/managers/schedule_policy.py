@@ -493,9 +493,11 @@ class PrefillAdder:
             if total_tokens >= self.rem_total_tokens:
                 return AddReqResult.NO_TOKEN
 
-            if req.host_hit_length > 0:
+            if req.host_hit_length + req.disk_hit_length > 0:
                 new_indices, req.last_node = self.tree_cache.init_load_back(
                     req.last_host_node, req.host_hit_length
+                ) if req.last_disk_node is None else self.tree_cache.init_load_back(
+                    req.last_disk_node, req.host_hit_length + req.disk_hit_length
                 )
                 req.prefix_indices = torch.cat([req.prefix_indices, new_indices])
                 req.extend_input_len = len(req.fill_ids) - len(req.prefix_indices)
