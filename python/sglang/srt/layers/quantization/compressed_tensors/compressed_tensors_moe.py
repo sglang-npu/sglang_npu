@@ -26,10 +26,8 @@ _is_npu = is_npu()
 _is_cpu_amx_available = cpu_has_amx_support()
 _is_cpu = is_cpu()
 
-# TODO: remove vllm dependency for _is_hip=True
-if not (_is_cuda or _is_npu or (_is_cpu and _is_cpu_amx_available)):
-    from vllm import _custom_ops as vllm_ops
 if not (_is_cuda or _is_npu or (_is_cpu and _is_cpu_amx_available) or _is_hip):
+    from vllm import _custom_ops as vllm_ops
     from vllm._custom_ops import scaled_fp8_quant
 
 try:
