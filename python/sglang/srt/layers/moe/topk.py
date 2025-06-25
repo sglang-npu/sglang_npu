@@ -35,6 +35,7 @@ from sglang.srt.utils import (
     is_cpu,
     is_cuda,
     is_hip,
+    get_bool_env_var
 )
 
 _is_cuda = is_cuda()
