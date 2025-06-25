@@ -33,6 +33,7 @@ import torch
 import zmq
 from torch.distributed import barrier
 
+from sglang.environ import envs
 from sglang.global_config import global_config
 from sglang.srt.configs.model_config import ModelConfig
 from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE, GPU_MEMORY_TYPE_WEIGHTS
@@ -144,7 +145,6 @@ from sglang.srt.utils import (
     configure_logger,
     disable_request_logging,
     get_available_gpu_memory,
-    get_bool_env_var,
     get_zmq_socket,
     kill_itself_when_parent_died,
     point_to_point_pyobj,
@@ -160,9 +160,9 @@ from sglang.utils import TypeBasedDispatcher, get_exception_traceback
 logger = logging.getLogger(__name__)
 
 # Test retract decode for debugging purposes
-TEST_RETRACT = get_bool_env_var("SGLANG_TEST_RETRACT")
-RECORD_STEP_TIME = get_bool_env_var("SGLANG_RECORD_STEP_TIME")
-GRAMMAR_TIMEOUT = float(os.environ.get("SGLANG_GRAMMAR_TIMEOUT", 300))
+TEST_RETRACT = envs.SGLANG_TEST_RETRACT
+RECORD_STEP_TIME = envs.SGLANG_RECORD_STEP_TIME
+GRAMMAR_TIMEOUT = envs.SGLANG_GRAMMAR_TIMEOUT
 
 
 @dataclass
@@ -509,7 +509,7 @@ class Scheduler(
         )
         self.init_disaggregation()
 
-        if get_bool_env_var("SGLANG_GC_LOG"):
+        if envs.SGLANG_GC_LOG:
             configure_gc_logger()
 
     def maybe_sleep_on_idle(self):
@@ -2619,7 +2619,7 @@ def run_scheduler_process(
     suppress_other_loggers()
 
     # Set cpu affinity to this gpu process
-    if get_bool_env_var("SGLANG_SET_CPU_AFFINITY"):
+    if envs.SGLANG_SET_CPU_AFFINITY:
         set_gpu_proc_affinity(server_args.tp_size, server_args.nnodes, gpu_id)
 
     embedding_cache_size = 100
