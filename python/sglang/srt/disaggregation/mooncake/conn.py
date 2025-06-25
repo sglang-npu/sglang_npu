@@ -251,17 +251,19 @@ class MooncakeKVManager(BaseKVManager):
 
         # Worker function for processing a single layer
         def process_layer(src_ptr: int, dst_ptr: int, item_len: int) -> int:
+            src_addr_list = []
+            dst_addr_list = []
+            length_list = []
             for prefill_index, decode_index in zip(prefill_kv_blocks, dst_kv_blocks):
                 src_addr = src_ptr + int(prefill_index[0]) * item_len
                 dst_addr = dst_ptr + int(decode_index[0]) * item_len
                 length = item_len * len(prefill_index)
-
-                status = self.engine.transfer_sync(
-                    mooncake_session_id, src_addr, dst_addr, length
-                )
-                if status != 0:
-                    return status
-            return 0
+                src_addr_list.append(src_addr)
+                dst_addr_list.append(dst_addr)
+                length_list.append(length)
+            return self.engine.batch_transfer_sync(
+                mooncake_session_id, src_addr_list, dst_addr_list, length_list
+            )
 
         futures = [
             executor.submit(
@@ -742,11 +744,11 @@ class MooncakeKVSender(BaseKVSender):
             self.kv_mgr.request_status.pop(self.bootstrap_room)
 
     def failure_exception(self):
-        self.clear()
-
         # Explicitly set the status to failure since this request has failed in another rank
         if self.conclude_state is None:
             self.conclude_state = KVPoll.Failed
+
+        self.clear()
 
         with self.kv_mgr.failure_lock:
             failure_reason = self.kv_mgr.failure_records.pop(
@@ -1003,11 +1005,11 @@ class MooncakeKVReceiver(BaseKVReceiver):
             self.kv_mgr.request_status.pop(self.bootstrap_room)
 
     def failure_exception(self):
-        self.clear()
-
         # Explicitly set the status to failure since this request has failed in another rank
         if self.conclude_state is None:
             self.conclude_state = KVPoll.Failed
+
+        self.clear()
 
         with self.kv_mgr.failure_lock:
             failure_reason = self.kv_mgr.failure_records.pop(
