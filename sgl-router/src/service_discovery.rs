@@ -552,6 +552,8 @@ mod tests {
             worker_urls,
             timeout_secs: 5,
             interval_secs: 1,
+            dp_awareness: false,
+            api_key: None,
         })
     }
 

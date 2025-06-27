@@ -38,6 +38,8 @@ struct Router {
     max_payload_size: usize,
     verbose: bool,
     log_dir: Option<String>,
+    dp_awareness: bool,
+    api_key: Option<String>,
     service_discovery: bool,
     selector: HashMap<String, String>,
     service_discovery_port: u16,
@@ -74,6 +76,8 @@ impl Router {
         max_payload_size = 256 * 1024 * 1024,  // 256MB default for large batches
         verbose = false,
         log_dir = None,
+        dp_awareness = false,
+        api_key = None,
         service_discovery = false,
         selector = HashMap::new(),
         service_discovery_port = 80,
@@ -103,6 +107,8 @@ impl Router {
         max_payload_size: usize,
         verbose: bool,
         log_dir: Option<String>,
+        dp_awareness: bool,
+        api_key: Option<String>,
         service_discovery: bool,
         selector: HashMap<String, String>,
         service_discovery_port: u16,
@@ -132,6 +138,8 @@ impl Router {
             max_payload_size,
             verbose,
             log_dir,
+            dp_awareness,
+            api_key,
             service_discovery,
             selector,
             service_discovery_port,
@@ -190,10 +198,14 @@ impl Router {
                 PolicyType::Random => router::PolicyConfig::RandomConfig {
                     timeout_secs: self.worker_startup_timeout_secs,
                     interval_secs: self.worker_startup_check_interval,
+                    dp_awareness: self.dp_awareness,
+                    api_key: self.api_key.clone(),
                 },
                 PolicyType::RoundRobin => router::PolicyConfig::RoundRobinConfig {
                     timeout_secs: self.worker_startup_timeout_secs,
                     interval_secs: self.worker_startup_check_interval,
+                    dp_awareness: self.dp_awareness,
+                    api_key: self.api_key.clone(),
                 },
                 PolicyType::CacheAware => router::PolicyConfig::CacheAwareConfig {
                     timeout_secs: self.worker_startup_timeout_secs,
@@ -203,6 +215,8 @@ impl Router {
                     balance_rel_threshold: self.balance_rel_threshold,
                     eviction_interval_secs: self.eviction_interval_secs,
                     max_tree_size: self.max_tree_size,
+                    dp_awareness: self.dp_awareness,
+                    api_key: self.api_key.clone(),
                 },
                 PolicyType::PowerOfTwo => {
                     return Err(pyo3::exceptions::PyValueError::new_err(
@@ -246,6 +260,7 @@ impl Router {
                 worker_urls: self.worker_urls.clone(),
                 policy_config,
                 verbose: self.verbose,
+                dp_awareness: self.dp_awareness,
                 max_payload_size: self.max_payload_size,
                 log_dir: self.log_dir.clone(),
                 service_discovery_config,
