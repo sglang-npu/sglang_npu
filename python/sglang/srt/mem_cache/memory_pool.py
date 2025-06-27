@@ -159,6 +159,11 @@ class KVCache(abc.ABC):
     def register_layer_transfer_counter(self, layer_transfer_counter):
         self.layer_transfer_counter = layer_transfer_counter
 
+    def register_layer_transfer_counter_disk2device(
+        self, layer_transfer_counter_disk2device
+    ):
+        self.layer_transfer_counter_disk2device = layer_transfer_counter_disk2device
+
     def get_cpu_copy(self, indices):
         raise NotImplementedError()
 
@@ -211,6 +216,7 @@ class MHATokenToKVPool(KVCache):
         self._create_buffers()
 
         self.layer_transfer_counter = None
+        self.layer_transfer_counter_disk2device = None
         self.device_module = torch.get_device_module(self.device)
         self.alt_stream = self.device_module.Stream() if _is_cuda else None
 
@@ -368,6 +374,10 @@ class MHATokenToKVPool(KVCache):
     def get_key_buffer(self, layer_id: int):
         if self.layer_transfer_counter is not None:
             self.layer_transfer_counter.wait_until(layer_id - self.start_layer)
+        if self.layer_transfer_counter_disk2device is not None:
+            self.layer_transfer_counter_disk2device.wait_until(
+                layer_id - self.start_layer
+            )
 
         if self.store_dtype != self.dtype:
             return self.k_buffer[layer_id - self.start_layer].view(self.dtype)
@@ -376,6 +386,10 @@ class MHATokenToKVPool(KVCache):
     def get_value_buffer(self, layer_id: int):
         if self.layer_transfer_counter is not None:
             self.layer_transfer_counter.wait_until(layer_id - self.start_layer)
+        if self.layer_transfer_counter_disk2device is not None:
+            self.layer_transfer_counter_disk2device.wait_until(
+                layer_id - self.start_layer
+            )
 
         if self.store_dtype != self.dtype:
             return self.v_buffer[layer_id - self.start_layer].view(self.dtype)
@@ -555,6 +569,7 @@ class MLATokenToKVPool(KVCache):
                 ]
 
         self.layer_transfer_counter = None
+        self.layer_transfer_counter_disk2device = None
 
         kv_size = self.get_kv_size_bytes()
         logger.info(
@@ -584,6 +599,10 @@ class MLATokenToKVPool(KVCache):
     def get_key_buffer(self, layer_id: int):
         if self.layer_transfer_counter is not None:
             self.layer_transfer_counter.wait_until(layer_id - self.start_layer)
+        if self.layer_transfer_counter_disk2device is not None:
+            self.layer_transfer_counter_disk2device.wait_until(
+                layer_id - self.start_layer
+            )
 
         if self.store_dtype != self.dtype:
             return self.kv_buffer[layer_id - self.start_layer].view(self.dtype)
@@ -592,6 +611,10 @@ class MLATokenToKVPool(KVCache):
     def get_value_buffer(self, layer_id: int):
         if self.layer_transfer_counter is not None:
             self.layer_transfer_counter.wait_until(layer_id - self.start_layer)
+        if self.layer_transfer_counter_disk2device is not None:
+            self.layer_transfer_counter_disk2device.wait_until(
+                layer_id - self.start_layer
+            )
 
         if self.store_dtype != self.dtype:
             return self.kv_buffer[layer_id - self.start_layer][

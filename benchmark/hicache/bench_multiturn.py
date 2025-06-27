@@ -108,7 +108,7 @@ async def async_request_sglang_generate(
     """
     Sends a streaming request to the server. Gathers text token-by-token.
     """
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(6000)) as session:
         headers = {}
         generated_text = ""
         ttft = 0.0
@@ -388,7 +388,7 @@ if __name__ == "__main__":
     args = parse_args()
     flush_cache_url = f"http://{args.host}:{args.port}/flush_cache"
 
-    for request_rate in [16, 14, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]:
+    for request_rate in [16]:  # , 14, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]:
         args.request_rate = request_rate
         requests.post(flush_cache_url)
         time.sleep(1)

@@ -55,8 +55,13 @@ class TreeNode:
         self.hit_count = 0
         # indicating the node is loading KV cache from host
         self.loading = False
+        # indicating the node is loading KV cache from disk
+        self.loading_disk2host = False
+        self.loading_disk2device = False
         # store the host indices of KV cache
         self.host_value: Optional[torch.Tensor] = None
+        # store the disk indices of KV cache
+        self.disk_value = None
 
         self.id = TreeNode.counter if id is None else id
         TreeNode.counter += 1
@@ -68,6 +73,10 @@ class TreeNode:
     @property
     def backuped(self):
         return self.host_value is not None
+
+    @property
+    def backuped_disk(self):
+        return self.disk_value is not None
 
     def __lt__(self, other: "TreeNode"):
         return self.last_access_time < other.last_access_time
@@ -239,7 +248,9 @@ class RadixCache(BasePrefixCache):
         )
 
         # The prefix indices could be updated, reuse it
-        new_indices, new_last_node, _, _ = self.match_prefix(page_aligned_token_ids)
+        new_indices, new_last_node, _, _, _, _ = self.match_prefix(
+            page_aligned_token_ids
+        )
         self.req_to_token_pool.write(
             (req.req_pool_idx, slice(len(req.prefix_indices), len(new_indices))),
             new_indices[len(req.prefix_indices) :],

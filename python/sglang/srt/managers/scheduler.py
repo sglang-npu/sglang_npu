@@ -127,7 +127,7 @@ from sglang.srt.managers.tp_worker import TpModelWorker
 from sglang.srt.managers.tp_worker_overlap_thread import TpModelWorkerClient
 from sglang.srt.managers.utils import validate_input_length
 from sglang.srt.mem_cache.chunk_cache import ChunkCache
-from sglang.srt.mem_cache.hiradix_cache import HiRadixCache
+from sglang.srt.mem_cache.hiradix_cache import HiRadixCache, HiRadixCacheDisk
 from sglang.srt.mem_cache.radix_cache import RadixCache
 from sglang.srt.metrics.collector import SchedulerMetricsCollector, SchedulerStats
 from sglang.srt.model_executor.forward_batch_info import ForwardMode, PPProxyTensors
@@ -529,6 +529,9 @@ class Scheduler(
         if get_bool_env_var("SGLANG_GC_LOG"):
             configure_gc_logger()
 
+        self.global_log_hit_tokens = 0
+        self.global_log_input_tokens = 0
+
     def maybe_sleep_on_idle(self):
         if self.idle_sleeper is not None:
             self.idle_sleeper.maybe_sleep()
@@ -577,7 +580,12 @@ class Scheduler(
             )
         else:
             if self.enable_hierarchical_cache:
-                self.tree_cache = HiRadixCache(
+                tree_class = (
+                    HiRadixCache
+                    if not server_args.hicache_use_disk
+                    else HiRadixCacheDisk
+                )
+                self.tree_cache = tree_class(
                     req_to_token_pool=self.req_to_token_pool,
                     token_to_kv_pool_allocator=self.token_to_kv_pool_allocator,
                     tp_cache_group=(
@@ -589,6 +597,11 @@ class Scheduler(
                     hicache_ratio=server_args.hicache_ratio,
                     hicache_size=server_args.hicache_size,
                     hicache_write_policy=server_args.hicache_write_policy,
+                    use_disk=server_args.hicache_use_disk,
+                    disk_path=server_args.hicache_disk_path,
+                    disk_ratio=server_args.hicache_disk_ratio,
+                    disk_size=server_args.hicache_disk_size,
+                    disk_rank=self.tp_rank,
                 )
                 self.tp_worker.register_hicache_layer_transfer_counter(
                     self.tree_cache.cache_controller.layer_done_counter
@@ -1305,6 +1318,10 @@ class Scheduler(
         else:
             f += f"#running-req: {running_bs}, "
             f += f"#queue-req: {len(self.waiting_queue)}"
+
+        self.global_log_hit_tokens += adder.log_hit_tokens
+        self.global_log_input_tokens += adder.log_input_tokens
+        f += f", #cache-hit-rate: {self.global_log_hit_tokens/(self.global_log_hit_tokens+self.global_log_input_tokens)}"
 
         logger.info(f)
 
@@ -2045,6 +2062,10 @@ class Scheduler(
 
     def flush_cache(self):
         """Flush the memory pool and cache."""
+
+        self.global_log_hit_tokens = 0
+        self.global_log_input_tokens = 0
+
         if (
             len(self.waiting_queue) == 0
             and self.running_batch.is_empty()

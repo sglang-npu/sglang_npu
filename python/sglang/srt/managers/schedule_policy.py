@@ -165,9 +165,14 @@ class SchedulePolicy:
             prefix_ids = r.adjust_max_prefix_ids()
 
             # NOTE: the prefix_indices must always be aligned with last_node
-            r.prefix_indices, r.last_node, r.last_host_node, r.host_hit_length = (
-                self.tree_cache.match_prefix(rid=r.rid, key=prefix_ids)
-            )
+            (
+                r.prefix_indices,
+                r.last_node,
+                r.last_host_node,
+                r.host_hit_length,
+                r.last_disk_node,
+                r.disk_hit_length,
+            ) = self.tree_cache.match_prefix(rid=r.rid, key=prefix_ids)
 
             # NOTE(sang): This logic is for in-batch prefix caching;
             # If there are more than 1 request that have small matching prefix from
@@ -177,7 +182,7 @@ class SchedulePolicy:
             # threshold means we cannot use in-batch prefix caching for short prefixes.
             # It is kind of common when the engine is long running (e.g., imagine the prefix "the").
             if len(r.prefix_indices) <= IN_BATCH_PREFIX_CACHING_CHECK_THRESHOLD:
-                in_batch_matching_prefixes, _, _, _ = (
+                in_batch_matching_prefixes, _, _, _, _, _ = (
                     self.waiting_queue_radix_tree.match_prefix(
                         rid=r.rid, key=prefix_ids
                     )
@@ -357,8 +362,13 @@ class PrefillAdder:
         self.log_input_tokens += extend_input_len
 
     def add_chunked_req(self, req: Req):
-        truncated = req.extend_input_len > self.rem_chunk_tokens
-        req.extend_input_len = min(req.extend_input_len, self.rem_chunk_tokens)
+        rem_tokens_ = min(self.rem_chunk_tokens, int(self.rem_total_tokens))
+        truncated = req.extend_input_len > rem_tokens_
+        req.extend_input_len = min(req.extend_input_len, rem_tokens_)
+        if req.extend_input_len > self.token_to_kv_pool_allocator.available_size():
+            self.tree_cache.evict(
+                req.extend_input_len - self.token_to_kv_pool_allocator.available_size()
+            )
         req.fill_ids = req.fill_ids[: len(req.prefix_indices) + req.extend_input_len]
         self.can_run_list.append(req)
         self._update_prefill_budget(
@@ -483,9 +493,15 @@ class PrefillAdder:
             if total_tokens >= self.rem_total_tokens:
                 return AddReqResult.NO_TOKEN
 
-            if req.host_hit_length > 0:
-                new_indices, req.last_node = self.tree_cache.init_load_back(
-                    req.last_host_node, req.host_hit_length
+            if req.host_hit_length + req.disk_hit_length > 0:
+                new_indices, req.last_node = (
+                    self.tree_cache.init_load_back(
+                        req.last_host_node, req.host_hit_length
+                    )
+                    if req.last_disk_node is None
+                    else self.tree_cache.init_load_back(
+                        req.last_disk_node, req.host_hit_length + req.disk_hit_length
+                    )
                 )
                 req.prefix_indices = torch.cat([req.prefix_indices, new_indices])
                 req.extend_input_len = len(req.fill_ids) - len(req.prefix_indices)
