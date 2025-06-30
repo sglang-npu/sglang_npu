@@ -83,7 +83,7 @@ BASE_QUANTIZATION_METHODS: Dict[str, Type[QuantizationConfig]] = {
     "moe_wna16": MoeWNA16Config,
     "compressed-tensors": CompressedTensorsConfig,
     "qoq": QoQConfig,
-    "petit_fp4": PetitNvFp4Config,
+    "petit_nvfp4": PetitNvFp4Config,
 }
 
 # VLLM-dependent quantization methods
