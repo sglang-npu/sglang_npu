@@ -839,6 +839,18 @@ class ServerArgs:
                 "(1.0 = pure hybrid: swa_size / full_size = local_attention_size / context_length)"
             ),
         )
+        parser.add_argument(
+            "--impl",
+            type=str,
+            default=ServerArgs.impl,
+            help="Which implementation of the model to use.\n\n"
+            '* "auto" will try to use the SGLang implementation if it exists '
+            "and fall back to the Transformers implementation if no SGLang "
+            "implementation is available.\n"
+            '* "sglang" will use the SGLang model implementation.\n'
+            '* "transformers" will use the Transformers model '
+            "implementation.\n",
+        )
 
         # Other runtime options
         parser.add_argument(
