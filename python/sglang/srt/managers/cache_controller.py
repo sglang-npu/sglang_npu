@@ -784,6 +784,16 @@ class HiCacheControllerDisk(HiCacheController):
                 batch_operation.disk_indices
             )
 
+            batch_operation_data = torch.empty(
+                batch_operation.data.shape,
+                dtype=self.mem_pool_host.dtype,
+                device=self.mem_pool_host.device,
+            )
+            batch_operation_data.copy_(batch_operation.data)
+            self.mem_pool_host.transfer(
+                batch_operation.host_indices, batch_operation_data
+            )
+
             for node_id in batch_operation.node_ids:
                 if node_id != 0:
                     self.ack_load_queue_disk2host.put(node_id)
