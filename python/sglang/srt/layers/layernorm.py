@@ -28,6 +28,8 @@ from sglang.srt.utils import (
     is_hip,
     is_npu,
 )
+from sglang.srt.layers.elementwise import fused_rmsnorm
+from sglang.srt.layers.triton_ops.layernorm import fused_add_rms_norm_triton
 
 _is_cuda = is_cuda()
 _is_hip = is_hip()
@@ -67,6 +69,18 @@ class RMSNorm(CustomOp):
         self.variance_epsilon = eps
         if _use_aiter:
             self._forward_method = self.forward_aiter
+
+    def forward(self, *args, **kwargs):
+        if get_bool_env_var("SGL_USE_TRITON_NON_ATTN"):
+            return self.forward_triton(*args, **kwargs)
+        if torch.compiler.is_compiling():
+            return self.forward_native(*args, **kwargs)
+        if _is_cuda:
+            return self.forward_cuda(*args, **kwargs)
+        elif _is_hip:
+            return self.forward_hip(*args, **kwargs)
+        else:
+            return self.forward_native(*args, **kwargs)
 
     def forward_cuda(
         self,
@@ -188,6 +202,24 @@ class RMSNorm(CustomOp):
                     return fused_result
 
         return self.forward(x, residual)
+
+    def forward_triton(
+        self,
+        x: torch.Tensor,
+        residual: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        if residual is not None:
+            fused_add_rms_norm_triton(
+                x,
+                residual,
+                [len(self.weight.data)],
+                self.weight.data,
+                self.variance_epsilon,
+            )
+            return x, residual
+
+        out = fused_rmsnorm(x, self.weight.data, self.variance_epsilon, autotune=True)
+        return out
 
 
 class GemmaRMSNorm(CustomOp):

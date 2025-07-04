@@ -21,6 +21,7 @@ import ctypes
 import dataclasses
 import functools
 import importlib
+import inspect
 import io
 import ipaddress
 import itertools

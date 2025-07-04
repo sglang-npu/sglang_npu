@@ -36,7 +36,9 @@ from sglang.srt.utils import (
     is_cpu,
     set_weight_attrs,
     use_intel_amx_backend,
+    get_bool_env_var,
 )
+from sglang.srt.layers.triton_ops.linear import addmm_triton, mm_triton
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +195,45 @@ class UnquantizedLinearMethod(LinearMethodBase):
         return F.linear(x, layer.weight, bias)
 
 
+class Triton_UnquantizedLinearMethod(LinearMethodBase):
+    """Linear method without quantization."""
+
+    def create_weights(
+        self,
+        layer: torch.nn.Module,
+        input_size_per_partition: int,
+        output_partition_sizes: List[int],
+        input_size: int,
+        output_size: int,
+        params_dtype: torch.dtype,
+        **extra_weight_attrs,
+    ):
+        weight = Parameter(
+            torch.empty(
+                sum(output_partition_sizes),
+                input_size_per_partition,
+                dtype=params_dtype,
+            ),
+            requires_grad=False,
+        )
+        set_weight_attrs(weight, {"input_dim": 1, "output_dim": 0})
+        layer.register_parameter("weight", weight)
+        set_weight_attrs(weight, extra_weight_attrs)
+
+    def apply(
+        self,
+        layer: torch.nn.Module,
+        x: torch.Tensor,
+        bias: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        transposed = layer.weight
+        transposed = transposed.transpose(0, 1)
+        if bias is None:
+            return mm_triton(x, transposed)
+        else:
+            return addmm_triton(bias, x, transposed)
+
+
 class LinearBase(torch.nn.Module):
     """Base linear layer.
 
@@ -216,7 +257,7 @@ class LinearBase(torch.nn.Module):
     ):
         super().__init__()
 
-        # Keep input parameters
+        # Keep input parameter
         self.input_size = input_size
         self.output_size = output_size
         self.skip_bias_add = skip_bias_add
@@ -224,7 +265,14 @@ class LinearBase(torch.nn.Module):
             params_dtype = torch.get_default_dtype()
         self.params_dtype = params_dtype
         if quant_config is None:
-            self.quant_method: Optional[QuantizeMethodBase] = UnquantizedLinearMethod()
+            if get_bool_env_var("SGL_USE_TRITON_NON_ATTN"):
+                self.quant_method: Optional[QuantizeMethodBase] = (
+                    Triton_UnquantizedLinearMethod()
+                )
+            else:
+                self.quant_method: Optional[QuantizeMethodBase] = (
+                    UnquantizedLinearMethod()
+                )
         else:
             self.quant_method = quant_config.get_quant_method(self, prefix=prefix)
 
