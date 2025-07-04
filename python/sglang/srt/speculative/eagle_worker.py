@@ -27,7 +27,6 @@ from sglang.srt.model_executor.forward_batch_info import (
     ForwardBatch,
     ForwardMode,
 )
-from sglang.srt.patch_torch import monkey_patch_torch_reductions
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.speculative.build_eagle_tree import build_tree_kernel_efficient
 from sglang.srt.speculative.eagle_draft_cuda_graph_runner import (
@@ -909,7 +908,6 @@ class EAGLEWorker(TpModelWorker):
                 raise ValueError("Detected errors during sampling! NaN in the logits.")
 
     def update_weights_from_tensor(self, recv_req: UpdateWeightsFromTensorReqInput):
-        monkey_patch_torch_reductions()
         named_tensors = MultiprocessingSerializer.deserialize(
             recv_req.serialized_named_tensors[self.tp_rank]
         )
