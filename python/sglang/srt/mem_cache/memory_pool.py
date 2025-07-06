@@ -231,6 +231,7 @@ class MHATokenToKVPool(KVCache):
             ):
                 # [size, head_num, head_dim] for each layer
                 # The padded slot 0 is used for writing dummy outputs from padded tokens.
+                self.k_head_dim = self.head_dim
                 self.k_buffer = [
                     torch.zeros(
                         (self.size + self.page_size, self.head_num, self.head_dim),
@@ -239,6 +240,7 @@ class MHATokenToKVPool(KVCache):
                     )
                     for _ in range(self.layer_num)
                 ]
+                self.v_head_dim = self.head_dim
                 self.v_buffer = [
                     torch.zeros(
                         (self.size + self.page_size, self.head_num, self.head_dim),
@@ -362,6 +364,9 @@ class MHATokenToKVPool(KVCache):
             self.v_buffer[i][indices] = v_data[i]
 
     def transfer_per_layer(self, indices, flat_data, layer_id):
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         # transfer prepared data from host to device
         flat_data = flat_data.to(device=self.device, non_blocking=False)
         k_data, v_data = flat_data[0], flat_data[1]
@@ -369,6 +374,9 @@ class MHATokenToKVPool(KVCache):
         self.v_buffer[layer_id - self.start_layer][indices] = v_data
 
     def get_key_buffer(self, layer_id: int):
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         if self.layer_transfer_counter is not None:
             self.layer_transfer_counter.wait_until(layer_id - self.start_layer)
 
@@ -377,6 +385,9 @@ class MHATokenToKVPool(KVCache):
         return self.k_buffer[layer_id - self.start_layer]
 
     def get_value_buffer(self, layer_id: int):
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         if self.layer_transfer_counter is not None:
             self.layer_transfer_counter.wait_until(layer_id - self.start_layer)
 
@@ -385,6 +396,9 @@ class MHATokenToKVPool(KVCache):
         return self.v_buffer[layer_id - self.start_layer]
 
     def get_kv_buffer(self, layer_id: int):
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         return self.get_key_buffer(layer_id), self.get_value_buffer(layer_id)
 
     def set_kv_buffer(
@@ -403,6 +417,9 @@ class MHATokenToKVPool(KVCache):
             layer_id = layer_id_override
         else:
             layer_id = layer.layer_id
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         if cache_k.dtype != self.dtype:
             if k_scale is not None:
                 cache_k.div_(k_scale)
@@ -731,6 +748,7 @@ class MLATokenToKVPool(KVCache):
 
         self.kv_lora_rank = kv_lora_rank
         self.qk_rope_head_dim = qk_rope_head_dim
+        self.v_head_dim = self.kv_lora_rank
 
         # for disagg with nvlink
         self.enable_custom_mem_pool = get_bool_env_var(
@@ -790,6 +808,9 @@ class MLATokenToKVPool(KVCache):
         return self.custom_mem_pool
 
     def get_key_buffer(self, layer_id: int):
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         if self.layer_transfer_counter is not None:
             self.layer_transfer_counter.wait_until(layer_id - self.start_layer)
 
@@ -798,6 +819,9 @@ class MLATokenToKVPool(KVCache):
         return self.kv_buffer[layer_id - self.start_layer]
 
     def get_value_buffer(self, layer_id: int):
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         if self.layer_transfer_counter is not None:
             self.layer_transfer_counter.wait_until(layer_id - self.start_layer)
 
@@ -818,6 +842,9 @@ class MLATokenToKVPool(KVCache):
         cache_v: torch.Tensor,
     ):
         layer_id = layer.layer_id
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         if cache_k.dtype != self.dtype:
             cache_k = cache_k.to(self.dtype)
         if self.store_dtype != self.dtype:
@@ -835,6 +862,9 @@ class MLATokenToKVPool(KVCache):
         cache_k_rope: torch.Tensor,
     ):
         layer_id = layer.layer_id
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         if cache_k_nope.dtype != self.dtype:
             cache_k_nope = cache_k_nope.to(self.dtype)
             cache_k_rope = cache_k_rope.to(self.dtype)
@@ -843,7 +873,7 @@ class MLATokenToKVPool(KVCache):
             cache_k_rope = cache_k_rope.view(self.store_dtype)
 
         set_mla_kv_buffer_triton(
-            self.kv_buffer[layer_id], loc, cache_k_nope, cache_k_rope
+            self.kv_buffer[layer_id - self.start_layer], loc, cache_k_nope, cache_k_rope
         )
 
     def get_flat_data(self, indices):
@@ -858,6 +888,9 @@ class MLATokenToKVPool(KVCache):
             self.kv_buffer[i][indices] = flat_data[i]
 
     def transfer_per_layer(self, indices, flat_data, layer_id):
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         # transfer prepared data from host to device
         flat_data = flat_data.to(device=self.device, non_blocking=False)
         self.kv_buffer[layer_id - self.start_layer][indices] = flat_data
@@ -996,12 +1029,14 @@ class DoubleSparseTokenToKVPool(KVCache):
 
         with self.memory_saver_adapter.region(GPU_MEMORY_TYPE_KV_CACHE):
             # [size, head_num, head_dim] for each layer
+            self.k_head_dim = head_dim
             self.k_buffer = [
                 torch.zeros(
                     (size + page_size, head_num, head_dim), dtype=dtype, device=device
                 )
                 for _ in range(layer_num)
             ]
+            self.v_head_dim = head_dim
             self.v_buffer = [
                 torch.zeros(
                     (size + page_size, head_num, head_dim), dtype=dtype, device=device
@@ -1018,15 +1053,27 @@ class DoubleSparseTokenToKVPool(KVCache):
             ]
 
     def get_key_buffer(self, layer_id: int):
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         return self.k_buffer[layer_id - self.start_layer]
 
     def get_value_buffer(self, layer_id: int):
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         return self.v_buffer[layer_id - self.start_layer]
 
     def get_label_buffer(self, layer_id: int):
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         return self.label_buffer[layer_id - self.start_layer]
 
     def get_kv_buffer(self, layer_id: int):
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         return (
             self.k_buffer[layer_id - self.start_layer],
             self.v_buffer[layer_id - self.start_layer],
@@ -1042,6 +1089,9 @@ class DoubleSparseTokenToKVPool(KVCache):
     ):
         # NOTE(Andy): ignore the dtype check
         layer_id = layer.layer_id
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         self.k_buffer[layer_id - self.start_layer][loc] = cache_k
         self.v_buffer[layer_id - self.start_layer][loc] = cache_v
         self.label_buffer[layer_id - self.start_layer][loc] = cache_label
@@ -1053,6 +1103,9 @@ class DoubleSparseTokenToKVPool(KVCache):
         pass
 
     def transfer_per_layer(self, indices, flat_data, layer_id):
+        assert (
+            layer_id >= self.start_layer and layer_id < self.end_layer
+        ), "Layer id out of range"
         pass
 
 
