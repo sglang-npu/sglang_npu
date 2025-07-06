@@ -50,10 +50,10 @@ if _is_cuda or _is_hip:
 if _is_hip:
     from sgl_kernel import gelu_quick
 
-logger = logging.getLogger(__name__)
-
 if is_npu():
     import torch_npu
+
+logger = logging.getLogger(__name__)
 
 
 class SiluAndMul(CustomOp):
