@@ -874,7 +874,6 @@ class DeepseekV2AttentionMLA(nn.Module):
 
         self.alt_stream = alt_stream
         self.attn_mha.kv_b_proj = None
-        # self.attn_mha.kv_b_proj = self.kv_b_proj
 
         self.w_kc = None
         self.w_vc = None

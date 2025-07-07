@@ -1,6 +1,5 @@
 import sgl_kernel
 import torch
-from torch.library import custom_op
 
 @torch.library.register_fake("sgl_kernel::shm_allreduce")
 def _(

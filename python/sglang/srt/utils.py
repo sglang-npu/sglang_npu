@@ -1429,18 +1429,20 @@ def get_npu_memory_capacity():
 
 def get_device_memory_capacity(device: str = None):
     if is_cuda():
-        gpu_mem = get_nvgpu_memory_capacity()
+        memory = get_nvgpu_memory_capacity()
     elif is_hip():
-        gpu_mem = get_amdgpu_memory_capacity()
+        memory = get_amdgpu_memory_capacity()
     elif device == "hpu":
-        gpu_mem = get_hpu_memory_capacity()
+        memory = get_hpu_memory_capacity()
     elif device == "npu":
-        gpu_mem = get_npu_memory_capacity()
+        memory = get_npu_memory_capacity()
+    elif device == "cpu":
+        memory = psutil.virtual_memory().available
     else:
-        # GPU memory is not known yet or no GPU is available.
-        gpu_mem = None
+        # memory is not known yet.
+        memory = None
 
-    return gpu_mem
+    return memory
 
 
 # Copy from pytorch and OpenRLHF to allow creating multiple main groups.
