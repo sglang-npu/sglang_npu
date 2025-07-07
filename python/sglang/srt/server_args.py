@@ -218,11 +218,13 @@ class ServerArgs:
     hicache_ratio: float = 2.0
     hicache_size: int = 0
     hicache_write_policy: str = "write_through_selective"
+    hicache_io_backend: str = ""
     flashinfer_mla_disable_ragged: bool = False
     disable_shared_experts_fusion: bool = False
     disable_chunked_prefix_cache: bool = False
     disable_fast_image_processor: bool = False
     enable_return_hidden_states: bool = False
+    enable_triton_kernel_moe: bool = False
     warmups: Optional[str] = None
 
     # Debug tensor dumps
@@ -419,10 +421,6 @@ class ServerArgs:
 
         # DeepEP MoE
         if self.enable_deepep_moe:
-            if self.deepep_mode == "auto":
-                assert (
-                    not self.enable_dp_attention
-                ), "DeepEP MoE `auto` mode is not supported with DP Attention."
             if self.deepep_mode == "normal":
                 logger.warning("Cuda graph is disabled because deepep_mode=`normal`")
                 self.disable_cuda_graph = True
@@ -1547,6 +1545,13 @@ class ServerArgs:
             help="The write policy of hierarchical cache.",
         )
         parser.add_argument(
+            "--hicache-io-backend",
+            type=str,
+            choices=["direct", "kernel"],
+            default=ServerArgs.hicache_io_backend,
+            help="The IO backend for KV cache transfer between CPU and GPU",
+        )
+        parser.add_argument(
             "--flashinfer-mla-disable-ragged",
             action="store_true",
             help="Not using ragged prefill wrapper when running flashinfer mla",
@@ -1570,6 +1575,11 @@ class ServerArgs:
             "--enable-return-hidden-states",
             action="store_true",
             help="Enable returning hidden states with responses.",
+        )
+        parser.add_argument(
+            "--enable-triton-kernel-moe",
+            action="store_true",
+            help="Use triton moe grouped gemm kernel.",
         )
         parser.add_argument(
             "--warmups",
