@@ -118,9 +118,9 @@ class TestIntelAMXAttnBackend(CustomTestCase):
             DEFAULT_MODEL_NAME_FOR_TEST_W8A8_WITH_MOE,
             [
                 "--attention-backend",
+                "intel_amx",
                 "--quantization",
                 "w8a8_int8",
-                "intel_amx",
                 "--mem-fraction-static",
                 "0.05",
                 "--disable-radix",
@@ -142,9 +142,9 @@ class TestIntelAMXAttnBackend(CustomTestCase):
             DEFAULT_MODEL_NAME_FOR_TEST_W8A8,
             [
                 "--attention-backend",
+                "intel_amx",
                 "--quantization",
                 "w8a8_int8",
-                "intel_amx",
                 "--mem-fraction-static",
                 "0.05",
                 "--disable-radix",
