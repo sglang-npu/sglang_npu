@@ -89,13 +89,13 @@ _use_hip_int4 = get_bool_env_var("SGLANG_INT4_WEIGHT")
 _use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
 
 if _is_hip and (_use_aiter or _use_hip_int4):
-        from aiter import ActivationType, QuantType
-        from aiter.fused_moe import fused_moe
+    from aiter import ActivationType, QuantType
+    from aiter.fused_moe import fused_moe
 
-        from sglang.srt.layers.moe.rocm_aiter_fused_moe import (
-            rocm_aiter_fused_experts,
-            shuffle_weights,
-        )
+    from sglang.srt.layers.moe.rocm_aiter_fused_moe import (
+        rocm_aiter_fused_experts,
+        shuffle_weights,
+    )
 
 if not (_is_cuda or _is_npu or (_is_cpu and _is_cpu_amx_available)):
     from vllm._custom_ops import scaled_fp8_quant
