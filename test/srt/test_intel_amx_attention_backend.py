@@ -47,7 +47,7 @@ class TestIntelAMXAttnBackend(CustomTestCase):
         if is_in_ci():
             self.assertGreater(decode_throughput, 10)
             
-     def test_latency_default_model(self):
+    def test_latency_default_model(self):
         prefill_latency, decode_throughput, decode_latency = run_bench_one_batch(
             DEFAULT_MODEL_NAME_FOR_TEST,
             [
