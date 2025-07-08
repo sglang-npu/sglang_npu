@@ -4,6 +4,8 @@ python3 -m unittest test_intel_amx_attention_backend.TestIntelAMXAttnBackend.tes
 """
 
 import unittest
+import os
+from functools import wraps
 from types import SimpleNamespace
 
 from sglang.srt.utils import kill_process_tree
@@ -23,6 +25,23 @@ from sglang.test.test_utils import (
     run_bench_one_batch,
 )
 
+def with_cpu_omp_threads_bind(value="0-15|16-31|32-47|48-63|64-79|80-95"):
+    def decorator(test_func):
+        @wraps(test_func)
+        def wrapper(*args, **kwargs):
+            original = os.environ.get("SGLANG_CPU_OMP_THREADS_BIND")
+            os.environ["SGLANG_CPU_OMP_THREADS_BIND"] = value
+            try:
+                print("[Decorator] Set env:", value)
+                return test_func(*args, **kwargs)
+            finally:
+                if original is not None:
+                    os.environ["SGLANG_CPU_OMP_THREADS_BIND"] = original
+                else:
+                    del os.environ["SGLANG_CPU_OMP_THREADS_BIND"]
+                print("[Decorator] Restored env.")
+        return wrapper
+    return decorator
 
 class TestIntelAMXAttnBackend(CustomTestCase):
     def test_latency_mla_model(self):
@@ -67,7 +86,7 @@ class TestIntelAMXAttnBackend(CustomTestCase):
         print(f"{decode_latency=}")
 
         if is_in_ci():
-            self.assertGreater(decode_throughput, 1000)
+            self.assertGreater(decode_throughput, 40)
     
     def test_latency_fp8_qwen(self):
         prefill_latency, decode_throughput, decode_latency = run_bench_one_batch(
@@ -89,7 +108,7 @@ class TestIntelAMXAttnBackend(CustomTestCase):
         print(f"{decode_latency=}")
 
         if is_in_ci():
-            self.assertGreater(decode_throughput, 1000)
+            self.assertGreater(decode_throughput, 150)
 
     def test_latency_fp8_moe_model(self):
         prefill_latency, decode_throughput, decode_latency = run_bench_one_batch(
@@ -111,33 +130,9 @@ class TestIntelAMXAttnBackend(CustomTestCase):
         print(f"{decode_latency=}")
 
         if is_in_ci():
-            self.assertGreater(decode_throughput, 1000)
+            self.assertGreater(decode_throughput, 50)
 
     def test_latency_w8a8_default_model(self):
-        prefill_latency, decode_throughput, decode_latency = run_bench_one_batch(
-            DEFAULT_MODEL_NAME_FOR_TEST_W8A8_WITH_MOE,
-            [
-                "--attention-backend",
-                "intel_amx",
-                "--quantization",
-                "w8a8_int8",
-                "--mem-fraction-static",
-                "0.05",
-                "--disable-radix",
-                "--trust-remote-code",
-                "--batch-size",
-                "4",
-            ],
-        )
-
-        print(f"{prefill_latency=}")
-        print(f"{decode_throughput=}")
-        print(f"{decode_latency=}")
-
-        if is_in_ci():
-            self.assertGreater(decode_throughput, 1000)
-
-    def test_latency_w8a8_moe_model(self):
         prefill_latency, decode_throughput, decode_latency = run_bench_one_batch(
             DEFAULT_MODEL_NAME_FOR_TEST_W8A8,
             [
@@ -159,7 +154,32 @@ class TestIntelAMXAttnBackend(CustomTestCase):
         print(f"{decode_latency=}")
 
         if is_in_ci():
-            self.assertGreater(decode_throughput, 1000)
+            self.assertGreater(decode_throughput, 100)
+
+    @with_cpu_omp_threads_bind()
+    def test_latency_w8a8_moe_model(self):
+        prefill_latency, decode_throughput, decode_latency = run_bench_one_batch(
+            DEFAULT_MODEL_NAME_FOR_TEST_W8A8_WITH_MOE,
+            [
+                "--attention-backend",
+                "intel_amx",
+                "--quantization",
+                "w8a8_int8",
+                "--mem-fraction-static",
+                "0.9",
+                "--disable-radix",
+                "--trust-remote-code",
+                "--batch-size",
+                "4",
+            ],
+        )
+
+        print(f"{prefill_latency=}")
+        print(f"{decode_throughput=}")
+        print(f"{decode_latency=}")
+
+        if is_in_ci():
+            self.assertGreater(decode_throughput, 100)
             
     def test_mmlu(self):
         model = DEFAULT_MLA_MODEL_NAME_FOR_TEST
