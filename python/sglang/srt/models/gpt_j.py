@@ -38,11 +38,11 @@ from sglang.srt.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding,
 )
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
-from sglang.srt.utils import add_prefix
 from sglang.srt.model_loader.weight_utils import (
     default_weight_loader,
     maybe_remap_kv_scale_name,
 )
+from sglang.srt.utils import add_prefix
 
 
 class GPTJAttention(nn.Module):
@@ -171,7 +171,7 @@ class GPTJBlock(nn.Module):
             config,
             act_layer=act_layer,
             quant_config=quant_config,
-            prefix=add_prefix("mlp", prefix)
+            prefix=add_prefix("mlp", prefix),
         )
 
     def forward(
@@ -227,13 +227,10 @@ class GPTJModel(nn.Module):
     ) -> torch.Tensor:
         hidden_states = self.wte(input_ids)
         for layer in self.h:
-            hidden_states = layer(
-                positions,
-                hidden_states,
-                forward_batch
-            )
+            hidden_states = layer(positions, hidden_states, forward_batch)
         hidden_states = self.ln_f(hidden_states)
         return hidden_states
+
 
 class GPTJForCausalLM(nn.Module):
 
@@ -269,7 +266,7 @@ class GPTJForCausalLM(nn.Module):
         return self.logits_processor(
             input_ids, hidden_states, self.lm_head, forward_batch
         )
-        
+
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
@@ -284,14 +281,15 @@ class GPTJForCausalLM(nn.Module):
             if "attn.bias" in name or "attn.masked_bias" in name:
                 continue
 
-            if (self.quant_config is not None and
-                (scale_name := self.quant_config.get_cache_scale(name))):
+            if self.quant_config is not None and (
+                scale_name := self.quant_config.get_cache_scale(name)
+            ):
                 # Loading kv cache quantization scales
                 param = params_dict[scale_name]
-                weight_loader = getattr(param, "weight_loader",
-                                        default_weight_loader)
-                loaded_weight = (loaded_weight if loaded_weight.dim() == 0 else
-                                 loaded_weight[0])
+                weight_loader = getattr(param, "weight_loader", default_weight_loader)
+                loaded_weight = (
+                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
+                )
                 weight_loader(param, loaded_weight)
                 continue
 
