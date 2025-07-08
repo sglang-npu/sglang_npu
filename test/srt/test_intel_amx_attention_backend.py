@@ -14,6 +14,7 @@ from sglang.test.test_utils import (
     DEFAULT_MLA_MODEL_NAME_FOR_TEST,
     DEFAULT_MODEL_NAME_FOR_TEST_W8A8,
     DEFAULT_MODEL_NAME_FOR_TEST_FP8_WITH_MOE,
+    DEFAULT_MODEL_NAME_FOR_TEST_W8A8_WITH_MOE,
     DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
     DEFAULT_URL_FOR_TEST,
     CustomTestCase,
@@ -114,7 +115,7 @@ class TestIntelAMXAttnBackend(CustomTestCase):
 
     def test_latency_w8a8_default_model(self):
         prefill_latency, decode_throughput, decode_latency = run_bench_one_batch(
-            DEFAULT_MODEL_NAME_FOR_TEST_W8A8,
+            DEFAULT_MODEL_NAME_FOR_TEST_W8A8_WITH_MOE,
             [
                 "--attention-backend",
                 "--quantization",
@@ -136,6 +137,30 @@ class TestIntelAMXAttnBackend(CustomTestCase):
         if is_in_ci():
             self.assertGreater(decode_throughput, 1000)
 
+    def test_latency_w8a8_moe_model(self):
+        prefill_latency, decode_throughput, decode_latency = run_bench_one_batch(
+            DEFAULT_MODEL_NAME_FOR_TEST_W8A8,
+            [
+                "--attention-backend",
+                "--quantization",
+                "w8a8_int8",
+                "intel_amx",
+                "--mem-fraction-static",
+                "0.05",
+                "--disable-radix",
+                "--trust-remote-code",
+                "--batch-size",
+                "4",
+            ],
+        )
+
+        print(f"{prefill_latency=}")
+        print(f"{decode_throughput=}")
+        print(f"{decode_latency=}")
+
+        if is_in_ci():
+            self.assertGreater(decode_throughput, 1000)
+            
     def test_mmlu(self):
         model = DEFAULT_MLA_MODEL_NAME_FOR_TEST
         base_url = DEFAULT_URL_FOR_TEST
