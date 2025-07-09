@@ -65,9 +65,6 @@ _use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
 if not _is_npu:
     from sgl_kernel import silu_and_mul
 
-if _is_hip:
-    from vllm._custom_ops import scaled_fp8_quant
-
 if _use_aiter:
     from aiter import ActivationType, QuantType
     from aiter.fused_moe import fused_moe
