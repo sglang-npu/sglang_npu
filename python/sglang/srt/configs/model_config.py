@@ -351,7 +351,7 @@ class ModelConfig:
             # in hf `config.json` but has a standalone `hf_quant_config.json` in the root directory
             # example: https://huggingface.co/nvidia/Llama-3.1-8B-Instruct-FP8/tree/main
             is_local = os.path.exists(self.model_path)
-            modelopt_quant_config = {"quant_method": "modelopt"}
+            modelopt_quant_config = {"quant_method": "modelopt_fp8"}
             if not is_local:
                 from huggingface_hub import HfApi
 
@@ -360,6 +360,12 @@ class ModelConfig:
                     quant_cfg = modelopt_quant_config
             elif os.path.exists(os.path.join(self.model_path, "hf_quant_config.json")):
                 quant_cfg = modelopt_quant_config
+        else:
+            if quant_cfg["producer"]["name"].lower() == "modelopt":
+                if "quant_algo" in quant_cfg.keys() and quant_cfg["quant_algo"].lower() == "fp8":
+                    quant_cfg = {"quant_method": "modelopt_fp8"}
+                else:
+                    raise NotImplementedError
         return quant_cfg
 
     # adapted from https://github.com/vllm-project/vllm/blob/v0.6.4.post1/vllm/config.py
@@ -377,7 +383,7 @@ class ModelConfig:
         optimized_quantization_methods = [
             "fp8",
             "marlin",
-            "modelopt",
+            "modelopt_fp8",
             "gptq_marlin_24",
             "gptq_marlin",
             "awq_marlin",

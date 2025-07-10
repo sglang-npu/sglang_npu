@@ -48,6 +48,7 @@ from sglang.srt.model_executor.forward_batch_info import ForwardBatch, PPProxyTe
 from sglang.srt.model_loader.weight_utils import (
     default_weight_loader,
     kv_cache_scales_loader,
+    maybe_remap_kv_scale_name
 )
 from sglang.srt.utils import add_prefix, make_layers
 
@@ -530,6 +531,11 @@ class Qwen2ForCausalLM(nn.Module):
                     continue
             if name.startswith("model.vision_tower") and name not in params_dict:
                 continue
+                
+            if "scale" in name:
+                name = maybe_remap_kv_scale_name(name, params_dict)
+                if name is None:
+                    continue
 
             for param_name, weight_name, shard_id in stacked_params_mapping:
                 if weight_name not in name:
@@ -537,6 +543,8 @@ class Qwen2ForCausalLM(nn.Module):
                 name = name.replace(weight_name, param_name)
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
+                    continue
+                if "k_scale" in name or "v_scale" in name:
                     continue
                 param = params_dict[name]
                 weight_loader = param.weight_loader
