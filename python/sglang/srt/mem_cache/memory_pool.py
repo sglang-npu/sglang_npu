@@ -518,8 +518,13 @@ class SWAKVPool(KVCache):
             self.layers_mapping[global_layer_id] = (swa_layer_id, True)
         self.full_to_swa_index_mapping: Optional[torch.Tensor] = None
 
+        k_size, v_size = self.get_kv_size_bytes()
+        self.mem_usage = (k_size + v_size) / GB
+
     def get_kv_size_bytes(self):
-        raise NotImplementedError
+        k_size, v_size = self.full_kv_pool.get_kv_size_bytes()
+        k_size_swa, v_size_swa = self.swa_kv_pool.get_kv_size_bytes()
+        return k_size + k_size_swa, v_size + v_size_swa
 
     def get_contiguous_buf_infos(self):
         full_kv_data_ptrs, full_kv_data_lens, full_kv_item_lens = (
@@ -556,9 +561,18 @@ class SWAKVPool(KVCache):
         else:
             return self.full_kv_pool.get_kv_buffer(layer_id_pool)
 
-    def translate_loc_from_full_to_swa(self, kv_indices: torch.Tensor):
-        assert self.full_to_swa_index_mapping is not None
-        return self.full_to_swa_index_mapping[kv_indices].to(torch.int32)
+    def translate_loc_from_full_to_swa(
+        self, kv_indices: torch.Tensor, layer_id: Optional[int] = None
+    ):
+        if layer_id is not None:
+            _, is_swa = self.layers_mapping[layer_id]
+        else:
+            is_swa = True
+        if is_swa:
+            assert self.full_to_swa_index_mapping is not None
+            return self.full_to_swa_index_mapping[kv_indices].to(torch.int32)
+        else:
+            return kv_indices
 
     def set_kv_buffer(
         self,
