@@ -359,7 +359,17 @@ class ModelConfig:
                 if hf_api.file_exists(self.model_path, "hf_quant_config.json"):
                     quant_cfg = modelopt_quant_config
             elif os.path.exists(os.path.join(self.model_path, "hf_quant_config.json")):
-                quant_cfg = modelopt_quant_config
+                quant_config_file = os.path.join(
+                    self.model_path, "hf_quant_config.json"
+                )
+                with open(quant_config_file) as f:
+                    quant_config_dict = json.load(f)
+                json_quant_configs = quant_config_dict["quantization"]
+                quant_algo = json_quant_configs.get("quant_algo", None)
+                if quant_algo == "MIXED_PRECISION":
+                    quant_cfg = {"quant_method": "w4afp8"}
+                else:
+                    quant_cfg = modelopt_quant_config
         else:
             if quant_cfg["producer"]["name"].lower() == "modelopt":
                 if "quant_algo" in quant_cfg.keys() and quant_cfg["quant_algo"].lower() == "fp8":
@@ -395,6 +405,7 @@ class ModelConfig:
             "w8a8_fp8",
             "moe_wna16",
             "qoq",
+            "w4afp8",
         ]
         compatible_quantization_methods = {
             "modelopt_fp4": ["modelopt"],
