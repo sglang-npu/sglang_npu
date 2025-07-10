@@ -14,6 +14,7 @@ class BaseConnector(ABC):
     pass
 
 
+# todo: batch API for better performance
 class BaseKVConnector(BaseConnector):
     @abstractmethod
     def get(
