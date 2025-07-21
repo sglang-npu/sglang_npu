@@ -31,6 +31,8 @@ class TestAscend_MLA_W8A8Int8(CustomTestCase):
         cls.base_url = DEFAULT_URL_FOR_TEST
         cls.url = urlparse(DEFAULT_URL_FOR_TEST)
         cls.common_args = [
+            "--mem-fraction-static",
+            0.8,
             "--attention-backend",
             "ascend",
             "--quantization",
@@ -50,8 +52,6 @@ class TestAscend_MLA_W8A8Int8(CustomTestCase):
                     timeout=DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
                     other_args=[
                         *self.common_args,
-                        "--mem-fraction-static",
-                        0.8,
                     ],
                 )
 

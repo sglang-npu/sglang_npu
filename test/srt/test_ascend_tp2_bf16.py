@@ -31,6 +31,8 @@ class TestAscend_TP2_BF16(CustomTestCase):
         cls.base_url = DEFAULT_URL_FOR_TEST
         cls.url = urlparse(DEFAULT_URL_FOR_TEST)
         cls.common_args = [
+            "--mem-fraction-static",
+            0.8,
             "--attention-backend",
             "ascend",
             "--tp-size",
@@ -48,8 +50,6 @@ class TestAscend_TP2_BF16(CustomTestCase):
                     timeout=DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
                     other_args=[
                         *self.common_args,
-                        "--mem-fraction-static",
-                        0.8,
                     ],
                 )
 
