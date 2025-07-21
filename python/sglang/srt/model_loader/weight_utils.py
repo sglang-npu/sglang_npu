@@ -138,6 +138,8 @@ def get_quant_config(
 ) -> QuantizationConfig:
     quant_cls = get_quantization_config(model_config.quantization)
 
+    print(f"===lplp {quant_cls.__class__.__name__=}, {model_config.hf_config=}", flush=True)
+
     # GGUF doesn't have config file
     if model_config.quantization == "gguf":
         return quant_cls.from_config({})
@@ -202,6 +204,7 @@ def get_quant_config(
         )
 
     quant_config_file = quant_config_files[0]
+    print(f"===lplp {quant_config_file=}", flush=True)
     with open(quant_config_file) as f:
         config = json.load(f)
 
