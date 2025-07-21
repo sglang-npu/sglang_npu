@@ -54,6 +54,8 @@ if _use_aiter:
         from aiter import biased_grouped_topk as aiter_biased_grouped_topk
     except ImportError:
         raise ImportError("aiter is required when SGLANG_USE_AITER is set to True")
+if _is_npu:
+    import torch_npu
 
 if _is_npu:
     import torch_npu
@@ -614,6 +616,23 @@ def select_experts(
     num_token_non_padded: Optional[torch.Tensor] = None,
     expert_location_dispatch_info: Optional[ExpertLocationDispatchInfo] = None,
 ) -> TopKOutput:
+    global_num_experts = router_logits.shape[-1]
+    # NOTE: now npu_moe_gating_top_k can only support `group_count=256` pattern
+    if _is_npu and global_num_experts == 256:
+        topk_weights, topk_ids, _ = torch_npu.npu_moe_gating_top_k(
+            router_logits,
+            k=top_k,
+            bias=correction_bias.to(torch.float32),
+            k_group=topk_group,
+            group_count=num_expert_group,
+            group_select_mode=1,
+            renorm=0,
+            norm_type=1,
+            routed_scaling_factor=1,
+            eps=float(1e-20),
+        )
+        return topk_weights, topk_ids
+
     router_logits, correction_bias = (
         expert_location_dispatch.transform_select_experts_inputs(
             router_logits=router_logits,

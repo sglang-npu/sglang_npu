@@ -1,8 +1,12 @@
 import logging
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
+import einops
 import torch
+import torch_npu
+from torch.nn import Module
 
+from sglang.srt.custom_op import CustomOp
 from sglang.srt.distributed import (
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
@@ -23,6 +27,7 @@ from sglang.srt.layers.moe.ep_moe.kernels import (
     silu_and_mul_triton_kernel,
     tma_align_input_scale,
 )
+from sglang.srt.layers.moe.fused_moe_triton import FusedMoeWeightScaleSupported
 from sglang.srt.layers.moe.fused_moe_triton.layer import FusedMoE
 from sglang.srt.layers.moe.topk import TopKOutput
 from sglang.srt.layers.quantization import deep_gemm_wrapper
@@ -38,6 +43,7 @@ from sglang.srt.layers.quantization.fp8_kernel import (
 )
 from sglang.srt.layers.quantization.unquant import UnquantizedEPMoEMethod
 from sglang.srt.layers.quantization.w4afp8 import W4AFp8Config, W4AFp8MoEMethod
+from sglang.srt.layers.quantization.w8a8_int8 import NPU_W8A8MoEMethod, W8A8Int8Config
 from sglang.srt.managers.schedule_batch import global_server_args_dict
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.utils import (
@@ -47,6 +53,7 @@ from sglang.srt.utils import (
     get_bool_env_var,
     is_hip,
     is_npu,
+    set_weight_attrs,
 )
 
 _is_hip = is_hip()
@@ -143,6 +150,125 @@ class GroupedGemmRunner(torch.nn.Module):
         return c
 
 
+class W8A8EPMoEMethod(NPU_W8A8MoEMethod):
+    """MoE method for W8A8.
+    Args:
+        quant_config: The quantization config.
+    """
+
+    def __init__(self, quant_config: W8A8Int8Config):
+        self.quant_config = quant_config
+
+    def create_weights(
+        self,
+        layer: Module,
+        num_experts_per_partition: int,
+        hidden_size: int,
+        intermediate_size: int,
+        params_dtype: torch.dtype,
+        **extra_weight_attrs,
+    ):
+        tp_size = get_tensor_model_parallel_world_size()
+
+        # WEIGHTS
+        w13_weight = torch.nn.Parameter(
+            torch.empty(
+                num_experts_per_partition,
+                2 * intermediate_size,
+                hidden_size,
+                dtype=params_dtype,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w13_weight", w13_weight)
+        set_weight_attrs(w13_weight, extra_weight_attrs)
+
+        w2_weight = torch.nn.Parameter(
+            torch.empty(
+                num_experts_per_partition,
+                hidden_size,
+                intermediate_size,
+                dtype=params_dtype,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w2_weight", w2_weight)
+        set_weight_attrs(w2_weight, extra_weight_attrs)
+
+        # scale
+        w13_weight_scale = torch.nn.Parameter(
+            torch.ones(
+                num_experts_per_partition, 2 * intermediate_size, 1, dtype=torch.float32
+            ),
+            requires_grad=False,
+        )
+        w2_weight_scale = torch.nn.Parameter(
+            torch.ones(num_experts_per_partition, hidden_size, 1, dtype=torch.float32),
+            requires_grad=False,
+        )
+        layer.register_parameter("w13_weight_scale", w13_weight_scale)
+        layer.register_parameter("w2_weight_scale", w2_weight_scale)
+        # Add the quantization method used (per tensor/grouped/channel)
+        # to ensure the weight scales are loaded in properly
+        extra_weight_attrs.update(
+            {"quant_method": FusedMoeWeightScaleSupported.TENSOR.value}
+        )
+        set_weight_attrs(w13_weight_scale, extra_weight_attrs)
+        set_weight_attrs(w2_weight_scale, extra_weight_attrs)
+
+        # offset
+        w13_weight_offset = torch.nn.Parameter(
+            torch.ones(
+                num_experts_per_partition, 2 * intermediate_size, 1, dtype=torch.float32
+            ),
+            requires_grad=False,
+        )
+        w2_weight_offset = torch.nn.Parameter(
+            torch.ones(num_experts_per_partition, hidden_size, 1, dtype=torch.float32),
+            requires_grad=False,
+        )
+        layer.register_parameter("w13_weight_offset", w13_weight_offset)
+        layer.register_parameter("w2_weight_offset", w2_weight_offset)
+
+        set_weight_attrs(w13_weight_offset, extra_weight_attrs)
+        set_weight_attrs(w2_weight_offset, extra_weight_attrs)
+
+    def process_weights_after_loading(self, layer: Module) -> None:
+        layer.w13_weight = torch.nn.Parameter(
+            layer.w13_weight.data.transpose(1, 2).contiguous(), requires_grad=False
+        )
+        layer.w2_weight = torch.nn.Parameter(
+            layer.w2_weight.data.transpose(1, 2).contiguous(), requires_grad=False
+        )
+        layer.w13_weight_scale = torch.nn.Parameter(
+            layer.w13_weight_scale.data.squeeze(-1), requires_grad=False
+        )
+        layer.w2_weight_scale = torch.nn.Parameter(
+            layer.w2_weight_scale.data.squeeze(-1), requires_grad=False
+        )
+        layer.w13_weight_offset = torch.nn.Parameter(
+            layer.w13_weight_offset.data.squeeze(-1), requires_grad=False
+        )
+        layer.w2_weight_offset = torch.nn.Parameter(
+            layer.w2_weight_offset.data.squeeze(-1), requires_grad=False
+        )
+        return
+
+    def apply(
+        self,
+        layer: torch.nn.Module,
+        x: torch.Tensor,
+        router_logits: torch.Tensor,
+        top_k: int,
+        renormalize: bool,
+        use_grouped_topk: bool,
+        topk_group: Optional[int] = None,
+        num_expert_group: Optional[int] = None,
+        custom_routing_function: Optional[Callable] = None,
+    ) -> torch.Tensor:
+        raise NotImplementedError
+
+
 class EPMoE(torch.nn.Module):
     """
     MoE Expert Parallel Impl
@@ -195,6 +321,12 @@ class EPMoE(torch.nn.Module):
             self.block_shape = None
             self.activation_scheme = None
             self.use_w4afp8 = False
+        elif global_server_args_dict["device"] == "npu":
+            self.quant_method: Optional[QuantizeMethodBase] = W8A8EPMoEMethod(
+                quant_config
+            )
+            self.use_block_quant = False
+            params_dtype = torch.int8
         elif isinstance(quant_config, W4AFp8Config):
             self.quant_method: Optional[QuantizeMethodBase] = W4AFp8MoEMethod(
                 quant_config
@@ -1318,8 +1450,199 @@ class DeepEPMoE(EPMoE):
         return down_output
 
 
+class AscendDeepEPMoE(EPMoE):
+    _has_printed = False
+
+    def __init__(
+        self,
+        num_experts: int,
+        top_k: int,
+        hidden_size: int,
+        intermediate_size: int,
+        layer_id: int,
+        params_dtype: Optional[torch.dtype] = None,
+        renormalize: bool = True,
+        use_grouped_topk: bool = False,
+        num_expert_group: Optional[int] = None,
+        num_fused_shared_experts: int = 0,
+        topk_group: Optional[int] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+        tp_size: Optional[int] = None,
+        prefix: str = "",
+        correction_bias: Optional[torch.Tensor] = None,
+        custom_routing_function: Optional[Callable] = None,
+        activation: str = "silu",
+        routed_scaling_factor: Optional[float] = None,
+        deepep_mode: DeepEPMode = DeepEPMode.auto,
+    ):
+        super().__init__(
+            num_experts=num_experts,
+            top_k=top_k,
+            hidden_size=hidden_size,
+            intermediate_size=intermediate_size,
+            layer_id=layer_id,
+            params_dtype=params_dtype,
+            renormalize=renormalize,
+            use_grouped_topk=use_grouped_topk,
+            num_expert_group=num_expert_group,
+            num_fused_shared_experts=num_fused_shared_experts,
+            topk_group=topk_group,
+            quant_config=quant_config,
+            tp_size=tp_size,
+            prefix=prefix,
+            correction_bias=correction_bias,
+            custom_routing_function=custom_routing_function,
+            activation=activation,
+            routed_scaling_factor=routed_scaling_factor,
+        )
+        self.deepep_mode = deepep_mode
+
+    def weight_loader(
+        self,
+        param: torch.nn.Parameter,
+        loaded_weight: torch.Tensor,
+        weight_name: str,
+        shard_id: str,
+        expert_id: int,
+    ) -> None:
+        physical_expert_ids = (
+            get_global_expert_location_metadata().logical_to_all_physical(
+                self.layer_id, expert_id
+            )
+        )
+        for physical_expert_id in physical_expert_ids:
+            self._weight_loader_physical(
+                param=param,
+                loaded_weight=loaded_weight,
+                weight_name=weight_name,
+                shard_id=shard_id,
+                expert_id=physical_expert_id,
+            )
+
+    def _weight_loader_physical(
+        self,
+        param: torch.nn.Parameter,
+        loaded_weight: torch.Tensor,
+        weight_name: str,
+        shard_id: str,
+        expert_id: int,
+    ) -> None:
+        if expert_id < self.start_expert_id or expert_id > self.end_expert_id:
+            return
+        expert_id = expert_id - self.start_expert_id
+
+        if shard_id not in ("w1", "w2", "w3"):
+            raise ValueError(
+                f"shard_id must be ['w1','w2','w3'] but " f"got {shard_id}."
+            )
+
+        # Special case for w8a8 scales.
+        if "scale" in weight_name or "offset" in weight_name:
+            self._load_w8a8_scale(
+                param.data,
+                loaded_weight,
+                weight_name,
+                shard_id,
+                expert_id,
+            )
+            return
+
+        if shard_id == "w2":
+            param.data[expert_id] = loaded_weight
+        elif shard_id == "w1":
+            param.data[expert_id][: self.intermediate_size, :] = loaded_weight
+        elif shard_id == "w3":
+            param.data[expert_id][self.intermediate_size :, :] = loaded_weight
+        else:
+            raise ValueError(f"Expected shard_id w1,w2 or w3 but got {shard_id}")
+
+    def _load_w8a8_scale(
+        self,
+        param: torch.nn.Parameter,
+        loaded_weight: torch.Tensor,
+        weight_name: str,
+        shard_id: str,
+        expert_id: int,
+    ) -> None:
+        param_data = param.data
+        expert_data = param.data[expert_id]
+        SHARD_ID_TO_SHARDED_DIM = {"w1": 0, "w2": 1, "w3": 0}
+        shard_dim = SHARD_ID_TO_SHARDED_DIM[shard_id]
+        if shard_id == "w2":
+            expert_data.copy_(loaded_weight)
+        elif shard_id in ("w1", "w3"):
+            # Index the loaded weight for tp sharding.
+            # gate_up_proj: "MergedColumnParallel", so tp sharding on output_dim
+            shard_size = expert_data.shape[shard_dim] // 2
+
+            if shard_id == "w1":
+                expert_data = expert_data.narrow(shard_dim, 0, shard_size)
+            # w3, up_proj: Load into second logical weight of w13.
+            else:
+                assert shard_id == "w3"
+                expert_data = expert_data.narrow(shard_dim, shard_size, shard_size)
+            expert_data.copy_(loaded_weight)
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_idx: torch.Tensor,
+        reorder_topk_ids: torch.Tensor,
+        seg_indptr: torch.Tensor,
+        masked_m: torch.Tensor,
+        expected_m: int,
+        num_recv_tokens_per_expert: List[int],
+        forward_batch: ForwardBatch,
+    ):
+        assert self.quant_method is not None
+        assert self.activation == "silu"
+        output_dtype = torch.bfloat16
+
+        pertoken_scale = hidden_states[1]
+        hidden_states = hidden_states[0]
+
+        group_list_type = 1
+        seg_indptr = seg_indptr.to(torch.int64)
+
+        # gmm1: gate_up_proj
+        hidden_states = torch_npu.npu_grouped_matmul(
+            x=[hidden_states],
+            weight=[self.w13_weight],
+            scale=[self.w13_weight_scale.to(output_dtype)],
+            per_token_scale=[pertoken_scale],
+            split_item=2,
+            group_list_type=group_list_type,
+            group_type=0,
+            group_list=seg_indptr,
+            output_dtype=output_dtype,
+        )[0]
+
+        # act_fn: swiglu
+        hidden_states = torch_npu.npu_swiglu(hidden_states)
+
+        hidden_states, swiglu_out_scale = torch_npu.npu_dynamic_quant(hidden_states)
+
+        # gmm2: down_proj
+        hidden_states = torch_npu.npu_grouped_matmul(
+            x=[hidden_states],
+            weight=[self.w2_weight],
+            scale=[self.w2_weight_scale.to(output_dtype)],
+            per_token_scale=[swiglu_out_scale],
+            split_item=2,
+            group_list_type=group_list_type,
+            group_type=0,
+            group_list=seg_indptr,
+            output_dtype=output_dtype,
+        )[0]
+
+        return hidden_states
+
+
 def get_moe_impl_class():
     if global_server_args_dict["enable_deepep_moe"]:
+        if global_server_args_dict["device"] == "npu":
+            return AscendDeepEPMoE
         return DeepEPMoE
     if global_server_args_dict["enable_flashinfer_moe"]:
         # Must come before EPMoE because FusedMoE also supports enable_ep_moe

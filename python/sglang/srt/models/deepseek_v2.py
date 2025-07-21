@@ -84,7 +84,7 @@ from sglang.srt.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding,
 )
 from sglang.srt.managers.schedule_batch import global_server_args_dict
-from sglang.srt.model_executor.forward_batch_info import ForwardBatch
+from sglang.srt.model_executor.forward_batch_info import ForwardBatch, ForwardMode
 from sglang.srt.model_loader.weight_utils import default_weight_loader
 from sglang.srt.two_batch_overlap import (
     MaybeTboDeepEPDispatcher,
@@ -178,7 +178,6 @@ class DeepseekV2MLP(nn.Module):
     ) -> None:
         super().__init__()
         self.tp_size = tp_size
-
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size,
             [intermediate_size] * 2,
@@ -478,7 +477,7 @@ class DeepseekV2MoE(nn.Module):
 
         shared_output = self._forward_shared_experts(hidden_states)
         # router_logits: (num_tokens, n_experts)
-        router_logits = self.gate(hidden_states)
+        router_logits = self.gate(hidden_states.to(torch.float32))
         topk_output = self.topk(hidden_states, router_logits)
         final_hidden_states = self.experts(
             hidden_states=hidden_states, topk_output=topk_output
@@ -553,9 +552,10 @@ class DeepseekV2MoE(nn.Module):
     ) -> torch.Tensor:
         forward_mode = forward_batch.forward_mode
         shared_output = None
+        is_padding = False
         if is_non_idle_and_non_empty(forward_mode, hidden_states):
             # router_logits: (num_tokens, n_experts)
-            router_logits = self.gate(hidden_states)
+            router_logits = self.gate(hidden_states.to(torch.float32))
             shared_output = self._forward_shared_experts(hidden_states)
             topk_weights, topk_idx, _ = self.topk(
                 hidden_states,
@@ -572,6 +572,7 @@ class DeepseekV2MoE(nn.Module):
             topk_weights = torch.empty(
                 (0, self.top_k), dtype=torch.float32, device=hidden_states.device
             )
+
         if self.ep_size > 1:
             # TODO(ch-wan): allow users to set num_max_dispatch_tokens_per_rank value
             (
@@ -2070,6 +2071,7 @@ class DeepseekV2ForCausalLM(nn.Module):
         prefix: str = "",
     ) -> None:
         super().__init__()
+        self.flag = 0
         self.config = config
         self.tp_size = get_tensor_model_parallel_world_size()
         self.quant_config = quant_config
@@ -2142,11 +2144,44 @@ class DeepseekV2ForCausalLM(nn.Module):
         forward_batch: ForwardBatch,
         input_embeds: torch.Tensor = None,
     ) -> torch.Tensor:
-        hidden_states = self.model(input_ids, positions, forward_batch, input_embeds)
-
-        return self.logits_processor(
-            input_ids, hidden_states, self.lm_head, forward_batch
-        )
+        import os
+        enable_profiling: bool = os.getenv("ENABLE_PROFILING", "0") == "1"
+        if enable_profiling and not forward_batch.is_extend_in_batch and input_ids.shape[0]>=10 and self.flag < 5:
+            import torch_npu
+            experimental_config = torch_npu.profiler._ExperimentalConfig(
+                aic_metrics=torch_npu.profiler.AiCMetrics.PipeUtilization,
+                profiler_level=torch_npu.profiler.ProfilerLevel.Level2,
+                l2_cache=False,
+                data_simplification=False,
+            )
+            profiling_path = "profiling/"
+            with torch_npu.profiler.profile(
+                activities=[
+                    torch_npu.profiler.ProfilerActivity.CPU,
+                    torch_npu.profiler.ProfilerActivity.NPU,
+                ],
+                on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(
+                    profiling_path
+                ),
+                # schedule=torch_npu.profiler.schedule(wait=1, warmup=1, active=10, repeat=1, skip_first=50),
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=False,
+                with_flops=False,
+                with_modules=False,
+                experimental_config=experimental_config,
+            ) as prof:
+                hidden_states = self.model(input_ids, positions, forward_batch, input_embeds)
+                logits_out = self.logits_processor(
+                    input_ids, hidden_states, self.lm_head, forward_batch
+                )
+            self.flag += 1
+        else:
+            hidden_states = self.model(input_ids, positions, forward_batch, input_embeds)
+            logits_out = self.logits_processor(
+                input_ids, hidden_states, self.lm_head, forward_batch
+            )
+        return logits_out
 
     def post_load_weights(self, is_nextn=False, weight_names=None):
 
@@ -2163,7 +2198,6 @@ class DeepseekV2ForCausalLM(nn.Module):
                         layer_id = int(name.split(".")[2])
                         if layer_id < self.config.num_hidden_layers:
                             layer_ids.add(layer_id)
-
         for layer_id in layer_ids:
             self_attn = (
                 self.model.layers[layer_id].self_attn

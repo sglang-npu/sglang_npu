@@ -10,14 +10,16 @@ from sglang.srt.utils import (
     get_int_env_var,
     is_hip,
     load_json_config,
+    is_npu,
 )
 
 try:
     from deep_ep import Buffer, Config
 
-    from sglang.srt.layers.quantization.fp8_kernel import (
-        sglang_per_token_group_quant_fp8,
-    )
+    if not is_npu():
+        from sglang.srt.layers.quantization.fp8_kernel import (
+            sglang_per_token_group_quant_fp8,
+        )
 
     use_deepep = True
 except ImportError:
@@ -552,7 +554,7 @@ class _DeepEPDispatcherImplLowLatency(_DeepEPDispatcherImplBase):
             topk_weights,
             reorder_topk_ids,
             None,
-            seg_indptr,
+            self.handle[1],
             masked_m,
             expected_m,
         )

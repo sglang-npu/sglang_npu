@@ -13,6 +13,10 @@ from sglang.srt.distributed import (
     get_tensor_model_parallel_world_size,
 )
 from sglang.srt.layers.amx_utils import _amx_process_weight_after_loading
+from sglang.srt.layers.linear import (
+    RowParallelLinear,
+    UnquantizedLinearMethod,
+)
 from sglang.srt.layers.parameter import (
     ChannelQuantScaleParameter,
     ModelWeightParameter,
@@ -79,22 +83,16 @@ def npu_wrapper_rmsnorm_forward(func):
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         if not x.is_contiguous():
             x = x.contiguous()
-        original_dtype = x.dtype
-        x = x.to(torch.float32)
         if residual is not None:
-            x = x + residual.to(torch.float32)
-            residual = x.to(original_dtype)
+            out, _, residual_out = torch_npu.npu_add_rms_norm(
+                residual, x, self.weight.data, self.variance_epsilon
+            )
+            out = out + self.bias
+            return out.to(x.dtype), residual_out
 
-        x = (
-            torch_npu.npu_rms_norm(
-                x, self.weight.to(torch.float32), self.variance_epsilon
-            )[0]
-            + self.bias
-        )
-
-        if residual is None:
-            return x.to(original_dtype)
-        return x.to(original_dtype), residual
+        out = torch_npu.npu_rms_norm(x, self.weight.data, self.variance_epsilon)[0]
+        out = out + self.bias
+        return out.to(x.dtype)
 
     return _rmsnorm_forward_oot
 
@@ -137,13 +135,13 @@ def npu_fused_experts(
     hidden_states = torch_npu.npu_grouped_matmul(
         x=[hidden_states],
         weight=[w13],
-        scale=[w13_scale.to(scale_dtype)],
+        scale=[w13_scale.to(scale_dtype)],  # to(scale_dtype)
         per_token_scale=[pertoken_scale],
         split_item=2,
         group_list_type=0,
         group_type=0,
         group_list=expert_tokens,
-        output_dtype=original_dtype,
+        output_dtype=original_dtype,  # original_dtype
     )[0]
     # act_fn: swiglu
     hidden_states = torch_npu.npu_swiglu(hidden_states)
@@ -152,7 +150,7 @@ def npu_fused_experts(
     hidden_states = torch_npu.npu_grouped_matmul(
         x=[hidden_states],
         weight=[w2],
-        scale=[w2_scale.to(scale_dtype)],
+        scale=[w2_scale.to(scale_dtype)],  # .to(scale_dtype)
         per_token_scale=[pertoken_scale],
         split_item=2,
         group_list_type=0,
@@ -545,7 +543,7 @@ class NPU_W8A8LinearMethodImpl:
     def get_pertensor_param(params_dtype: torch.dtype) -> Dict[str, Any]:
         params_dict = {}
         params_dict["input_scale"] = torch.empty(1, dtype=params_dtype)
-        params_dict["input_offset"] = torch.empty(1, dtype=torch.int8)
+        params_dict["input_offset"] = torch.empty(1, dtype=params_dtype)
         return params_dict
 
     @staticmethod
@@ -568,7 +566,6 @@ class NPU_W8A8LinearMethodImpl:
         layer: torch.nn.Module,
         x: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
-        tp_rank: Optional[int] = 0,
     ) -> torch.Tensor:
         original_dtype = x.dtype
         if original_dtype != torch.int8:
@@ -581,7 +578,10 @@ class NPU_W8A8LinearMethodImpl:
                 True,
             )
 
-        quant_bias = layer.quant_bias if tp_rank == 0 else None
+        if isinstance(layer, RowParallelLinear) and layer.tp_rank > 0:
+            quant_bias = None
+        else:
+            quant_bias = layer.quant_bias
         return torch_npu.npu_quant_matmul(
             x,
             layer.weight,
@@ -648,13 +648,16 @@ class NPU_W8A8LinearMethodMTImpl:
         layer: torch.nn.Module,
         x: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
-        tp_rank: Optional[int] = 0,
     ) -> torch.Tensor:
         original_dtype = x.dtype
         if original_dtype != torch.int8:
             x = quant_per_tensor(x, layer.input_scale, layer.input_offset)
 
-        quant_bias = layer.quant_bias if tp_rank == 0 else None
+        if isinstance(layer, RowParallelLinear) and layer.tp_rank > 0:
+            quant_bias = None
+        else:
+            quant_bias = layer.quant_bias
+
         return ops.quant_matmul(
             x=x, weight=layer.weight, deq_scale=layer.deq_scale, deq_bias=quant_bias
         )
@@ -734,11 +737,6 @@ class NPU_W8A8LinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        from sglang.srt.layers.linear import RowParallelLinear
-
-        if isinstance(layer, RowParallelLinear):
-            tp_rank = get_tensor_model_parallel_rank()
-            return self.quant_method.apply(layer, x, bias, tp_rank)
         return self.quant_method.apply(layer, x, bias)
 
 
@@ -779,14 +777,16 @@ class NPU_W8A8DynamicLinearMethodImpl:
         original_dtype = x.dtype
         # use ATB quantize
         quant_out, dynamic_scale = torch_npu.npu_dynamic_quant(x)
-        return torch_npu.npu_quant_matmul(
+        out = torch_npu.npu_quant_matmul(
             quant_out,
             layer.weight,
-            layer.weight_scale,
+            layer.weight_scale_fp32,  # layer.weight_scale,
             pertoken_scale=dynamic_scale,
             bias=bias,
-            output_dtype=original_dtype,
-        )
+            output_dtype=torch.float16,
+        ).to(original_dtype)
+
+        return out
 
     def process_weights_after_loading(self, layer):
         if self.transpose_weight:
@@ -860,11 +860,6 @@ class NPU_W8A8DynamicLinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        from sglang.srt.layers.linear import RowParallelLinear
-
-        if isinstance(layer, RowParallelLinear):
-            tp_rank = get_tensor_model_parallel_rank()
-            return self.quant_method.apply(layer, x, bias, tp_rank)
         return self.quant_method.apply(layer, x, bias)
 
 
