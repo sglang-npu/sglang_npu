@@ -1,6 +1,8 @@
 #!/bin/bash
+set -euo pipefail
 # Install the required dependencies in CI.
 sed -Ei 's@(ports|archive).ubuntu.com@cache-service.nginx-pypi-cache.svc.cluster.local:8081@g' /etc/apt/sources.list
+
 apt update -y
 apt install -y build-essential cmake python3-pip python3-dev wget net-tools zlib1g-dev lld clang software-properties-common
 
@@ -13,14 +15,15 @@ pip uninstall sgl-kernel -y || true
 
 
 ### Download MemFabricV2
-MEMFABRIC_URL="https://sglang-ascend.obs.cn-east-3.myhuaweicloud.com:443/sglang/mf_adapter-1.0.0-cp311-cp311-linux_aarch64.whl"
-wget "${MEMFABRIC_URL}" && pip install ./mf_adapter-1.0.0-cp311-cp311-linux_aarch64.whl
+MF_WHL_NAME="mf_adapter-1.0.0-cp311-cp311-linux_aarch64.whl"
+MEMFABRIC_URL="https://sglang-ascend.obs.cn-east-3.myhuaweicloud.com:443/sglang/${MF_WHL_NAME}"
+wget "${MEMFABRIC_URL}" && pip install "./${MF_WHL_NAME}"
 
 
 ### Install vLLM
 VLLM_TAG=v0.8.5
-git clone --depth 1 https://github.com/vllm-project/vllm.git --branch $VLLM_TAG && \
-    cd vllm && VLLM_TARGET_DEVICE="empty" pip install -v -e . && cd ..
+git clone --depth 1 https://github.com/vllm-project/vllm.git --branch $VLLM_TAG
+(cd vllm && VLLM_TARGET_DEVICE="empty" pip install -v -e .)
 
 
 ### Install PyTorch and PTA
