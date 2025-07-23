@@ -2,7 +2,7 @@
 # Install the required dependencies in CI.
 sed -Ei 's@(ports|archive).ubuntu.com@cache-service.nginx-pypi-cache.svc.cluster.local:8081@g' /etc/apt/sources.list
 apt update -y
-apt install -y build-essential cmake python3-pip python3-dev wget net-tools zlib1g-dev lld clang software-properties-common
+apt install -y build-essential cmake python3-pip python3-dev wget net-tools zlib1g-dev lld clang software-properties-common curl
 
 
 pip config set global.index-url http://cache-service.nginx-pypi-cache.svc.cluster.local/pypi/simple
