@@ -149,9 +149,6 @@ suites = {
         TestFile("test_rope_rocm.py", 3),
         TestFile("test_awq_dequant.py", 2),
     ],
-    # "per-commit-npu": [
-    #     TestFile("test_ascend_attention_backend.py", 400),
-    # ],
     "per-commit-1-ascend-npu": [
         TestFile("test_ascend_tp1_bf16.py", 400),
     ],
