@@ -135,13 +135,13 @@ def npu_fused_experts(
     hidden_states = torch_npu.npu_grouped_matmul(
         x=[hidden_states],
         weight=[w13],
-        scale=[w13_scale.to(scale_dtype)],  # to(scale_dtype)
+        scale=[w13_scale.to(scale_dtype)],
         per_token_scale=[pertoken_scale],
         split_item=2,
         group_list_type=0,
         group_type=0,
         group_list=expert_tokens,
-        output_dtype=original_dtype,  # original_dtype
+        output_dtype=original_dtype,
     )[0]
     # act_fn: swiglu
     hidden_states = torch_npu.npu_swiglu(hidden_states)
@@ -543,7 +543,7 @@ class NPU_W8A8LinearMethodImpl:
     def get_pertensor_param(params_dtype: torch.dtype) -> Dict[str, Any]:
         params_dict = {}
         params_dict["input_scale"] = torch.empty(1, dtype=params_dtype)
-        params_dict["input_offset"] = torch.empty(1, dtype=params_dtype)
+        params_dict["input_offset"] = torch.empty(1, dtype=torch.int8)
         return params_dict
 
     @staticmethod
@@ -577,7 +577,8 @@ class NPU_W8A8LinearMethodImpl:
                 -1,
                 True,
             )
-
+        # Only fuse bias add into GEMM for rank 0 (this ensures that
+        # bias will not get added more than once in TP>1 case)
         if isinstance(layer, RowParallelLinear) and layer.tp_rank > 0:
             quant_bias = None
         else:
@@ -653,6 +654,8 @@ class NPU_W8A8LinearMethodMTImpl:
         if original_dtype != torch.int8:
             x = quant_per_tensor(x, layer.input_scale, layer.input_offset)
 
+        # Only fuse bias add into GEMM for rank 0 (this ensures that
+        # bias will not get added more than once in TP>1 case)
         if isinstance(layer, RowParallelLinear) and layer.tp_rank > 0:
             quant_bias = None
         else:
@@ -775,18 +778,15 @@ class NPU_W8A8DynamicLinearMethodImpl:
         tp_rank: Optional[int] = 0,
     ) -> torch.Tensor:
         original_dtype = x.dtype
-        # use ATB quantize
         quant_out, dynamic_scale = torch_npu.npu_dynamic_quant(x)
-        out = torch_npu.npu_quant_matmul(
+        return torch_npu.npu_quant_matmul(
             quant_out,
             layer.weight,
-            layer.weight_scale_fp32,  # layer.weight_scale,
+            layer.weight_scale,
             pertoken_scale=dynamic_scale,
             bias=bias,
-            output_dtype=torch.float16,
-        ).to(original_dtype)
-
-        return out
+            output_dtype=original_dtype,
+        )
 
     def process_weights_after_loading(self, layer):
         if self.transpose_weight:

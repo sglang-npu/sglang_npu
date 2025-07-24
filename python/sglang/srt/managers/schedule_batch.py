@@ -106,6 +106,7 @@ GLOBAL_SERVER_ARGS_KEYS = [
     "num_reserved_decode_tokens",
     "weight_loader_disable_mmap",
     "enable_triton_kernel_moe",
+    "quantization",
 ]
 
 # Put some global args for easy access

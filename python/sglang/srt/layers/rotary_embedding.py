@@ -771,8 +771,9 @@ class DeepseekScalingRotaryEmbedding(RotaryEmbedding):
         key: torch.Tensor,
         offsets: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # FIXME: mrope fails when numQHeads*headSize >= 8192
-        if query.shape[1] * query.shape[2] >=8192:
+        # NOTE: now npu_mrope can only support `numQHeads*headSize <= 4096` pattern,
+        # and generalization to more scenarios will be supported in the future.
+        if query.shape[1] * query.shape[2] > 4096:
             return self.forward_native(positions, query, key, offsets)
         num_tokens = query.shape[0]
         rotary_mode = "half" if self.is_neox_style else "interleave"

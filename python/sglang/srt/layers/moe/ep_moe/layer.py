@@ -3,7 +3,6 @@ from typing import Callable, List, Optional, Tuple
 
 import einops
 import torch
-import torch_npu
 from torch.nn import Module
 
 from sglang.srt.custom_op import CustomOp
@@ -149,7 +148,6 @@ class GroupedGemmRunner(torch.nn.Module):
             )
         return c
 
-
 class W8A8EPMoEMethod(NPU_W8A8MoEMethod):
     """MoE method for W8A8.
     Args:
@@ -158,101 +156,6 @@ class W8A8EPMoEMethod(NPU_W8A8MoEMethod):
 
     def __init__(self, quant_config: W8A8Int8Config):
         self.quant_config = quant_config
-
-    def create_weights(
-        self,
-        layer: Module,
-        num_experts_per_partition: int,
-        hidden_size: int,
-        intermediate_size: int,
-        params_dtype: torch.dtype,
-        **extra_weight_attrs,
-    ):
-        tp_size = get_tensor_model_parallel_world_size()
-
-        # WEIGHTS
-        w13_weight = torch.nn.Parameter(
-            torch.empty(
-                num_experts_per_partition,
-                2 * intermediate_size,
-                hidden_size,
-                dtype=params_dtype,
-            ),
-            requires_grad=False,
-        )
-        layer.register_parameter("w13_weight", w13_weight)
-        set_weight_attrs(w13_weight, extra_weight_attrs)
-
-        w2_weight = torch.nn.Parameter(
-            torch.empty(
-                num_experts_per_partition,
-                hidden_size,
-                intermediate_size,
-                dtype=params_dtype,
-            ),
-            requires_grad=False,
-        )
-        layer.register_parameter("w2_weight", w2_weight)
-        set_weight_attrs(w2_weight, extra_weight_attrs)
-
-        # scale
-        w13_weight_scale = torch.nn.Parameter(
-            torch.ones(
-                num_experts_per_partition, 2 * intermediate_size, 1, dtype=torch.float32
-            ),
-            requires_grad=False,
-        )
-        w2_weight_scale = torch.nn.Parameter(
-            torch.ones(num_experts_per_partition, hidden_size, 1, dtype=torch.float32),
-            requires_grad=False,
-        )
-        layer.register_parameter("w13_weight_scale", w13_weight_scale)
-        layer.register_parameter("w2_weight_scale", w2_weight_scale)
-        # Add the quantization method used (per tensor/grouped/channel)
-        # to ensure the weight scales are loaded in properly
-        extra_weight_attrs.update(
-            {"quant_method": FusedMoeWeightScaleSupported.TENSOR.value}
-        )
-        set_weight_attrs(w13_weight_scale, extra_weight_attrs)
-        set_weight_attrs(w2_weight_scale, extra_weight_attrs)
-
-        # offset
-        w13_weight_offset = torch.nn.Parameter(
-            torch.ones(
-                num_experts_per_partition, 2 * intermediate_size, 1, dtype=torch.float32
-            ),
-            requires_grad=False,
-        )
-        w2_weight_offset = torch.nn.Parameter(
-            torch.ones(num_experts_per_partition, hidden_size, 1, dtype=torch.float32),
-            requires_grad=False,
-        )
-        layer.register_parameter("w13_weight_offset", w13_weight_offset)
-        layer.register_parameter("w2_weight_offset", w2_weight_offset)
-
-        set_weight_attrs(w13_weight_offset, extra_weight_attrs)
-        set_weight_attrs(w2_weight_offset, extra_weight_attrs)
-
-    def process_weights_after_loading(self, layer: Module) -> None:
-        layer.w13_weight = torch.nn.Parameter(
-            layer.w13_weight.data.transpose(1, 2).contiguous(), requires_grad=False
-        )
-        layer.w2_weight = torch.nn.Parameter(
-            layer.w2_weight.data.transpose(1, 2).contiguous(), requires_grad=False
-        )
-        layer.w13_weight_scale = torch.nn.Parameter(
-            layer.w13_weight_scale.data.squeeze(-1), requires_grad=False
-        )
-        layer.w2_weight_scale = torch.nn.Parameter(
-            layer.w2_weight_scale.data.squeeze(-1), requires_grad=False
-        )
-        layer.w13_weight_offset = torch.nn.Parameter(
-            layer.w13_weight_offset.data.squeeze(-1), requires_grad=False
-        )
-        layer.w2_weight_offset = torch.nn.Parameter(
-            layer.w2_weight_offset.data.squeeze(-1), requires_grad=False
-        )
-        return
 
     def apply(
         self,
@@ -321,7 +224,7 @@ class EPMoE(torch.nn.Module):
             self.block_shape = None
             self.activation_scheme = None
             self.use_w4afp8 = False
-        elif global_server_args_dict["device"] == "npu":
+        elif _is_npu and global_server_args_dict["quantization"] == "w8a8_int8":
             self.quant_method: Optional[QuantizeMethodBase] = W8A8EPMoEMethod(
                 quant_config
             )
@@ -355,7 +258,7 @@ class EPMoE(torch.nn.Module):
 
         self.quant_method.create_weights(
             layer=self,
-            num_experts_per_partition=self.num_experts_per_partition,
+            num_experts=self.num_experts_per_partition,
             hidden_size=hidden_size,
             intermediate_size=self.intermediate_size,
             params_dtype=params_dtype,
@@ -1461,11 +1364,6 @@ class AscendDeepEPMoE(EPMoE):
         intermediate_size: int,
         layer_id: int,
         params_dtype: Optional[torch.dtype] = None,
-        renormalize: bool = True,
-        use_grouped_topk: bool = False,
-        num_expert_group: Optional[int] = None,
-        num_fused_shared_experts: int = 0,
-        topk_group: Optional[int] = None,
         quant_config: Optional[QuantizationConfig] = None,
         tp_size: Optional[int] = None,
         prefix: str = "",
@@ -1482,16 +1380,9 @@ class AscendDeepEPMoE(EPMoE):
             intermediate_size=intermediate_size,
             layer_id=layer_id,
             params_dtype=params_dtype,
-            renormalize=renormalize,
-            use_grouped_topk=use_grouped_topk,
-            num_expert_group=num_expert_group,
-            num_fused_shared_experts=num_fused_shared_experts,
-            topk_group=topk_group,
             quant_config=quant_config,
             tp_size=tp_size,
             prefix=prefix,
-            correction_bias=correction_bias,
-            custom_routing_function=custom_routing_function,
             activation=activation,
             routed_scaling_factor=routed_scaling_factor,
         )
@@ -1605,6 +1496,8 @@ class AscendDeepEPMoE(EPMoE):
         group_list_type = 1
         seg_indptr = seg_indptr.to(torch.int64)
 
+        import torch_npu
+
         # gmm1: gate_up_proj
         hidden_states = torch_npu.npu_grouped_matmul(
             x=[hidden_states],
@@ -1641,7 +1534,7 @@ class AscendDeepEPMoE(EPMoE):
 
 def get_moe_impl_class():
     if global_server_args_dict["enable_deepep_moe"]:
-        if global_server_args_dict["device"] == "npu":
+        if _is_npu:
             return AscendDeepEPMoE
         return DeepEPMoE
     if global_server_args_dict["enable_flashinfer_moe"]:
