@@ -21,6 +21,9 @@ concurrency:
   group: pr-test-npu-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   per-commit-1-ascend-npu:
     if: (github.repository == 'sglang-npu/sglang_npu' || github.event_name == 'pull_request') &&
