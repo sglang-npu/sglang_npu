@@ -32,7 +32,7 @@ jobs:
       - run: |
           # as we use a proxy but checkout@v4 only set basic auth header for github.com
           # so we set the extraheader manually
-          TOKEN=`echo -n "x-access-token:${{ secrets.GITHUB_TOKEN}}"`
+          TOKEN=`echo -n "x-access-token:${{ secrets.GITHUB_TOKEN}}"|base64`
           git config --global http.https://gh-proxy.test.osinfra.cn/.extraheader "AUTHORIZATION: basic $TOKEN"
       - name: Checkout code
         uses: actions/checkout@v4
@@ -61,6 +61,12 @@ jobs:
     container:
       image: swr.cn-southwest-2.myhuaweicloud.com/base_image/ascend-ci/cann:8.2.rc1.alpha003-910b-ubuntu22.04-py3.11
     steps:
+      - run: |
+          # as we use a proxy but checkout@v4 only set basic auth header for github.com
+          # so we set the extraheader manually
+          TOKEN=`echo -n "x-access-token:${{ secrets.GITHUB_TOKEN}}"|base64`
+          git config --global http.https://gh-proxy.test.osinfra.cn/.extraheader "AUTHORIZATION: basic $TOKEN"
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -88,6 +94,12 @@ jobs:
     container:
       image: swr.cn-southwest-2.myhuaweicloud.com/base_image/ascend-ci/cann:8.2.rc1.alpha003-910b-ubuntu22.04-py3.11
     steps:
+      - run: |
+          # as we use a proxy but checkout@v4 only set basic auth header for github.com
+          # so we set the extraheader manually
+          TOKEN=`echo -n "x-access-token:${{ secrets.GITHUB_TOKEN}}"|base64`
+          git config --global http.https://gh-proxy.test.osinfra.cn/.extraheader "AUTHORIZATION: basic $TOKEN"
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
