@@ -32,10 +32,10 @@ jobs:
     container:
       image: swr.cn-southwest-2.myhuaweicloud.com/base_image/ascend-ci/cann:8.2.rc1.alpha003-910b-ubuntu22.04-py3.11
     steps:
+      - run: |
+          git config --global http.extraheader "AUTHORIZATION: basic ${{ secrets.GITHUB_TOKEN }}"
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
         run: |
