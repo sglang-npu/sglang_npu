@@ -88,7 +88,7 @@ jobs:
           cd test/srt
           python3 run_suite.py --suite per-commit-2-ascend-npu
 
-  per-commit-4-ascend-npu:
+  per-commit-8-ascend-npu:
     if: (github.repository == 'sglang-npu/sglang_npu' || github.event_name == 'pull_request') &&
         github.event.pull_request.draft == false
     runs-on: linux-arm64-npu-4
@@ -118,14 +118,14 @@ jobs:
           SGLANG_IS_IN_CI: true
         run: |
           cd test/srt
-          python3 run_suite.py --suite per-commit-4-ascend-npu
+          python3 run_suite.py --suite per-commit-8-ascend-npu
 
   finish:
     if: always()
     needs:
       - per-commit-1-ascend-npu
       - per-commit-2-ascend-npu
-      - per-commit-4-ascend-npu
+      - per-commit-8-ascend-npu
     runs-on: ubuntu-latest
     steps:
       - name: Check all dependent job statuses
