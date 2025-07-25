@@ -1142,6 +1142,7 @@ def sample_gsm8k_requests(
         )
     return sampled_dataset
 
+
 def gen_prompt(tokenizer, token_num):
     """Generate a random prompt of specified token length using tokenizer vocabulary."""
     all_available_tokens = list(tokenizer.get_vocab().values())
