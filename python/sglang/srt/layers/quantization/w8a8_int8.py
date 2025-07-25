@@ -13,10 +13,7 @@ from sglang.srt.distributed import (
     get_tensor_model_parallel_world_size,
 )
 from sglang.srt.layers.amx_utils import _amx_process_weight_after_loading
-from sglang.srt.layers.linear import (
-    RowParallelLinear,
-    UnquantizedLinearMethod,
-)
+from sglang.srt.layers.linear import RowParallelLinear, UnquantizedLinearMethod
 from sglang.srt.layers.parameter import (
     ChannelQuantScaleParameter,
     ModelWeightParameter,

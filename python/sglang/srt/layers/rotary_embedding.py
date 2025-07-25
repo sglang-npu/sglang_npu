@@ -790,8 +790,9 @@ class DeepseekScalingRotaryEmbedding(RotaryEmbedding):
             key_rot.reshape(num_tokens, -1),
             self.cos_sin_cache,
             self.rotary_dim,
-            mrope_section=[0,0,0],
-            rotary_mode=rotary_mode)
+            mrope_section=[0, 0, 0],
+            rotary_mode=rotary_mode,
+        )
         query_rot = query_rot.reshape(num_tokens, -1, self.rotary_dim)
         key_rot = key_rot.reshape(num_tokens, -1, self.rotary_dim)
 

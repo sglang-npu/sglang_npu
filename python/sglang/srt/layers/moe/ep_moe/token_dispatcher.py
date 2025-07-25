@@ -9,8 +9,8 @@ from sglang.srt.utils import (
     get_bool_env_var,
     get_int_env_var,
     is_hip,
-    load_json_config,
     is_npu,
+    load_json_config,
 )
 
 try:

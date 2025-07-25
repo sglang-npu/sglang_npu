@@ -1118,6 +1118,7 @@ def sample_random_requests(
     print(f"#Output tokens: {np.sum(output_lens)}")
     return input_requests
 
+
 def sample_gsm8k_requests(
     dataset_path: str,
     num_prompts: int,
@@ -1847,7 +1848,14 @@ if __name__ == "__main__":
         "--dataset-name",
         type=str,
         default="sharegpt",
-        choices=["sharegpt", "random", "random-ids", "generated-shared-prefix", "mmmu", "gsm8k"],
+        choices=[
+            "sharegpt",
+            "random",
+            "random-ids",
+            "generated-shared-prefix",
+            "mmmu",
+            "gsm8k",
+        ],
         help="Name of the dataset to benchmark on.",
     )
     parser.add_argument(

@@ -148,6 +148,7 @@ class GroupedGemmRunner(torch.nn.Module):
             )
         return c
 
+
 class W8A8EPMoEMethod(NPU_W8A8MoEMethod):
     """MoE method for W8A8.
     Args:
