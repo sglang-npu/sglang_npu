@@ -88,10 +88,10 @@ jobs:
           cd test/srt
           python3 run_suite.py --suite per-commit-2-ascend-npu
 
-  per-commit-8-ascend-npu:
+  per-commit-4-ascend-npu:
     if: (github.repository == 'sglang-npu/sglang_npu' || github.event_name == 'pull_request') &&
         github.event.pull_request.draft == false
-    runs-on: linux-arm64-npu-8
+    runs-on: linux-arm64-npu-4
     container:
       image: swr.cn-southwest-2.myhuaweicloud.com/base_image/ascend-ci/cann:8.2.rc1.alpha003-910b-ubuntu22.04-py3.11
     steps:
@@ -118,14 +118,14 @@ jobs:
           SGLANG_IS_IN_CI: true
         run: |
           cd test/srt
-          python3 run_suite.py --suite per-commit-8-ascend-npu
+          python3 run_suite.py --suite per-commit-4-ascend-npu --timeout-per-file 3600
 
   finish:
     if: always()
     needs:
       - per-commit-1-ascend-npu
       - per-commit-2-ascend-npu
-      - per-commit-8-ascend-npu
+      - per-commit-4-ascend-npu
     runs-on: ubuntu-latest
     steps:
       - name: Check all dependent job statuses
