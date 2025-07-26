@@ -54,7 +54,6 @@ if _use_aiter:
         from aiter import biased_grouped_topk as aiter_biased_grouped_topk
     except ImportError:
         raise ImportError("aiter is required when SGLANG_USE_AITER is set to True")
-
 if _is_npu:
     import torch_npu
 
@@ -186,10 +185,11 @@ class TopK(CustomOp):
 
         # NOTE: now npu_moe_gating_top_k can only support `group_count=256` pattern
         if global_num_experts == 256:
+            router_logits = router_logits.to(torch.float32)
             return torch_npu.npu_moe_gating_top_k(
                 router_logits,
                 k=self.top_k,
-                bias=self.correction_bias,
+                bias=self.correction_bias.to(torch.float32),
                 k_group=self.topk_group,
                 group_count=self.num_expert_group,
                 group_select_mode=1,

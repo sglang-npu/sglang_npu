@@ -679,6 +679,12 @@ def get_dataset(args, tokenizer):
             apply_chat_template=args.apply_chat_template,
             random_sample=True,
         )
+    elif args.dataset_name == "gsm8k":
+        input_requests = sample_gsm8k_requests(
+            dataset_path=args.dataset_path,
+            num_prompts=args.num_prompts,
+            output_len=args.random_output_len,
+        )
     else:
         raise ValueError(f"Unknown dataset: {args.dataset_name}")
     return input_requests
@@ -1111,6 +1117,30 @@ def sample_random_requests(
     print(f"#Input tokens: {np.sum(input_lens)}")
     print(f"#Output tokens: {np.sum(output_lens)}")
     return input_requests
+
+
+def sample_gsm8k_requests(
+    dataset_path: str,
+    num_prompts: int,
+    output_len: int,
+) -> List[DatasetRow]:
+    dataset = []
+    with open(dataset_path) as f:
+        for line in f:
+            data = json.loads(line.strip())
+            dataset.append(data)
+
+    random.shuffle(dataset)
+    sampled_dataset = []
+    for i in range(min(len(dataset), num_prompts)):
+        sampled_dataset.append(
+            DatasetRow(
+                prompt=dataset[i]["question"],
+                prompt_len=int(len(dataset[i]["question"])),
+                output_len=output_len,
+            )
+        )
+    return sampled_dataset
 
 
 def gen_prompt(tokenizer, token_num):
@@ -1819,7 +1849,14 @@ if __name__ == "__main__":
         "--dataset-name",
         type=str,
         default="sharegpt",
-        choices=["sharegpt", "random", "random-ids", "generated-shared-prefix", "mmmu"],
+        choices=[
+            "sharegpt",
+            "random",
+            "random-ids",
+            "generated-shared-prefix",
+            "mmmu",
+            "gsm8k",
+        ],
         help="Name of the dataset to benchmark on.",
     )
     parser.add_argument(
