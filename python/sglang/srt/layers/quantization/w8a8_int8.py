@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 import sys
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Callable, Mapping, Optional, Tuple, Union, cast
 
 import torch
 from torch.nn.parameter import Parameter
@@ -147,7 +147,7 @@ def npu_fused_experts(
     hidden_states = torch_npu.npu_grouped_matmul(
         x=[hidden_states],
         weight=[w2],
-        scale=[w2_scale.to(scale_dtype)],  # .to(scale_dtype)
+        scale=[w2_scale.to(scale_dtype)],
         per_token_scale=[pertoken_scale],
         split_item=2,
         group_list_type=0,
@@ -575,7 +575,7 @@ class NPU_W8A8LinearMethodImpl:
                 True,
             )
         # Only fuse bias add into GEMM for rank 0 (this ensures that
-        # bias will not get added more than once in TP>1 case)
+        # bias will not get added more than once in Attention TP>1 case)
         if isinstance(layer, RowParallelLinear) and layer.tp_rank > 0:
             quant_bias = None
         else:
@@ -652,7 +652,7 @@ class NPU_W8A8LinearMethodMTImpl:
             x = quant_per_tensor(x, layer.input_scale, layer.input_offset)
 
         # Only fuse bias add into GEMM for rank 0 (this ensures that
-        # bias will not get added more than once in TP>1 case)
+        # bias will not get added more than once in Attention TP>1 case)
         if isinstance(layer, RowParallelLinear) and layer.tp_rank > 0:
             quant_bias = None
         else:
@@ -973,3 +973,45 @@ class NPU_W8A8MoEMethod(FusedMoEMethodBase):
             topk_ids=topk_ids,
             top_k=topk_ids.shape[1],
         )
+
+class NPU_W8A8EPMoEMethod(NPU_W8A8MoEMethod):
+    """MoE method for W8A8.
+    Args:
+        quant_config: The quantization config.
+    """
+
+    def __init__(self, quant_config: W8A8Int8Config):
+        self.quant_config = quant_config
+
+    def create_weights(
+        self,
+        layer: torch.nn.Module,
+        num_experts_per_partition: int,
+        hidden_size: int,
+        intermediate_size: int,
+        params_dtype: torch.dtype,
+        weight_loader,
+    ):
+        super().create_weights(
+            layer=layer,
+            num_experts=num_experts_per_partition,
+            hidden_size=hidden_size,
+            intermediate_size=intermediate_size,
+            params_dtype=params_dtype,
+            weight_loader=weight_loader,
+        )
+
+    def apply(
+        self,
+        layer: torch.nn.Module,
+        x: torch.Tensor,
+        router_logits: torch.Tensor,
+        top_k: int,
+        renormalize: bool,
+        use_grouped_topk: bool,
+        topk_group: Optional[int] = None,
+        num_expert_group: Optional[int] = None,
+        custom_routing_function: Optional[Callable] = None,
+    ) -> torch.Tensor:
+        raise NotImplementedError
+

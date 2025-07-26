@@ -546,9 +546,11 @@ class _DeepEPDispatcherImplLowLatency(_DeepEPDispatcherImplBase):
             masked_m
         )
 
-        # generate seg_indptr need to be returned for dp/ep Ascend
         reorder_topk_ids = seg_indptr = None
-        seg_indptr = self.handle[1]
+
+        # generate seg_indptr need to be returned for dp/ep Ascend
+        if is_npu():
+            seg_indptr = self.handle[1]
 
         return (
             hidden_states,

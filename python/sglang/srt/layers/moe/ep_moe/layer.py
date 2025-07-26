@@ -1,11 +1,8 @@
 import logging
 from typing import Callable, List, Optional, Tuple
 
-import einops
 import torch
-from torch.nn import Module
 
-from sglang.srt.custom_op import CustomOp
 from sglang.srt.distributed import (
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
@@ -26,7 +23,6 @@ from sglang.srt.layers.moe.ep_moe.kernels import (
     silu_and_mul_triton_kernel,
     tma_align_input_scale,
 )
-from sglang.srt.layers.moe.fused_moe_triton import FusedMoeWeightScaleSupported
 from sglang.srt.layers.moe.fused_moe_triton.layer import FusedMoE
 from sglang.srt.layers.moe.topk import TopKOutput
 from sglang.srt.layers.quantization import deep_gemm_wrapper
@@ -42,7 +38,7 @@ from sglang.srt.layers.quantization.fp8_kernel import (
 )
 from sglang.srt.layers.quantization.unquant import UnquantizedEPMoEMethod
 from sglang.srt.layers.quantization.w4afp8 import W4AFp8Config, W4AFp8MoEMethod
-from sglang.srt.layers.quantization.w8a8_int8 import NPU_W8A8MoEMethod, W8A8Int8Config
+from sglang.srt.layers.quantization.w8a8_int8 import W8A8Int8Config, NPU_W8A8EPMoEMethod
 from sglang.srt.managers.schedule_batch import global_server_args_dict
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.utils import (
@@ -52,7 +48,6 @@ from sglang.srt.utils import (
     get_bool_env_var,
     is_hip,
     is_npu,
-    set_weight_attrs,
 )
 
 _is_hip = is_hip()
@@ -149,30 +144,6 @@ class GroupedGemmRunner(torch.nn.Module):
         return c
 
 
-class W8A8EPMoEMethod(NPU_W8A8MoEMethod):
-    """MoE method for W8A8.
-    Args:
-        quant_config: The quantization config.
-    """
-
-    def __init__(self, quant_config: W8A8Int8Config):
-        self.quant_config = quant_config
-
-    def apply(
-        self,
-        layer: torch.nn.Module,
-        x: torch.Tensor,
-        router_logits: torch.Tensor,
-        top_k: int,
-        renormalize: bool,
-        use_grouped_topk: bool,
-        topk_group: Optional[int] = None,
-        num_expert_group: Optional[int] = None,
-        custom_routing_function: Optional[Callable] = None,
-    ) -> torch.Tensor:
-        raise NotImplementedError
-
-
 class EPMoE(torch.nn.Module):
     """
     MoE Expert Parallel Impl
@@ -225,8 +196,8 @@ class EPMoE(torch.nn.Module):
             self.block_shape = None
             self.activation_scheme = None
             self.use_w4afp8 = False
-        elif _is_npu and global_server_args_dict["quantization"] == "w8a8_int8":
-            self.quant_method: Optional[QuantizeMethodBase] = W8A8EPMoEMethod(
+        elif _is_npu and isinstance(quant_config, W8A8Int8Config):
+            self.quant_method: Optional[QuantizeMethodBase] = NPU_W8A8EPMoEMethod(
                 quant_config
             )
             self.use_block_quant = False
@@ -259,7 +230,7 @@ class EPMoE(torch.nn.Module):
 
         self.quant_method.create_weights(
             layer=self,
-            num_experts=self.num_experts_per_partition,
+            num_experts_per_partition=self.num_experts_per_partition,
             hidden_size=hidden_size,
             intermediate_size=self.intermediate_size,
             params_dtype=params_dtype,
