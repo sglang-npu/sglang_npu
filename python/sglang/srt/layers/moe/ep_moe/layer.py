@@ -38,7 +38,7 @@ from sglang.srt.layers.quantization.fp8_kernel import (
 )
 from sglang.srt.layers.quantization.unquant import UnquantizedEPMoEMethod
 from sglang.srt.layers.quantization.w4afp8 import W4AFp8Config, W4AFp8MoEMethod
-from sglang.srt.layers.quantization.w8a8_int8 import W8A8Int8Config, NPU_W8A8EPMoEMethod
+from sglang.srt.layers.quantization.w8a8_int8 import NPU_W8A8EPMoEMethod, W8A8Int8Config
 from sglang.srt.managers.schedule_batch import global_server_args_dict
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.utils import (

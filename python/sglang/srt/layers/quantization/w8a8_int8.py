@@ -3,7 +3,18 @@ from __future__ import annotations
 import importlib
 import sys
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Dict, List, Callable, Mapping, Optional, Tuple, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    Union,
+    cast,
+)
 
 import torch
 from torch.nn.parameter import Parameter
@@ -974,6 +985,7 @@ class NPU_W8A8MoEMethod(FusedMoEMethodBase):
             top_k=topk_ids.shape[1],
         )
 
+
 class NPU_W8A8EPMoEMethod(NPU_W8A8MoEMethod):
     """MoE method for W8A8.
     Args:
@@ -1014,4 +1026,3 @@ class NPU_W8A8EPMoEMethod(NPU_W8A8MoEMethod):
         custom_routing_function: Optional[Callable] = None,
     ) -> torch.Tensor:
         raise NotImplementedError
-
