@@ -94,6 +94,12 @@ pub enum PolicyConfig {
         /// Interval for load monitoring (seconds)
         load_check_interval_secs: u64,
     },
+    Bucket {
+        balance_abs_threshold: usize,
+        balance_rel_threshold: f32,
+
+        bucket_adjust_interval_secs: usize,
+    }
 }
 
 impl PolicyConfig {
@@ -103,6 +109,7 @@ impl PolicyConfig {
             PolicyConfig::RoundRobin => "round_robin",
             PolicyConfig::CacheAware { .. } => "cache_aware",
             PolicyConfig::PowerOfTwo { .. } => "power_of_two",
+            PolicyConfig::Bucket {..} => "bucket",
         }
     }
 }
@@ -238,6 +245,16 @@ impl RouterConfig {
                                 .to_string(),
                         });
                     }
+                    PolicyConfig::Bucket {
+                        balance_abs_threshold,
+                        balance_rel_threshold,
+                        bukcet_adjust_interval_secs,
+                        ..
+                    } => crate::pd_types::PDSelectionPolicy::Bucket {
+                        balance_abs_threshold,: *balance_abs_threshold,
+                        balance_rel_threshold: *balance_rel_threshold,
+                        bukcet_adjust_interval_secs: *bukcet_adjust_interval_secs,
+                    }
                     PolicyConfig::RoundRobin => {
                         return Err(ConfigError::IncompatibleConfig {
                             reason: "RoundRobin policy is not supported in PD disaggregated mode"
@@ -287,6 +304,12 @@ impl RouterConfig {
             (RoutingMode::Regular { .. }, PolicyConfig::PowerOfTwo { .. }) => {
                 Err(ConfigError::IncompatibleConfig {
                     reason: "PowerOfTwo policy is only supported in PD disaggregated mode"
+                        .to_string(),
+                })
+            }
+            (RoutingMode::Regular { .. }, PolicyConfig::Bucket { .. }) => {
+                Err(ConfigError::IncompatibleConfig {
+                    reason: "Bucket policy is only supported in PD disaggregated mode"
                         .to_string(),
                 })
             }
