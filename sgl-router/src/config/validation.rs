@@ -139,6 +139,27 @@ impl ConfigValidator {
                     });
                 }
             }
+            PolicyConfig::Bucket {
+                balance_abs_threshold,
+                balance_rel_threshold,
+                bucket_adjust_interval_secs
+            } => {
+                if *balance_rel_threshold < 1.0 {
+                    retrun Err(ConfigError::InvalidValue {
+                        field: "balance_rel_threshold".to_string(),
+                        value: balance_rel_threshold.to_string(),
+                        reason: "Must be >= 1.0".to_string(),
+                    });
+                }
+    
+                if *bucket_adjust_interval_secs < 1 {
+                    return Err(ConfigError::InvalidValue {
+                        field: "bucket_adjust_interval_secs".to_string(),
+                        value: bucket_adjust_interval_secs.to_string(),
+                        reason: "Must be >= 1s".to_string(),
+                    });
+                }
+            }
         }
         Ok(())
     }

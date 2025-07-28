@@ -116,6 +116,9 @@ mod test_pd_routing {
                 } => {
                     assert!(*cache_threshold >= 0.0 && *cache_threshold <= 1.0);
                 }
+                PDSelectionPolicy::Bucket{ .. } => {
+
+                }
             }
         }
     }
@@ -162,6 +165,19 @@ mod test_pd_routing {
                     balance_rel_threshold: 1.2,
                     eviction_interval_secs: 60,
                     max_tree_size: 1000000,
+                },
+            ),
+            (
+                PolicyConfig::PrefillDecodeConfig{
+                    selection_policy: PDSelectionPolicy::Bucket{
+                        balance_abs_threshold: 32,
+                        balance_rel_threshold: 1.0001,
+                        bucket_adjust_interval_secs: 5,
+                    },
+                    prefill_urls: vec![("http://prefill:8080".to_string(), Some(9000))],
+                    decode_urls: vec!["http://decode:8080".to_string()],
+                    timeout_secs: 5,
+                    interval_secs: 1,
                 },
             ),
         ];

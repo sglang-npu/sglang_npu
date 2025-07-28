@@ -1,18 +1,21 @@
 // PD (Prefill-Decode) Router Implementation
 // This module handles routing for disaggregated prefill-decode systems
 
-use super::pd_types::{api_path, Bootstrap, ChatReqInput, GenerateReqInput, PDRouterError};
+use super::pd_types::{api_path, Bootstrap, ChatReqInput, GenerateReqInput, PDRouterError, SingleOrBatch};
 use super::request_adapter::ToPdRequest;
+use 
 use crate::core::{HealthChecker, Worker, WorkerFactory, WorkerLoadGuard};
 use crate::metrics::RouterMetrics;
 use crate::openai_api_types::{ChatCompletionRequest, CompletionRequest, GenerateRequest};
 use crate::policies::LoadBalancingPolicy;
+use crate::policies::bucket::Bucket;
 use crate::tree::Tree;
 use actix_web::http::header::{HeaderValue, CONTENT_TYPE};
 use actix_web::{HttpRequest, HttpResponse};
 use futures_util::{StreamExt, TryStreamExt};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
@@ -29,9 +32,44 @@ pub struct PDRouter {
     pub worker_loads: Arc<tokio::sync::watch::Receiver<HashMap<String, isize>>>,
     pub load_monitor_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     pub http_client: reqwest::Client,
+    pub bucket: Option<Arc<RwLock<Bucket>>>,
     _prefill_health_checker: Option<HealthChecker>,
     _decode_health_checker: Option<HealthChecker>,
 }
+
+// RAII guard for load tracking to ensure cleanup even on panic
+struct LoadGuad<'a> {
+    tracking: &'a Arc<dashmap::DashMap<String, Arc<AtomicUsize>>>,
+    urls: Vec<String>,
+}
+
+impl<'a> LoadGuard<'a> {
+    fn new(
+        tracking: &'a Arc<dashmap::DashMap<String, Arc<AtomicUsize>>>,
+        urls: Vec<String>,
+    ) -> Self {
+        // Increment counters
+        for url in &urls {
+            let counter = tracking
+                .entry(url.clone())
+                .or_insert_with(|| Arc::new(AtomicUsize::new(0)));
+            counter.fetch_add(1, Ordering::Relaxed);
+        }
+        LoadGuard { tracking, urls }
+    }
+}
+
+impl Drop for LoadGuard<'_> {
+    fn drop(&mut self) {
+        // Guaranteed cleanup even on panic
+        for url in &self.urls {
+            if let Some(counter) = self.tracking.get(url) {
+                counter.fetch_sub(1, Ordering::Relaxed);
+            }
+        }
+    }
+}
+
 
 impl PDRouter {
     // Dynamic worker management methods for service discovery
@@ -69,6 +107,13 @@ impl PDRouter {
         // Add to cache tree if using cache-aware policy
         if let Some(ref tree) = self.prefill_tree {
             tree.lock().unwrap().insert("", &url);
+        }
+
+        // Add to pwu if using bucket policy
+        if let Some(ref buc_arc) = self.bucket {
+            let buc = buc_arc.read().unwrap();
+            let mut pwu = buc.prefill_worker_url.locaks().unwrap();
+            pwu.push(url.clone());
         }
 
         info!("Added prefill server: {}", url);
@@ -134,6 +179,13 @@ impl PDRouter {
             }
         }
 
+        // bucket policy
+        if let Some(ref buc_arc) =  self.bucket {
+            let buc = buc_arc.read().unwrap();
+            let mut pwu = buc.prefill_worker_urls.lock().unwrap();
+            pwu.retain(|worker_url| worker_url != url);
+        }
+
         info!("Removed prefill server: {}", url);
         Ok(format!("Successfully removed prefill server: {}", url))
     }
@@ -185,11 +237,11 @@ impl PDRouter {
             .map(|worker| worker.url().to_string())
             .collect();
         if !all_urls.is_empty() {
-            crate::routers::router::Router::wait_for_healthy_workers(
-                &all_urls,
-                timeout_secs,
-                interval_secs,
-            )?;
+            // crate::routers::router::Router::wait_for_healthy_workers(
+            //     &all_urls,
+            //     timeout_secs,
+            //     interval_secs,
+            // )?;
         }
 
         // Initialize cache-aware components if needed
@@ -242,6 +294,47 @@ impl PDRouter {
             None
         };
 
+        // Extract bucket initialization parameters from policy (only when the policy is bucket)
+        let bucket_adjust_interval_secs = match &policy {
+            PDSelectionPolicy::Bucket {
+                bucket_adjust_interval_secs,
+                ..
+            } => *bucket_adjust_interval_secs * 1000, // Convert interval to milliseconds
+            _ => 0, // Other policies use default values(which will not be used  since bucket is None)
+        };
+        let bucket = match &policy {
+            PDSelectionPolicy::Bucket { .. } => {
+                let prefill_worker_urls = prefill_workers
+                    .iter()
+                    .map(|worker| worker.url().to_string())
+                    .collect();
+                
+                // Initiallize bucket with required parameters
+                let bucket = Bucket::new(
+                    bucket_adjust_interval_secs, // Convert interval to milliseconds for bucket's period
+                    prefill_worker_urls,
+                );
+
+                Some(Arc::new(RwLock::new(bucket)))
+            }
+            _ => None, // No bucket for other policies
+        };
+
+        if let Some(ref buc_arc) = bucket {
+            let buc = Arc::clone(buc_arc);
+
+            tokio::spawn(async move{
+                loop{
+                    {
+                        let mut bucket = buc.write().unwrap();
+                        bucket.adjust_boundary();
+                    }
+
+                    tokio::time::sleep(Duration::from_secs(bucket_adjust_interval_secs as u64)).await;
+                }
+            });
+        }
+        
         let prefill_workers = Arc::new(RwLock::new(prefill_workers));
         let decode_workers = Arc::new(RwLock::new(decode_workers));
 
@@ -261,6 +354,7 @@ impl PDRouter {
             worker_loads,
             load_monitor_handle,
             http_client,
+            bucket,
             _prefill_health_checker: Some(prefill_health_checker),
             _decode_health_checker: Some(decode_health_checker),
         })
@@ -292,6 +386,17 @@ impl PDRouter {
         });
 
         // Select servers
+        let text = &typed_req.text;
+        let char_count = match text {
+            None => 0,
+
+            Some(input) => match input {
+                SingleOrBatch::Single(s) => s.chars().count(),
+
+                SingleOrBatch::Batch(v) => v.iter().map(|s| s.chars().count()).sum(),
+            }
+        };
+
         let (prefill, decode) = match self.select_pd_pair(client, request_text).await {
             Ok(pair) => pair,
             Err(e) => {
@@ -370,6 +475,20 @@ impl PDRouter {
             .and_then(|content| content.as_str());
 
         // Select servers
+        let char_count = typed_req.other
+        .get("messages")
+        .and_then(|v| v.as_array())
+        .map(|messages| {
+            messages.iter().filter_map(|msg| {
+                msg.as_object()
+                    .and_then(|m| m.get("content"))
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.chars().count())
+            }).sum::<usize>()
+        })
+        .unwrap_or(0);
+
+
         let (prefill, decode) = match self.select_pd_pair(client, request_text).await {
             Ok(pair) => pair,
             Err(e) => {
@@ -645,6 +764,7 @@ impl PDRouter {
     async fn select_pd_pair(
         &self,
         _client: &reqwest::Client,
+        char_count: usize,
         request_text: Option<&str>,
     ) -> Result<(Box<dyn Worker>, Box<dyn Worker>), String> {
         // Get read locks for both worker lists
@@ -665,6 +785,15 @@ impl PDRouter {
             return Err("No decode workers available. Please check if decode servers are configured and healthy.".to_string());
         }
 
+
+        if let Some(PDSelectionPolicy::Bucket{
+            balance_abs_threshold,
+            balance_rel_threshold,
+            bucket_adjust_interval_secs,
+        }) = self.policy {
+            return self.select_bucket(char_count, *balance_abs_threshold, * balance_rel_threshold).await
+        }
+
         // Use the policy to select worker pair
         match self
             .policy
@@ -677,6 +806,89 @@ impl PDRouter {
             }
             None => Err("Failed to select worker pair".to_string()),
         }
+    }
+
+    async fn select_bucket(
+        &self,
+        char_count: usize,
+        balance_abs_threshold: usize,
+        balance_rel_threshold: f32,
+    ) -> Result<(Box<dyn Worker>, Box<dyn Worker>), String> {
+        let prefill_list = self.prefill_workers.read().map_err(|e| {
+            error!("Failed to lock prefill_workers: {:?}", e);
+            "Prefill workers lock error".to_string()
+        })?;
+        let decode_list = self.decode_workers.read().map_err(|e| {
+            error!("Failed to lock decode_workers: {:?}", e);
+            "Decode workers lock error".to_string()
+        })?;
+
+        let buc_arc = Arc::clone(self.bucket.as_ref().ok_or("Bucket not initialized")?);
+        let request_list_snapshot;
+        let choiced_url_snapshot;
+        let chars_per_url_snapshot;
+        {
+            let buc = buc_arc.read().map_err(|_| "Bucket lock error")?;
+            request_list_snapshot = buc.get_request_list_mut().clone();
+            choiced_url_snapshot = buc.find_boundary(char_count);
+            chars_per_url_snapshot = buc.chars_per_url.lock().unwrap().clone();
+        }
+
+        let mut chars_per_url = HashMap::new();
+        for req in request_list_snapshot.iter() {
+            *chars_per_url.entry(req.prefill_worker_url.clone()).or_insert(0) += req.char_cnt;
+        }
+        info!("chars_per_url : {:?}", chars_per_url)
+        info!("chars_per_url_snapshot : {:?}");
+
+        let max_load = chars_per_url.values().copied().max().unwrap_or(0);
+        let min_load = chars_per_url.values().copied().min().unwrap_or(0);
+        let abs_diff = max_load.saturating_sub(min_load);
+        let rel_threshold = balance_rel_threshold * min_load as f32;
+
+        //Load balancing is triggered when (max_load - min_load) > abs_threshold AND max_load > min_load * rel_threshold.
+        let is_imbalanced = abs_diff > balance_abs_threshold && max_load as f32 > rel_threshold;
+
+        let prefill_url = if is_imbalanced {
+            let min_url = chars_per_url
+                .iter()
+                .min_by_key(|(url, _)| url.clone())
+                .unwrap_or_else(|| {
+                    let prefill_idx = rand::random::<usize>() % prefill_list.len();
+                    let url = prefill_list[prefill_idx].url();
+                    warn!("No URL found, randomly selecting: {}", url);
+                    url.to_string();
+                });
+            min_url
+        } else {
+            if choiced_url_snapshot.is_empty() {
+                let prefill_idx = rand::random::<usize>() % prefill_list.len();
+                let selected_url = prefill_list[prefill_idx].url();
+                warn!("Boundary not found, randomly selection: {}", selected_url);
+                selected_url.to_string();
+            } else {
+                choiced_url_snapshot
+            }
+        };
+
+        // Get prefill engine info
+        let prefill = prefill_list.iter()
+            .find(|worker| worker.url() == prefill_url)
+            .ok_or_else(|| {
+                error!("Prefill worker not found for URL: {}", prefill_url);
+            })?
+            .clone_worker();
+        
+        {
+            let mut buc = buc_arc.write().unwrap();
+            buc.post_process_request(char_count, prefill_url.clone());
+        }
+
+        let decode_idx = rand::random::<usize>() % decode_list.len();
+        let decode = decode_list[decode_idx].clone_worker();
+
+        Ok((prefill, decode))
+
     }
 
     // Background task to monitor worker loads with shared client

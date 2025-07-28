@@ -239,6 +239,7 @@ impl ToPdRequest for ChatCompletionRequest {
             bootstrap_port: None,
             bootstrap_room: None,
             other: Value::Object(other),
+            text: None,
         }
     }
 }
