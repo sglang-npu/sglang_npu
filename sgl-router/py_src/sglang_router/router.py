@@ -77,6 +77,7 @@ class Router:
         prometheus_port: Optional[int] = None,
         prometheus_host: Optional[str] = None,
         pd_disaggregation: bool = False,
+        bucket_adjust_interval_secs: int = 5,
         prefill_urls: Optional[List[tuple]] = None,
         decode_urls: Optional[List[str]] = None,
     ):
@@ -111,6 +112,7 @@ class Router:
             prometheus_port=prometheus_port,
             prometheus_host=prometheus_host,
             pd_disaggregation=pd_disaggregation,
+            bucket_adjust_interval_secs=bucket_adjust_interval_secs,
             prefill_urls=prefill_urls,
             decode_urls=decode_urls,
         )
