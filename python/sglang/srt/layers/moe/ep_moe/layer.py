@@ -1404,7 +1404,6 @@ class AscendDeepEPMoE(EPMoE):
             self._load_w8a8_scale(
                 param.data,
                 loaded_weight,
-                weight_name,
                 shard_id,
                 expert_id,
             )
@@ -1423,11 +1422,9 @@ class AscendDeepEPMoE(EPMoE):
         self,
         param: torch.nn.Parameter,
         loaded_weight: torch.Tensor,
-        weight_name: str,
         shard_id: str,
         expert_id: int,
     ) -> None:
-        param_data = param.data
         expert_data = param.data[expert_id]
         SHARD_ID_TO_SHARDED_DIM = {"w1": 0, "w2": 1, "w3": 0}
         shard_dim = SHARD_ID_TO_SHARDED_DIM[shard_id]
@@ -1460,7 +1457,7 @@ class AscendDeepEPMoE(EPMoE):
     ):
         assert self.quant_method is not None
         assert self.activation == "silu"
-        output_dtype = torch.bfloat16
+        output_dtype = hidden_states.dtype
 
         pertoken_scale = hidden_states[1]
         hidden_states = hidden_states[0]
