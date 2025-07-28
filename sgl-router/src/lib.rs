@@ -6,7 +6,6 @@ pub mod core;
 pub mod metrics;
 pub mod openai_api_types;
 pub mod policies;
-pub mod bucket;
 pub mod routers;
 pub mod server;
 pub mod service_discovery;

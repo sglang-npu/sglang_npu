@@ -3,7 +3,6 @@
 
 use super::pd_types::{api_path, Bootstrap, ChatReqInput, GenerateReqInput, PDRouterError, SingleOrBatch};
 use super::request_adapter::ToPdRequest;
-use 
 use crate::core::{HealthChecker, Worker, WorkerFactory, WorkerLoadGuard};
 use crate::metrics::RouterMetrics;
 use crate::openai_api_types::{ChatCompletionRequest, CompletionRequest, GenerateRequest};

@@ -1,7 +1,7 @@
 //! Factory for creating load balancing policies
 
 use super::{
-    CacheAwareConfig, CacheAwarePolicy, LoadBalancingPolicy, PowerOfTwoPolicy, RandomPolicy,
+    CacheAwareConfig, CacheAwarePolicy, LoadBalancingPolicy, PowerOfTwoPolicy, RandomPolicy, BucketConfig, Bucket,
     RoundRobinPolicy,
 };
 use crate::config::PolicyConfig;
@@ -33,6 +33,18 @@ impl PolicyFactory {
                 };
                 Arc::new(CacheAwarePolicy::with_config(config))
             }
+        }
+        PolicyConfig::Bucket {
+            balance_abs_threshold,
+            balance_rel_threshold,
+            bucket_adjust_interval_secs,
+        } => {
+            let config = BucketConfig {
+                balance_abs_threshold: *balance_abs_threshold,
+                balance_rel_threshold: *balance_rel_threshold,
+                bucket_adjust_interval_secs: *bucket_adjust_interval_secs,
+            };
+            Arc::new(Bucket::with_config(config))
         }
     }
 

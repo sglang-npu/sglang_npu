@@ -94,6 +94,8 @@ pub enum PolicyConfig {
         /// Interval for load monitoring (seconds)
         load_check_interval_secs: u64,
     },
+    
+    #[serde(rename = "bucket")]
     Bucket {
         balance_abs_threshold: usize,
         balance_rel_threshold: f32,

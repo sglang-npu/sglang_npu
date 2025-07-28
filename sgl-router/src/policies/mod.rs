@@ -99,6 +99,24 @@ impl Default for CacheAwareConfig {
     }
 }
 
+pub struct BucketConfig {
+    pub balance_abs_threshold: usize,
+    pub balance_rel_threshold: f32,
+
+    pub bucket_adjust_interval_secs: usize,
+}
+
+impl Default for BucketConfig {
+    fn default() -> Self {
+        Self {
+            balance_abs_threshold: 32,
+            balance_rel_threshold: 1.0001,
+
+            bucket_adjust_interval_secs: 5
+        }
+    }
+}
+
 /// Helper function to filter healthy workers and return their indices
 pub(crate) fn get_healthy_worker_indices(workers: &[Box<dyn Worker>]) -> Vec<usize> {
     workers

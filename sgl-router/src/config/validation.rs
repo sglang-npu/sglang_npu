@@ -145,7 +145,7 @@ impl ConfigValidator {
                 bucket_adjust_interval_secs
             } => {
                 if *balance_rel_threshold < 1.0 {
-                    retrun Err(ConfigError::InvalidValue {
+                    return Err(ConfigError::InvalidValue {
                         field: "balance_rel_threshold".to_string(),
                         value: balance_rel_threshold.to_string(),
                         reason: "Must be >= 1.0".to_string(),
