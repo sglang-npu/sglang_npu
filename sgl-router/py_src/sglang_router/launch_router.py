@@ -270,7 +270,7 @@ class RouterArgs:
             host=args.host,
             port=args.port,
             pd_disaggregation=getattr(args, f"{prefix}pd_disaggregation", False),
-            bucket_adjust_interval=getattr(args, f"{prefix}bucket_adjust_interval", False)
+            bucket_adjust_interval=getattr(args, f"{prefix}bucket_adjust_interval", False),
             prefill_urls=prefill_urls,
             decode_urls=decode_urls,
             policy=getattr(args, f"{prefix}policy"),
@@ -427,7 +427,7 @@ def launch_router(args: argparse.Namespace) -> Optional[Router]:
             prometheus_port=router_args.prometheus_port,
             prometheus_host=router_args.prometheus_host,
             pd_disaggregation=router_args.pd_disaggregation,
-            bucket_adjust_interval=router_args.bucket_adjust_interval,
+            bucket_adjust_interval_secs=router_args.bucket_adjust_interval,
             prefill_urls=(
                 router_args.prefill_urls if router_args.pd_disaggregation else None
             ),

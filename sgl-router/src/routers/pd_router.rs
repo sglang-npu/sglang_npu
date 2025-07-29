@@ -385,15 +385,9 @@ impl PDRouter {
         });
 
         // Select servers
-        let text = &typed_req.text;
-        let char_count = match text {
+        let char_count = match request_text {
             None => 0,
-
-            Some(input) => match input {
-                SingleOrBatch::Single(s) => s.chars().count(),
-
-                SingleOrBatch::Batch(v) => v.iter().map(|s| s.chars().count()).sum(),
-            }
+            Some(text) => text.chars().count()
         };
 
         let (prefill, decode) = match self.select_pd_pair(client, request_text).await {
@@ -474,19 +468,13 @@ impl PDRouter {
             .and_then(|content| content.as_str());
 
         // Select servers
-        let char_count = typed_req.other
-        .get("messages")
-        .and_then(|v| v.as_array())
-        .map(|messages| {
-            messages.iter().filter_map(|msg| {
-                msg.as_object()
-                    .and_then(|m| m.get("content"))
-                    .and_then(|c| c.as_str())
-                    .map(|s| s.chars().count())
-            }).sum::<usize>()
-        })
+        let char_count = request_text
+        .map(|s| s.chars().count())
         .unwrap_or(0);
-
+        let char_count = match request_text {
+            None => 0,
+            Some(text) => text.chars().count()
+        };
 
         let (prefill, decode) = match self.select_pd_pair(client, request_text).await {
             Ok(pair) => pair,
@@ -763,7 +751,6 @@ impl PDRouter {
     async fn select_pd_pair(
         &self,
         _client: &reqwest::Client,
-        char_count: usize,
         request_text: Option<&str>,
     ) -> Result<(Box<dyn Worker>, Box<dyn Worker>), String> {
         // Get read locks for both worker lists
