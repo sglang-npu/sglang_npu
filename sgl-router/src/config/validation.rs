@@ -140,7 +140,7 @@ impl ConfigValidator {
                 }
             }
             PolicyConfig::Bucket {
-                balance_abs_threshold,
+                balance_abs_threshold: _,
                 balance_rel_threshold,
                 bucket_adjust_interval_secs
             } => {

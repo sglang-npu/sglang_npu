@@ -11,12 +11,14 @@ mod factory;
 mod power_of_two;
 mod random;
 mod round_robin;
+mod buckets;
 
 pub use cache_aware::CacheAwarePolicy;
 pub use factory::PolicyFactory;
 pub use power_of_two::PowerOfTwoPolicy;
 pub use random::RandomPolicy;
 pub use round_robin::RoundRobinPolicy;
+pub use buckets::BucketPolicy;
 
 /// Core trait for load balancing policies
 ///
@@ -99,6 +101,7 @@ impl Default for CacheAwareConfig {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct BucketConfig {
     pub balance_abs_threshold: usize,
     pub balance_rel_threshold: f32,
