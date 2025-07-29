@@ -30,6 +30,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          docker-images: false
+
       # Add support for more platforms with QEMU (optional)
       # https://github.com/docker/setup-qemu-action
       - name: Set up QEMU
