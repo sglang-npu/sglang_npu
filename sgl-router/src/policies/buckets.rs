@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque, HashSet};
 use std::time::{SystemTime};
 use std::time::Duration;
 use std::sync::{Arc, Mutex, RwLock};
-use tracing::{info, warn};
+use tracing::{warn};
 use rand::Rng;
 
 use uuid::Uuid;
@@ -97,25 +97,16 @@ impl LoadBalancingPolicy for BucketPolicy {
         };
 
         let buc_arc = Arc::clone(&self.bucket);
-        let request_list_snapshot;
         let choiced_url_snapshot;
         let chars_per_url_snapshot;
         {
             let buc = buc_arc.read().unwrap();
-            request_list_snapshot = buc.get_request_list_mut().clone();
             choiced_url_snapshot = buc.find_boundary(char_count);
             chars_per_url_snapshot = buc.chars_per_url.lock().unwrap().clone();
         }
 
-        let mut chars_per_url = HashMap::new();
-        for req in request_list_snapshot.iter() {
-            *chars_per_url.entry(req.prefill_worker_url.clone()).or_insert(0) += req.char_cnt;
-        }
-        info!("chars_per_url : {:?}", chars_per_url);
-        info!("chars_per_url_snapshot : {:?}", chars_per_url_snapshot);
-
-        let max_load = chars_per_url.values().copied().max().unwrap_or(0);
-        let min_load = chars_per_url.values().copied().min().unwrap_or(0);
+        let max_load = chars_per_url_snapshot.values().copied().max().unwrap_or(0);
+        let min_load = chars_per_url_snapshot.values().copied().min().unwrap_or(0);
         let abs_diff = max_load.saturating_sub(min_load);
         let rel_threshold = self.config.balance_rel_threshold * min_load as f32;
 
@@ -123,7 +114,7 @@ impl LoadBalancingPolicy for BucketPolicy {
         let is_imbalanced = abs_diff > self.config.balance_abs_threshold && max_load as f32 > rel_threshold;
 
         let prefill_url = if is_imbalanced {
-            let min_url = chars_per_url
+            let min_url = chars_per_url_snapshot
                 .iter()
                 .min_by_key(|(_, &chars)| chars)
                 .map(|(url, _)| url.clone())
@@ -394,6 +385,7 @@ impl Bucket {
         while let Some(url) = iter.next() {
             if last_load_index >= hist_load.len() {
                 new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
+                break;
             }
             let mut load_accumulator = 0;
             for (i, &load) in hist_load[last_load_index..].iter().enumerate() {
@@ -414,9 +406,5 @@ impl Bucket {
             }
         }
         self.boundary = new_boundary;
-    }
-
-    pub fn get_request_list_mut(&self) -> &VecDeque<SequencerRequset> {
-        &self.request_list
     }
 }
