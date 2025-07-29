@@ -1,8 +1,8 @@
 //! Factory for creating load balancing policies
 
 use super::{
-    CacheAwareConfig, CacheAwarePolicy, LoadBalancingPolicy, PowerOfTwoPolicy, RandomPolicy, BucketConfig, Bucket,
-    RoundRobinPolicy,
+    CacheAwareConfig, CacheAwarePolicy, LoadBalancingPolicy, PowerOfTwoPolicy, RandomPolicy, 
+    BucketConfig, BucketPolicy, RoundRobinPolicy,
 };
 use crate::config::PolicyConfig;
 use std::sync::Arc;
@@ -32,19 +32,19 @@ impl PolicyFactory {
                     max_tree_size: *max_tree_size,
                 };
                 Arc::new(CacheAwarePolicy::with_config(config))
-            }
-        }
-        PolicyConfig::Bucket {
-            balance_abs_threshold,
-            balance_rel_threshold,
-            bucket_adjust_interval_secs,
-        } => {
-            let config = BucketConfig {
-                balance_abs_threshold: *balance_abs_threshold,
-                balance_rel_threshold: *balance_rel_threshold,
-                bucket_adjust_interval_secs: *bucket_adjust_interval_secs,
-            };
-            Arc::new(Bucket::with_config(config))
+            },
+            PolicyConfig::Bucket {
+                balance_abs_threshold,
+                balance_rel_threshold,
+                bucket_adjust_interval_secs,
+            } => {
+                let config = BucketConfig {
+                    balance_abs_threshold: *balance_abs_threshold,
+                    balance_rel_threshold: *balance_rel_threshold,
+                    bucket_adjust_interval_secs: *bucket_adjust_interval_secs,
+                };
+                Arc::new(BucketPolicy::with_config(config))
+            },
         }
     }
 
@@ -55,6 +55,7 @@ impl PolicyFactory {
             "round_robin" | "roundrobin" => Some(Arc::new(RoundRobinPolicy::new())),
             "power_of_two" | "poweroftwo" => Some(Arc::new(PowerOfTwoPolicy::new())),
             "cache_aware" | "cacheaware" => Some(Arc::new(CacheAwarePolicy::new())),
+            "bucket" | "Bucket" => Some(Arc::new(BucketPolicy::new())),
             _ => None,
         }
     }
@@ -89,6 +90,15 @@ mod tests {
             max_tree_size: 1000,
         });
         assert_eq!(policy.name(), "cache_aware");
+
+        let policy = PolicyFactory::crate_from_conifg(&PolicyConfig::BucketConfig{
+            balance_abs_threshold: 10,
+            balance_rel_threshold: 1.5,
+
+            bucket_adjust_interval_secs: 5,
+        });
+        assert_eq!(policy.name(), "bucket");
+
     }
 
     #[test]
@@ -101,6 +111,8 @@ mod tests {
         assert!(PolicyFactory::create_by_name("PowerOfTwo").is_some());
         assert!(PolicyFactory::create_by_name("cache_aware").is_some());
         assert!(PolicyFactory::create_by_name("CacheAware").is_some());
+        assert!(PolicyFactory::create_by_name("bucket").is_some());
+        assert!(PolicyFactory::create_by_name("Bucket").is_some());
         assert!(PolicyFactory::create_by_name("unknown").is_none());
     }
 }
