@@ -64,10 +64,4 @@ RUN pip install triton-ascend==$TRITON_ASCEND_VERSION
 RUN GIT_SSL_NO_VERIFY=true git clone https://github.com/sgl-project/sglang && \
     cd sglang && pip install -e "python[srt_npu]"
 
-LABEL \
-    org.opencontainers.image.title="sglang-ascend" \
-    org.opencontainers.image.description="A SGLang image for Ascend backend." \
-    org.opencontainers.image.version="1.0.0" \
-    org.opencontainers.image.licenses="MIT"
-
 CMD ["/bin/bash"]
