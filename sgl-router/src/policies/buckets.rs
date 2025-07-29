@@ -271,9 +271,11 @@ impl Bucket {
     }
 
     pub fn post_process_request(&mut self, char_cnt: usize, prefill_url: String) {
-        let mut map = self.chars_per_url.lock().unwrap();
-        *map.entry(prefill_url.clone())
-            .or_insert(0) += char_cnt;
+        {
+            let mut map = self.chars_per_url.lock().unwrap();
+            *map.entry(prefill_url.clone())
+                .or_insert(0) += char_cnt;
+        }
 
         let now = SystemTime::now();
         let time_window_duration = Duration::from_millis(self.period as u64);
