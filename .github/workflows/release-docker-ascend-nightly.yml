@@ -62,6 +62,7 @@ jobs:
         with:
           context: docker
           file: docker/Dockerfile.npu
-          platforms: linux/amd64,linux/arm64
+          # TODO: need add x86 platforms support when memfabric ready
+          platforms: linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ github.repository_owner }}/sglang:main
