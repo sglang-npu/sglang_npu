@@ -62,6 +62,6 @@ RUN pip install triton-ascend==$TRITON_ASCEND_VERSION
 # Install SGLang
 ARG SGLANG_TAG=main
 RUN git clone https://github.com/sgl-project/sglang --branch $SGLANG_TAG && \
-    cd sglang && pip install "python[srt_npu]"
+    cd ./sglang/python && pip install .[srt_npu]
 
 CMD ["/bin/bash"]
