@@ -100,6 +100,11 @@ mod test_pd_routing {
                 balance_abs_threshold: 32,
                 balance_rel_threshold: 1.1,
             },
+            PDSelectionPolicy::Bucket {
+                balance_abs_threshold: 32,
+                balance_rel_threshold: 1.1,
+                bucket_adjust_interval_secs: 5,
+            },
         ];
 
         for policy in policies {
@@ -116,8 +121,8 @@ mod test_pd_routing {
                 } => {
                     assert!(*cache_threshold >= 0.0 && *cache_threshold <= 1.0);
                 }
-                PDSelectionPolicy::Bucket{ .. } => {
-
+                PDSelectionPolicy::Bucket{ balance_rel_threshold, .. } => {
+                    assert!(*balance_rel_threshold >= 1.0);
                 }
             }
         }
@@ -168,16 +173,18 @@ mod test_pd_routing {
                 },
             ),
             (
-                PolicyConfig::PrefillDecodeConfig{
-                    selection_policy: PDSelectionPolicy::Bucket{
-                        balance_abs_threshold: 32,
-                        balance_rel_threshold: 1.0001,
-                        bucket_adjust_interval_secs: 5,
-                    },
-                    prefill_urls: vec![("http://prefill:8080".to_string(), Some(9000))],
-                    decode_urls: vec!["http://decode:8080".to_string()],
-                    timeout_secs: 5,
-                    interval_secs: 1,
+                RoutingMode::PrefillDecode {
+                    prefill_urls: vec![
+                        ("http://p1:8080".to_string(), Some(9000)),
+                        ("http://p2:8080".to_string(), Some(9001)),
+                        ("http://p3:8080".to_string(), Some(9002)),
+                    ],
+                    decode_urls: vec!["http://d1:8080".to_string(), "http://d2:8080".to_string()],
+                },
+                PolicyConfig::Bucket {
+                    balance_abs_threshold: 20,
+                    balance_rel_threshold: 1.2,
+                    bucket_adjust_interval_secs: 5,
                 },
             ),
         ];

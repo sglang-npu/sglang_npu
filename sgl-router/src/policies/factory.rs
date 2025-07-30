@@ -55,7 +55,7 @@ impl PolicyFactory {
             "round_robin" | "roundrobin" => Some(Arc::new(RoundRobinPolicy::new())),
             "power_of_two" | "poweroftwo" => Some(Arc::new(PowerOfTwoPolicy::new())),
             "cache_aware" | "cacheaware" => Some(Arc::new(CacheAwarePolicy::new())),
-            "bucket" | "Bucket" => Some(Arc::new(BucketPolicy::new())),
+            "bucket" => Some(Arc::new(BucketPolicy::new())),
             _ => None,
         }
     }
@@ -65,8 +65,8 @@ impl PolicyFactory {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_create_from_config() {
+    #[tokio::test]
+    async fn test_create_from_config() {
         // Test Random
         let policy = PolicyFactory::create_from_config(&PolicyConfig::Random);
         assert_eq!(policy.name(), "random");
@@ -91,7 +91,7 @@ mod tests {
         });
         assert_eq!(policy.name(), "cache_aware");
 
-        let policy = PolicyFactory::crate_from_conifg(&PolicyConfig::BucketConfig{
+        let policy = PolicyFactory::create_from_config(&PolicyConfig::Bucket{
             balance_abs_threshold: 10,
             balance_rel_threshold: 1.5,
 
@@ -101,8 +101,8 @@ mod tests {
 
     }
 
-    #[test]
-    fn test_create_by_name() {
+    #[tokio::test]
+    async fn test_create_by_name() {
         assert!(PolicyFactory::create_by_name("random").is_some());
         assert!(PolicyFactory::create_by_name("RANDOM").is_some());
         assert!(PolicyFactory::create_by_name("round_robin").is_some());

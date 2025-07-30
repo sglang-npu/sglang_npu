@@ -364,12 +364,13 @@ impl Bucket {
         let worker_cnt = self.bucket_cnt;
         let new_single_bucket_load = self.get_total_load()/worker_cnt;
         let old_single_bucket_load = self.bucket_load;
+        self.bucket_load = new_single_bucket_load;
+
         if new_single_bucket_load <= 2 * old_single_bucket_load
             || (old_single_bucket_load <= 2 * new_single_bucket_load && old_single_bucket_load != 0)
         {
             return;
         }
-
         let mut new_boundary = Vec::new();
         let mut hist_load: Vec<usize> = self.t_req_loads.values().cloned().collect();
         hist_load.sort();
@@ -406,5 +407,68 @@ impl Bucket {
             }
         }
         self.boundary = new_boundary;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::{BasicWorker, WorkerType};
+
+    #[tokio::test]
+    async fn test_bucket() {
+        let config = BucketConfig {
+            balance_abs_threshold: 15,
+            ..Default::default()
+        };
+        let policy = BucketPolicy::with_config(config);
+        let prefill_workers: Vec<Box<dyn Worker>> = vec![
+            Box::new(BasicWorker::new(
+                "http://w1:8000".to_string(),
+                WorkerType::Regular,
+            )),
+            Box::new(BasicWorker::new(
+                "http://w2:8000".to_string(),
+                WorkerType::Regular,
+            )),
+        ];
+        
+        let decode_workers: Vec<Box<dyn Worker>> = vec![
+            Box::new(BasicWorker::new(
+                "http://w3:8000".to_string(),
+                WorkerType::Regular,
+            )),
+        ];
+        
+        // Initialize the policy with prefill_workers
+        policy.init_prefill_worker_urls(&prefill_workers);
+        
+        // First request should be distributed. 
+        let (idx1, _) = policy.select_worker_pair(&prefill_workers, &decode_workers, Some("hello world")).unwrap();
+        // idx1 prefill worker's load is 11. Load is balanced, so use bucket scheduler. idx2 should be the same with idx1.
+        let (idx2, _) = policy.select_worker_pair(&prefill_workers, &decode_workers, Some("hello world")).unwrap();
+        
+        assert_eq!(idx1, idx2);
+        // idx1 prefill worker's load is 22. Load is imbalanced, so use load balance scheduler. idx3 should not be the same with idx1.
+        let (idx3, _) = policy.select_worker_pair(&prefill_workers, &decode_workers, Some("hello world")).unwrap();
+        
+        assert_ne!(idx1, idx3);
+    }
+
+    #[tokio::test]
+    async fn test_adjust_boundary() {
+        let mut bucket = Bucket::new(1000);
+        let urls = vec!["http://w1:8000".to_string(),
+        "http://w2:8000".to_string(),
+        ];
+
+        bucket.init_prefill_worker_urls(urls.clone());
+
+        bucket.adjust_boundary();
+        assert_eq!(bucket.boundary[0].range[1], 2047);
+
+        bucket.post_process_request(50, "http://w1:8000".to_string());
+        bucket.adjust_boundary();
+        assert_eq!(bucket.boundary[0].range[1], 50);
     }
 }
