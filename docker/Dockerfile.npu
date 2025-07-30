@@ -9,8 +9,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG PIP_INDEX_URL="https://pypi.org/simple/"
 RUN pip config set global.index-url $PIP_INDEX_URL
 
-RUN sed -i 's|http://.*.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list
-RUN cat /etc/apt/sources.list
+ARG APTMIRROR=""
+RUN if [ -n "$APTMIRROR" ];then sed -i "s|.*.ubuntu.com|$APTMIRROR|g" /etc/apt/sources.list ;fi
 
 # Install development tools and utilities
 RUN apt-get update -y && apt-get install -y \
