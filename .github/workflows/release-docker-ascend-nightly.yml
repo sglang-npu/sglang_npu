@@ -14,7 +14,7 @@ on:
 
 concurrency:                                                   
     group: release-docker-ascend-nightly-${{ github.ref }}
-    cancel-in-progress: true   
+    cancel-in-progress: true
 env:
   # Use docker.io for Docker Hub if empty
   REGISTRY: ghcr.io
