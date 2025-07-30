@@ -6,7 +6,7 @@ WORKDIR /workspace
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Update pip & apt sources
-ARG PIP_INDEX_URL="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+ARG PIP_INDEX_URL="https://pypi.org/simple/"
 RUN pip config set global.index-url $PIP_INDEX_URL
 
 RUN sed -i 's|http://.*.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list
@@ -41,26 +41,26 @@ ENV LC_ALL=en_US.UTF-8
 # Install MemFabric
 ARG MEMFABRIC_URL=https://sglang-ascend.obs.cn-east-3.myhuaweicloud.com:443/sglang/mf_adapter-1.0.0-cp311-cp311-linux_aarch64.whl?AccessKeyId=HPUAXT4YM0U8JNTERLST&Expires=1783151861&Signature=3j10QDUjqk70enaq8lostYV2bEA%3D
 RUN wget -O mf_adapter-1.0.0-cp311-cp311-linux_aarch64.whl $MEMFABRIC_URL && \
-     pip install mf_adapter-1.0.0-cp311-cp311-linux_aarch64.whl
+     pip install mf_adapter-1.0.0-cp311-cp311-linux_aarch64.whl --no-cache-dir
 
 # Install PyTorch and NPU adapter
 ARG PYTORCH_VERSION=2.6.0
 ARG TORCHVISION_VERSION=0.21.0
-RUN pip install torch==$PYTORCH_VERSION torchvision==$TORCHVISION_VERSION --index-url https://download.pytorch.org/whl/cpu
-RUN pip install torch-npu==$PYTORCH_VERSION
+RUN pip install torch==$PYTORCH_VERSION torchvision==$TORCHVISION_VERSION --index-url https://download.pytorch.org/whl/cpu --no-cache-dir
+RUN pip install torch-npu==$PYTORCH_VERSION --no-cache-dir
 
 # Install vLLM
 ARG VLLM_TAG=v0.8.5
 RUN git clone --depth 1 https://github.com/vllm-project/vllm.git --branch $VLLM_TAG && \
-    cd vllm && VLLM_TARGET_DEVICE="empty" pip install -v .
+    cd vllm && VLLM_TARGET_DEVICE="empty" pip install -v . --no-cache-dir
 
 # Install Triton-Ascend
 ARG TRITON_ASCEND_VERSION=3.2.0rc2
-RUN pip install triton-ascend==$TRITON_ASCEND_VERSION
+RUN pip install triton-ascend==$TRITON_ASCEND_VERSION --no-cache-dir
 
 # Install SGLang
 ARG SGLANG_TAG=main
 RUN git clone https://github.com/sgl-project/sglang --branch $SGLANG_TAG && \
-    cd ./sglang/python && pip install .[srt_npu]
+    cd ./sglang/python && pip install .[srt_npu] --no-cache-dir
 
 CMD ["/bin/bash"]
