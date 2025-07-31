@@ -119,14 +119,14 @@ class AscendAttnBackend(AttentionBackend):
             return output
         else:
             if layer.qk_head_dim != layer.v_head_dim:
-                o = q.new_empty((q.shape[0], layer.tp_q_head_num * layer.v_head_dim))
+                o = q.new_empty((q.shape[0], layer.tp_q_head_num * layer.qk_head_dim))
             else:
                 o = torch.empty_like(q)
 
             use_gqa = layer.tp_q_head_num != layer.tp_k_head_num
 
-            q_ = q.view(-1, layer.tp_q_head_num, layer.qk_head_dim)
-            o_ = o.view(-1, layer.tp_q_head_num, layer.v_head_dim)
+            q_ = q.view(-1, layer.tp_q_head_num, layer.qk_head_dim + layer.v_head_dim)
+            o_ = o.view(-1, layer.tp_q_head_num, layer.qk_head_dim)
 
             causal = True
             if (
@@ -139,9 +139,9 @@ class AscendAttnBackend(AttentionBackend):
                 q_,
                 o_,
                 k_cache.view(
-                    -1, layer.tp_k_head_num, (self.kv_lora_rank + self.qk_rope_head_dim)
+                    -1, layer.tp_k_head_num, self.kv_lora_rank
                 ),
-                v_cache.view(-1, layer.tp_v_head_num, self.kv_lora_rank),
+                v_cache.view(-1, layer.tp_v_head_num, self.qk_rope_head_dim),
                 forward_batch.req_to_token_pool.req_to_token,
                 forward_batch.req_pool_indices,
                 forward_batch.seq_lens,
@@ -152,7 +152,7 @@ class AscendAttnBackend(AttentionBackend):
                 causal=causal,
             )
             return o
-
+    # todo(rjw) decoder graph
     def forward_decode(
         self,
         q: torch.Tensor,
@@ -191,32 +191,36 @@ class AscendAttnBackend(AttentionBackend):
             )
             return output.view(num_tokens, layer.tp_q_head_num * layer.v_head_dim)
         else:
+            q, q_rope = q
             query = q.view(-1, layer.tp_q_head_num, layer.head_dim)
             num_tokens = query.shape[0]
-            kv_c_and_k_pe_cache = forward_batch.token_to_kv_pool.get_key_buffer(
+            kv_cache, kv_rope_cache = forward_batch.token_to_kv_pool.get_kv_buffer(
                 layer.layer_id
             )
-            kv_c_and_k_pe_cache = kv_c_and_k_pe_cache.view(
+            kv_cache = kv_cache.view(
                 -1,
                 self.page_size,
                 layer.tp_k_head_num,
-                self.kv_lora_rank + self.qk_rope_head_dim,
+                self.kv_lora_rank,
+            )
+            kv_rope_cache = kv_rope_cache.view(
+                -1,
+                self.page_size,
+                layer.tp_k_head_num,
+                self.qk_rope_head_dim,
             )
 
-            attn_output = torch.empty(
-                [num_tokens, layer.tp_q_head_num, self.kv_lora_rank],
-                dtype=q.dtype,
-                device=q.device,
+            attn_output = torch_npu.atb.npu_multi_head_latent_attention(
+                query,
+                q_rope,
+                kv_cache,
+                kv_rope_cache,
+                self.forward_metadata.block_tables,
+                self.forward_metadata.seq_lens_cpu_int,
+                layer.tp_q_head_num,
+                layer.scaling,
+                layer.tp_k_head_num,
+                cache_mode='krope_ctkv'
             )
-            torch_npu._npu_paged_attention_mla(
-                query=query,
-                key_cache=kv_c_and_k_pe_cache,
-                num_kv_heads=layer.tp_k_head_num,
-                num_heads=layer.tp_q_head_num,
-                scale_value=layer.scaling,
-                block_table=self.forward_metadata.block_tables,
-                context_lens=self.forward_metadata.seq_lens_cpu_int,
-                mla_vheadsize=self.kv_lora_rank,
-                out=attn_output,
-            )
+            
             return attn_output.view(num_tokens, layer.tp_q_head_num * self.kv_lora_rank)

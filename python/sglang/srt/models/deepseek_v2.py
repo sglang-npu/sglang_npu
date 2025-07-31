@@ -81,6 +81,7 @@ from sglang.srt.layers.quantization.int8_utils import (
     block_dequant as int8_block_dequant,
 )
 from sglang.srt.layers.radix_attention import RadixAttention
+from sglang.srt.layers.attention.mla_preprocess import NPU_FusedMLAPreprocess
 from sglang.srt.layers.rotary_embedding import get_rope, get_rope_wrapper
 from sglang.srt.layers.utils import is_sm100_supported
 from sglang.srt.layers.vocab_parallel_embedding import (
@@ -120,6 +121,7 @@ _use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
 _is_cpu_amx_available = cpu_has_amx_support()
 _is_cpu = is_cpu()
 _device_sm = get_device_sm()
+_use_mlapo = get_bool_env_var("SGLANG_USE_MLAPO")
 
 if _is_cuda:
     from sgl_kernel import (
@@ -888,11 +890,11 @@ class DeepseekV2AttentionMLA(nn.Module):
 
         self.attn_mqa = RadixAttention(
             self.num_local_heads,
-            self.kv_lora_rank + self.qk_rope_head_dim,
+            self.kv_lora_rank,
             self.scaling,
             num_kv_heads=1,
             layer_id=layer_id,
-            v_head_dim=self.kv_lora_rank,
+            v_head_dim=self.qk_rope_head_dim,
             quant_config=quant_config,
             prefix=add_prefix("attn_mqa", prefix),
         )
@@ -988,6 +990,7 @@ class DeepseekV2AttentionMLA(nn.Module):
                 self.weight_block_size = (
                     self.fused_qkv_a_proj_with_mqa.quant_method.quant_config.weight_block_size
                 )
+        self.mla_preprocess = None
 
     def dispatch_attn_forward_method(
         self, forward_batch: ForwardBatch
@@ -1116,9 +1119,27 @@ class DeepseekV2AttentionMLA(nn.Module):
                 positions, hidden_states, forward_batch, zero_allocator
             )
         elif attn_forward_method == AttnForwardMethod.MLA:
-            inner_state = self.forward_absorb_prepare(
-                positions, hidden_states, forward_batch, zero_allocator
-            )
+            if forward_batch.forward_mode.is_extend() or not _use_mlapo:
+                inner_state = self.forward_absorb_prepare(
+                    positions, hidden_states, forward_batch, zero_allocator
+                )
+            else:
+                if self.mla_preprocess is None:
+                    self.mla_preprocess = NPU_FusedMLAPreprocess(
+                        self.fused_qkv_a_proj_with_mqa,
+                        self.q_a_layernorm,
+                        self.kv_a_layernorm,
+                        self.q_b_proj,
+                        self.w_kc,
+                        self.rotary_emb,
+                        self.layer_id,
+                        self.num_local_heads,
+                        self.qk_nope_head_dim,
+                        self.qk_rope_head_dim,
+                    )
+                inner_state = self.mla_preprocess.forward(
+                    positions, hidden_states, forward_batch, zero_allocator
+                )
         elif attn_forward_method == AttnForwardMethod.MLA_FUSED_ROPE:
             inner_state = self.forward_absorb_fused_mla_rope_prepare(
                 positions, hidden_states, forward_batch, zero_allocator
@@ -1296,9 +1317,12 @@ class DeepseekV2AttentionMLA(nn.Module):
                 q_nope_out, k_nope, k_nope, forward_batch, q_rope=q_pe, k_rope=k_pe
             )
         else:
-            q = torch.cat([q_nope_out, q_pe], dim=-1)
-            k = torch.cat([k_nope, k_pe], dim=-1)
-            attn_output = self.attn_mqa(q, k, k_nope, forward_batch)
+            if forward_batch.forward_mode.is_extend():
+                q = torch.cat([q_nope_out, q_pe], dim=-1)
+                attn_output = self.attn_mqa(q, k_nope, k_pe, forward_batch, save_kv_cache=True)
+            else:
+                q = (q_nope_out, q_pe)
+                attn_output = self.attn_mqa(q, k_nope, k_pe, forward_batch, save_kv_cache=not _use_mlapo)
         attn_output = attn_output.view(-1, self.num_local_heads, self.kv_lora_rank)
 
         if self.use_deep_gemm_bmm:
