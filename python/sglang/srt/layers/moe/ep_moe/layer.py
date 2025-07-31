@@ -511,9 +511,10 @@ class EPMoE(FusedMoE):
             )
         )
         group_list_type = 1
-        sorted_topk_weight = torch.index_select(
-            topk_weights.view(-1), 0, expanded_x_idx
-        )
+        # sorted_topk_weight = torch.index_select(
+        #     topk_weights.view(-1), 0, expanded_x_idx
+        # )
+        sorted_topk_weight = topk_weights.view(-1)[expanded_x_idx]
         row_index = expanded_x_idx // topk_ids.shape[-1]
         row_index = row_index.to(torch.int64)
         share_input = torch.zeros(
