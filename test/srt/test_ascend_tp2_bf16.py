@@ -38,6 +38,7 @@ class TestAscend_TP2_BF16(CustomTestCase):
             "ascend",
             "--tp-size",
             2,
+            "--disable-cuda-graph",
         ]
 
     def test_a_gsm8k(self):

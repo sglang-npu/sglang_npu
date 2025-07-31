@@ -531,12 +531,25 @@ class W8A8Int8MoEMethod(FusedMoEMethodBase):
         )
 
 
+class DynamicQuantOps(object):
+    """
+    :param x, scale, offset
+    :return
+    """
+
+    def execute(self, x_input):
+        out = torch.empty_like(x_input[0], dtype=torch.int8)
+        torch_npu._npu_quantize_per_tensor(x_input[0], x_input[1], x_input[2], out)
+        return [out]
+
+
 class NPU_W8A8LinearMethodImpl:
     """Linear method for NPU W8A8."""
 
     def __init__(self) -> None:
         # aclnn quant matmul requires to transpose matrix B, set to true by default.
         self.transpose_weight = True
+        self.elewise_quant = DynamicQuantOps()
 
     @staticmethod
     def get_weight(
@@ -569,22 +582,17 @@ class NPU_W8A8LinearMethodImpl:
         params_dict["weight_offset"] = torch.empty(output_size, 1, dtype=params_dtype)
         return params_dict
 
-    @staticmethod
     def apply(
+        self,
         layer: torch.nn.Module,
         x: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         original_dtype = x.dtype
         if original_dtype != torch.int8:
-            x = torch_npu.npu_quantize(
-                x,
-                layer.aclnn_input_scale,
-                layer.aclnn_input_offset,
-                torch.qint8,
-                -1,
-                True,
-            )
+            x = self.elewise_quant.execute([x, layer.input_scale, layer.input_offset])[
+                0
+            ]
         # Only fuse bias add into GEMM for rank 0 (this ensures that
         # bias will not get added more than once in Attention TP>1 case)
         if isinstance(layer, RowParallelLinear) and layer.tp_rank > 0:
