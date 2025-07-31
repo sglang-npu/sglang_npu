@@ -48,10 +48,9 @@ pip install triton-ascend==$TRITON_ASCEND_VERSION --no-cache-dir
 pip install httpx openai einops --no-cache-dir
 pip install -e "python[srt_npu]" --no-cache-dir
 
-transformers env
-exit -1
-
 
 ### Modify PyTorch TODO: to be removed later
 TORCH_LOCATION=$(pip show torch | grep Location | awk -F' ' '{print $2}')
 sed -i 's/from triton.runtime.autotuner import OutOfResources/from triton.runtime.errors import OutOfResources/' "${TORCH_LOCATION}/torch/_inductor/runtime/triton_heuristics.py"
+
+transformers env
