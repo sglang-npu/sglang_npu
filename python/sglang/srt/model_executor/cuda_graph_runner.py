@@ -50,8 +50,16 @@ from sglang.srt.utils import (
     require_gathered_buffer,
     require_mlp_sync,
     require_mlp_tp_gather,
+    is_npu,
 )
 
+_is_npu = is_npu()
+
+if _is_npu:
+    import torch_npu
+    torch.npu.config.allow_internal_format = True
+    torch_npu.npu.set_compile_mode(jit_compile=False)
+    
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
