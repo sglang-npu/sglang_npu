@@ -203,8 +203,9 @@ class TokenizerManager:
         self.recv_from_detokenizer = get_zmq_socket(
             context, zmq.PULL, port_args.tokenizer_ipc_name, True
         )
+        is_bind = self.server_args.dp_size == 1
         self.send_to_scheduler = get_zmq_socket(
-            context, zmq.PUSH, port_args.scheduler_input_ipc_name, True
+            context, zmq.PUSH, port_args.scheduler_input_ipc_name, is_bind
         )
 
         # Read model args

@@ -924,6 +924,16 @@ class GetInternalStateReqOutput:
 
 
 @dataclass
+class GetInternalLoadReq:
+    pass
+
+
+@dataclass
+class GetInternalLoadOutput:
+    dp_load: Dict[Any, Any]
+
+
+@dataclass
 class SetInternalStateReq:
     server_args: Dict[str, Any]
 
