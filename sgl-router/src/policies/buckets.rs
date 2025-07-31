@@ -364,13 +364,14 @@ impl Bucket {
         let worker_cnt = self.bucket_cnt;
         let new_single_bucket_load = self.get_total_load()/worker_cnt;
         let old_single_bucket_load = self.bucket_load;
-        self.bucket_load = new_single_bucket_load;
 
         if new_single_bucket_load <= 2 * old_single_bucket_load
-            || (old_single_bucket_load <= 2 * new_single_bucket_load && old_single_bucket_load != 0)
+            && (old_single_bucket_load <= 2 * new_single_bucket_load && old_single_bucket_load != 0)
         {
             return;
         }
+
+        self.bucket_load = new_single_bucket_load;
         let mut new_boundary = Vec::new();
         let mut hist_load: Vec<usize> = self.t_req_loads.values().cloned().collect();
         hist_load.sort();
@@ -470,5 +471,9 @@ mod tests {
         bucket.post_process_request(50, "http://w1:8000".to_string());
         bucket.adjust_boundary();
         assert_eq!(bucket.boundary[0].range[1], 50);
+
+        bucket.post_process_request(100, "http://w2:8000".to_string());
+        bucket.adjust_boundary();
+        assert_eq!(bucket.boundary[0].range[1], 100);
     }
 }
