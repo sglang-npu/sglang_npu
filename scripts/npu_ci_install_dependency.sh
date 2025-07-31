@@ -2,6 +2,7 @@
 set -euo pipefail
 
 CACHING_URL="cache-service.nginx-pypi-cache.svc.cluster.local"
+PIP_INSTALL="pip install --no-cache-dir"
 
 
 # Update apt & pip sources
@@ -24,30 +25,37 @@ apt update -y && apt install -y \
     ccache \
     ca-certificates
 update-ca-certificates
-python3 -m pip install --upgrade pip --no-cache-dir
+python3 -m ${PIP_INSTALL} --upgrade pip
 
-### Install MemFabric
+
+### Download MemFabricV2
 MF_WHL_NAME="mf_adapter-1.0.0-cp311-cp311-linux_aarch64.whl"
 MEMFABRIC_URL="https://sglang-ascend.obs.cn-east-3.myhuaweicloud.com:443/sglang/${MF_WHL_NAME}"
-wget "${MEMFABRIC_URL}" && pip install "./${MF_WHL_NAME}"
+wget "${MEMFABRIC_URL}" && ${PIP_INSTALL} "./${MF_WHL_NAME}"
 
 
 ### Install PyTorch and PTA
 PYTORCH_VERSION=2.6.0
 TORCHVISION_VERSION=0.21.0
 PTA_VERSION=2.6.0
-pip install torch==$PYTORCH_VERSION torchvision==$TORCHVISION_VERSION --index-url https://download.pytorch.org/whl/cpu --no-cache-dir
-pip install torch_npu==$PTA_VERSION --no-cache-dir
+${PIP_INSTALL} torch==$PYTORCH_VERSION torchvision==$TORCHVISION_VERSION --index-url https://download.pytorch.org/whl/cpu
+${PIP_INSTALL} torch_npu==$PTA_VERSION
+
+
+### Install vLLM
+VLLM_TAG=v0.8.5
+git clone --depth 1 https://github.com/vllm-project/vllm.git --branch $VLLM_TAG
+(cd vllm && VLLM_TARGET_DEVICE="empty" ${PIP_INSTALL} -v -e .)
 
 
 ### Install Triton-Ascend
 TRITON_ASCEND_VERSION=3.2.0rc2
-pip install attrs==24.2.0 numpy==1.26.4 scipy==1.13.1 decorator==5.1.1 psutil==6.0.0 pytest==8.3.2 pytest-xdist==3.6.1 pyyaml pybind11 --no-cache-dir
-pip install triton-ascend==$TRITON_ASCEND_VERSION --no-cache-dir
+${PIP_INSTALL} attrs==24.2.0 numpy==1.26.4 scipy==1.13.1 decorator==5.1.1 psutil==6.0.0 pytest==8.3.2 pytest-xdist==3.6.1 pyyaml pybind11
+${PIP_INSTALL} triton-ascend==$TRITON_ASCEND_VERSION
 
 
-pip install httpx openai einops --no-cache-dir
-pip install -e "python[srt_npu]" --no-cache-dir
+### Install SGLang
+${PIP_INSTALL} -v -e "python[srt_npu]"
 
 
 ### Modify PyTorch TODO: to be removed later

@@ -97,7 +97,6 @@ def get_model_architecture(model_config: ModelConfig) -> Tuple[Type[nn.Module], 
     supported_archs = ModelRegistry.get_supported_archs()
     is_native_supported = any(arch in supported_archs for arch in architectures)
 
-    print(f"============koko{architectures=} {is_native_supported=} {model_config.model_impl=}", flush=True)
     if not is_native_supported or model_config.model_impl == ModelImpl.TRANSFORMERS:
         architectures = resolve_transformers_arch(model_config, architectures)
 
