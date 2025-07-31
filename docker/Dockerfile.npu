@@ -32,6 +32,10 @@ RUN apt-get update -y && apt-get install -y \
 # Update cert
 RUN update-ca-certificates
 
+# Install basic python packages
+RUN pip install pybind11 \
+    numpy==1.26.7
+
 # Set up locale
 RUN locale-gen en_US.UTF-8
 ENV LANG=en_US.UTF-8
@@ -64,7 +68,6 @@ RUN git clone https://github.com/sgl-project/sglang --branch $SGLANG_TAG && \
     cd ./sglang/python && pip install .[srt_npu] --no-cache-dir
 
 # Install Deep-ep
-RUN pip install pybind11 --no-cache-dir
 ARG ASCEND_CANN_PATH=/usr/local/Ascend/ascend-toolkit
 RUN git clone https://github.com/sgl-project/sgl-kernel-npu.git
 ENV LD_LIBRARY_PATH=${ASCEND_CANN_PATH}/latest/runtime/lib64/stub:$LD_LIBRARY_PATH
