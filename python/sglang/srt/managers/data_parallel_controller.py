@@ -26,6 +26,8 @@ import zmq
 
 from sglang.srt.layers.dp_attention import compute_dp_attention_world_info
 from sglang.srt.managers.io_struct import (
+    GetInternalLoadOutput,
+    GetInternalLoadReq,
     TokenizedEmbeddingReqInput,
     TokenizedGenerateReqInput,
 )
@@ -35,10 +37,6 @@ from sglang.srt.server_args import PortArgs, ServerArgs
 from sglang.srt.torch_memory_saver_adapter import TorchMemorySaverAdapter
 from sglang.srt.utils import bind_port, configure_logger, get_zmq_socket
 from sglang.utils import get_exception_traceback
-from sglang.srt.managers.io_struct import (
-    GetInternalLoadReq,
-    GetInternalLoadOutput,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +114,7 @@ class DataParallelController:
         if self.load_balance_method == LoadBalanceMethod.DP_LOAD:
             self.receive_thread = threading.Thread(target=self.send_get_load_req_thread)
             self.receive_thread.start()
-    
+
     def send_get_load_req_thread(self):
         while True:
             req = GetInternalLoadReq()
@@ -248,7 +246,9 @@ class DataParallelController:
                     + ((pp_rank % pp_size_per_node) * tp_size_per_node)
                     + (tp_rank % tp_size_per_node) * server_args.gpu_id_step
                 )
-                rank_port_args.dpc_scheduler_input_ipc_name = port_args.scheduler_input_ipc_name
+                rank_port_args.dpc_scheduler_input_ipc_name = (
+                    port_args.scheduler_input_ipc_name
+                )
                 proc = mp.Process(
                     target=run_scheduler_process,
                     args=(
@@ -298,7 +298,9 @@ class DataParallelController:
         else:
             dp_load = self.get_dp_load()
             lowest_load_rank = int(min(dp_load, key=self.dp_load.get))
-            logger.info(f"Direct routing to DP rank {lowest_load_rank}, dp load is {self.get_dp_load()}")
+            logger.info(
+                f"Routing req to DP rank {lowest_load_rank}, dp load is {self.get_dp_load()}"
+            )
             self.workers[lowest_load_rank].send_pyobj(req)
 
     def shortest_queue_scheduler(self, input_requests):
@@ -313,7 +315,9 @@ class DataParallelController:
                     break
 
                 if isinstance(recv_req, GetInternalLoadOutput):
-                    self.write_to_dp_load(recv_req.dp_load["dp_rank"], recv_req.dp_load["load"])
+                    self.write_to_dp_load(
+                        recv_req.dp_load["dp_rank"], recv_req.dp_load["load"]
+                    )
                     break
 
                 if isinstance(

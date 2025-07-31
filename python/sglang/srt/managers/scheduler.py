@@ -74,10 +74,10 @@ from sglang.srt.managers.io_struct import (
     ExpertDistributionReqOutput,
     FlushCacheReqInput,
     FlushCacheReqOutput,
+    GetInternalLoadOutput,
+    GetInternalLoadReq,
     GetInternalStateReq,
     GetInternalStateReqOutput,
-    GetInternalLoadReq,
-    GetInternalLoadOutput,
     GetWeightsByNameReqInput,
     GetWeightsByNameReqOutput,
     HealthCheckOutput,
@@ -1097,7 +1097,9 @@ class Scheduler(
                 if isinstance(output, RpcReqOutput):
                     if self.recv_from_rpc is not None:
                         self.recv_from_rpc.send_pyobj(output)
-                elif isinstance(output, GetInternalLoadOutput) and self.attn_tp_rank == 0:
+                elif (
+                    isinstance(output, GetInternalLoadOutput) and self.attn_tp_rank == 0
+                ):
                     self.send_to_scheduler.send_pyobj(output)
                 else:
                     self.send_to_tokenizer.send_pyobj(output)
