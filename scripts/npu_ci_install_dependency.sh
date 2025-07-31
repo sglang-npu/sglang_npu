@@ -5,7 +5,7 @@ CACHING_URL="cache-service.nginx-pypi-cache.svc.cluster.local"
 
 
 # Update apt & pip sources
-sed -Ei 's@(ports|archive).ubuntu.com@${CACHING_URL}:8081@g' /etc/apt/sources.list
+sed -Ei 's@(ports|archive).ubuntu.com@"${CACHING_URL}":8081@g' /etc/apt/sources.list
 pip config set global.index-url http://${CACHING_URL}/pypi/simple
 pip config set global.trusted-host ${CACHING_URL}
 
