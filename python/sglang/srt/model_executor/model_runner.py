@@ -126,6 +126,12 @@ _is_hip = is_hip()
 _is_npu = is_npu()
 _is_cpu_amx_available = cpu_has_amx_support()
 
+if _is_npu:
+    import torch_npu
+
+    torch.npu.config.allow_internal_format = True
+    torch_npu.npu.set_compile_mode(jit_compile=False)
+
 # Use a small KV cache pool size for tests in CI
 SGLANG_CI_SMALL_KV_SIZE = os.getenv("SGLANG_CI_SMALL_KV_SIZE", None)
 

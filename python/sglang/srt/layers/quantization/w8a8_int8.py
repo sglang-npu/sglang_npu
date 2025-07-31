@@ -955,9 +955,12 @@ class NPU_W8A8MoEMethod(FusedMoEMethodBase):
         layer.w13_weight = Parameter(
             layer.w13_weight.data.transpose(1, 2).contiguous(), requires_grad=False
         )
+        layer.w13_weight.data = torch_npu.npu_format_cast(layer.w13_weight.data, 29)
         layer.w2_weight = Parameter(
             layer.w2_weight.data.transpose(1, 2).contiguous(), requires_grad=False
         )
+        # The weight format of npu_grouped_matmul_finalize_routing must be nz
+        layer.w2_weight.data = torch_npu.npu_format_cast(layer.w2_weight.data, 29)
         layer.w13_weight_scale = Parameter(
             layer.w13_weight_scale.data.squeeze(-1).contiguous(), requires_grad=False
         )
