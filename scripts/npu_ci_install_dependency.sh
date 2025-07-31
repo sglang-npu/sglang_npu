@@ -34,18 +34,18 @@ MEMFABRIC_URL="https://sglang-ascend.obs.cn-east-3.myhuaweicloud.com:443/sglang/
 wget "${MEMFABRIC_URL}" && ${PIP_INSTALL} "./${MF_WHL_NAME}"
 
 
+### Install vLLM
+VLLM_TAG=v0.8.5
+git clone --depth 1 https://github.com/vllm-project/vllm.git --branch $VLLM_TAG
+(cd vllm && VLLM_TARGET_DEVICE="empty" ${PIP_INSTALL} -v -e .)
+
+
 ### Install PyTorch and PTA
 PYTORCH_VERSION=2.6.0
 TORCHVISION_VERSION=0.21.0
 PTA_VERSION=2.6.0
 ${PIP_INSTALL} torch==$PYTORCH_VERSION torchvision==$TORCHVISION_VERSION --index-url https://download.pytorch.org/whl/cpu
 ${PIP_INSTALL} torch_npu==$PTA_VERSION
-
-
-### Install vLLM
-VLLM_TAG=v0.8.5
-git clone --depth 1 https://github.com/vllm-project/vllm.git --branch $VLLM_TAG
-(cd vllm && VLLM_TARGET_DEVICE="empty" ${PIP_INSTALL} -v -e .)
 
 
 ### Install Triton-Ascend
