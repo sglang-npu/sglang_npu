@@ -25,7 +25,7 @@ from sglang.srt.eplb.expert_location import (
     get_global_expert_location_metadata,
 )
 from sglang.srt.managers.schedule_batch import global_server_args_dict
-from sglang.srt.utils import get_bool_env_var,is_npu
+from sglang.srt.utils import get_bool_env_var, is_npu
 
 if is_npu():
     torch.cuda.empty_cache = torch.npu.empty_cache

@@ -28,7 +28,7 @@ from sglang.srt.eplb.expert_location import ExpertLocationMetadata
 from sglang.srt.managers.schedule_batch import global_server_args_dict
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.server_args import ServerArgs
-from sglang.srt.utils import Withable, get_bool_env_var,is_npu
+from sglang.srt.utils import Withable, get_bool_env_var, is_npu
 
 if is_npu():
     torch.cuda.empty_cache = torch.npu.empty_cache
