@@ -110,6 +110,7 @@ from sglang.srt.utils import (
     is_flashinfer_available,
     is_hip,
     is_non_idle_and_non_empty,
+    is_npu,
     log_info_on_rank0,
     use_intel_amx_backend,
 )
@@ -122,6 +123,7 @@ _is_cpu_amx_available = cpu_has_amx_support()
 _is_cpu = is_cpu()
 _device_sm = get_device_sm()
 _use_mlapo = get_bool_env_var("SGLANG_USE_MLAPO")
+_is_npu = is_npu()
 
 if _is_cuda:
     from sgl_kernel import (
@@ -1351,6 +1353,15 @@ class DeepseekV2AttentionMLA(nn.Module):
                 self.w_vc.to(torch.bfloat16) * self.w_scale,
             )
             attn_bmm_output = attn_bmm_output.transpose(0, 1).flatten(1, 2)
+        elif _is_npu:
+            import torch_npu
+
+            attn_bmm_output = torch_npu.npu_transpose_batchmatmul(
+                attn_output, self.w_vc, perm_x1=(1, 0, 2)
+            )
+            attn_bmm_output = attn_bmm_output.view(
+                -1, self.num_local_heads * self.v_head_dim
+            )
         elif self.w_vc.dtype == torch.float8_e4m3fn:
             attn_output_val, attn_output_scale = per_tensor_quant_mla_fp8(
                 attn_output.transpose(0, 1),
