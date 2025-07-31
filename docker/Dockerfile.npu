@@ -63,4 +63,13 @@ ARG SGLANG_TAG=main
 RUN git clone https://github.com/sgl-project/sglang --branch $SGLANG_TAG && \
     cd ./sglang/python && pip install .[srt_npu] --no-cache-dir
 
+# Install Deep-ep
+RUN pip install pybind11 --no-cache-dir
+ARG ASCEND_CANN_PATH=/usr/local/Ascend/ascend-toolkit
+RUN git clone https://github.com/sgl-project/sgl-kernel-npu.git
+ENV LD_LIBRARY_PATH=${ASCEND_HOME_PATH}/*-linux/devlib:$LD_LIBRARY_PATH
+RUN source ${ASCEND_CANN_PATH}/set_env.sh && cd sgl-kernel-npu && bash build.sh
+RUN pip install sgl-kernel-npu/output/deep_ep*.whl --no-cache-dir
+RUN cd "$(pip show deep-ep | awk '/^Location:/ {print $2}')" && ln -s deep_ep/deep_ep_cpp*.so
+
 CMD ["/bin/bash"]
