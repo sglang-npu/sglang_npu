@@ -45,7 +45,7 @@ TRITON_ASCEND_VERSION=3.2.0rc2
 pip install attrs==24.2.0 numpy==1.26.4 scipy==1.13.1 decorator==5.1.1 psutil==6.0.0 pytest==8.3.2 pytest-xdist==3.6.1 pyyaml pybind11 --no-cache-dir
 pip install triton-ascend==$TRITON_ASCEND_VERSION --no-cache-dir
 
-
+pip install httpx --no-cache-dir
 pip install -e "python[srt_npu]" --no-cache-dir
 
 
