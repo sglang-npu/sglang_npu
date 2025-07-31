@@ -35,7 +35,7 @@ RUN update-ca-certificates
 # Install basic python packages
 RUN python3 -m pip install --no-cache-dir \
     numpy==1.26.4 \
-    pybind11==2.11.1
+    pybind11
 
 # Set up locale
 RUN locale-gen en_US.UTF-8
