@@ -825,13 +825,178 @@ mod tests {
                 decode_selector: selectors,
                 bootstrap_port_annotation: "mycompany.io/bootstrap".to_string(),
             }),
-            (RoutingMode::Regular { .. }, PolicyConfig::PowerOfTwo { .. }) => {
-                Err(ConfigError::IncompatibleConfig {
-                    reason: "PowerOfTwo policy is only supported in PD disaggregated mode"
-                        .to_string(),
-                })
-            }
+            metrics: Some(MetricsConfig {
+                port: 9999,
+                host: "::".to_string(), // IPv6 any
+            }),
+            log_dir: Some("/opt/logs/sglang".to_string()),
+            log_level: Some("trace".to_string()),
+        };
+
+        assert!(config.has_service_discovery());
+        assert!(config.has_metrics());
+        assert_eq!(config.mode_type(), "regular");
+
+        // Test round-trip serialization
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let deserialized: RouterConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.host, "::1");
+        assert_eq!(deserialized.port, 8888);
+        assert_eq!(
+            deserialized.discovery.unwrap().namespace,
+            Some("production".to_string())
+        );
+    }
+
+    // ============= Policy Fallback Tests =============
+
+    #[test]
+    fn test_pd_policy_fallback_both_specified() {
+        // When both prefill and decode policies are specified, they should be used
+        let pd = RoutingMode::PrefillDecode {
+            prefill_urls: vec![("http://prefill1".to_string(), None)],
+            decode_urls: vec!["http://decode1".to_string()],
+            prefill_policy: Some(PolicyConfig::CacheAware {
+                cache_threshold: 0.5,
+                balance_abs_threshold: 32,
+                balance_rel_threshold: 1.1,
+                eviction_interval_secs: 60,
+                max_tree_size: 1000,
+            }),
+            decode_policy: Some(PolicyConfig::PowerOfTwo {
+                load_check_interval_secs: 60,
+            }),
+        };
+
+        let main_policy = PolicyConfig::Random;
+
+        // Both specific policies should be used
+        match pd.get_prefill_policy(&main_policy) {
+            PolicyConfig::CacheAware { .. } => {} // Success
+            _ => panic!("Expected CacheAware for prefill"),
+        }
+
+        match pd.get_decode_policy(&main_policy) {
+            PolicyConfig::PowerOfTwo { .. } => {} // Success
+            _ => panic!("Expected PowerOfTwo for decode"),
         }
     }
-    */
+
+    #[test]
+    fn test_pd_policy_fallback_only_prefill() {
+        // When only prefill policy is specified, decode should use main policy
+        let pd = RoutingMode::PrefillDecode {
+            prefill_urls: vec![("http://prefill1".to_string(), None)],
+            decode_urls: vec!["http://decode1".to_string()],
+            prefill_policy: Some(PolicyConfig::CacheAware {
+                cache_threshold: 0.5,
+                balance_abs_threshold: 32,
+                balance_rel_threshold: 1.1,
+                eviction_interval_secs: 60,
+                max_tree_size: 1000,
+            }),
+            decode_policy: None,
+        };
+
+        let main_policy = PolicyConfig::RoundRobin;
+
+        // Prefill should use specific policy
+        match pd.get_prefill_policy(&main_policy) {
+            PolicyConfig::CacheAware { .. } => {} // Success
+            _ => panic!("Expected CacheAware for prefill"),
+        }
+
+        // Decode should fall back to main policy
+        match pd.get_decode_policy(&main_policy) {
+            PolicyConfig::RoundRobin => {} // Success
+            _ => panic!("Expected RoundRobin for decode"),
+        }
+    }
+
+    #[test]
+    fn test_pd_policy_fallback_only_decode() {
+        // When only decode policy is specified, prefill should use main policy
+        let pd = RoutingMode::PrefillDecode {
+            prefill_urls: vec![("http://prefill1".to_string(), None)],
+            decode_urls: vec!["http://decode1".to_string()],
+            prefill_policy: None,
+            decode_policy: Some(PolicyConfig::PowerOfTwo {
+                load_check_interval_secs: 60,
+            }),
+        };
+
+        let main_policy = PolicyConfig::Random;
+
+        // Prefill should fall back to main policy
+        match pd.get_prefill_policy(&main_policy) {
+            PolicyConfig::Random => {} // Success
+            _ => panic!("Expected Random for prefill"),
+        }
+
+        // Decode should use specific policy
+        match pd.get_decode_policy(&main_policy) {
+            PolicyConfig::PowerOfTwo { .. } => {} // Success
+            _ => panic!("Expected PowerOfTwo for decode"),
+        }
+    }
+
+    #[test]
+    fn test_pd_policy_fallback_none_specified() {
+        // When no specific policies are specified, both should use main policy
+        let pd = RoutingMode::PrefillDecode {
+            prefill_urls: vec![("http://prefill1".to_string(), None)],
+            decode_urls: vec!["http://decode1".to_string()],
+            prefill_policy: None,
+            decode_policy: None,
+        };
+
+        let main_policy = PolicyConfig::CacheAware {
+            cache_threshold: 0.7,
+            balance_abs_threshold: 20,
+            balance_rel_threshold: 1.5,
+            eviction_interval_secs: 300,
+            max_tree_size: 2000,
+        };
+
+        // Both should fall back to main policy
+        match pd.get_prefill_policy(&main_policy) {
+            PolicyConfig::CacheAware {
+                cache_threshold, ..
+            } => {
+                assert!((cache_threshold - 0.7).abs() < 0.0001);
+            }
+            _ => panic!("Expected CacheAware for prefill"),
+        }
+
+        match pd.get_decode_policy(&main_policy) {
+            PolicyConfig::CacheAware {
+                cache_threshold, ..
+            } => {
+                assert!((cache_threshold - 0.7).abs() < 0.0001);
+            }
+            _ => panic!("Expected CacheAware for decode"),
+        }
+    }
+
+    #[test]
+    fn test_regular_mode_policy_fallback() {
+        // For regular mode, the helper methods should just return the main policy
+        let regular = RoutingMode::Regular {
+            worker_urls: vec!["http://worker1".to_string()],
+        };
+
+        let main_policy = PolicyConfig::RoundRobin;
+
+        // Both methods should return main policy for regular mode
+        match regular.get_prefill_policy(&main_policy) {
+            PolicyConfig::RoundRobin => {} // Success
+            _ => panic!("Expected RoundRobin for regular mode"),
+        }
+
+        match regular.get_decode_policy(&main_policy) {
+            PolicyConfig::RoundRobin => {} // Success
+            _ => panic!("Expected RoundRobin for regular mode"),
+        }
+    }
 }

@@ -75,8 +75,8 @@ impl PDRouter {
         }
 
         // Add to pwu if using bucket policy
-        if self.policy.name() == "bucket" {
-            if let Some(bucket_policy) = self.policy
+        if self.prefill_policy.name() == "bucket" {
+            if let Some(bucket_policy) = self.prefill_policy
                 .as_any()
                 .downcast_ref::<crate::policies::BucketPolicy>() {
                     bucket_policy.add_prefill_url(url.clone());
@@ -147,8 +147,8 @@ impl PDRouter {
         }
 
         // bucket policy
-        if self.policy.name() == "bucket" {
-            if let Some(bucket_policy) = self.policy
+        if self.prefill_policy.name() == "bucket" {
+            if let Some(bucket_policy) = self.prefill_policy
                 .as_any()
                 .downcast_ref::<crate::policies::BucketPolicy>() {
                     bucket_policy.remove_prefill_url(url);
@@ -259,8 +259,8 @@ impl PDRouter {
             None
         };
 
-        if policy.name() == "bucket" {
-            if let Some(bucket_policy) = policy
+        if prefill_policy.name() == "bucket" {
+            if let Some(bucket_policy) = prefill_policy
                 .as_any()
                 .downcast_ref::<crate::policies::BucketPolicy>()
             {

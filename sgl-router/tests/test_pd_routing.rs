@@ -173,6 +173,8 @@ mod test_pd_routing {
                         ("http://p3:8080".to_string(), Some(9002)),
                     ],
                     decode_urls: vec!["http://d1:8080".to_string(), "http://d2:8080".to_string()],
+                    prefill_policy: None,
+                    decode_policy: None,
                 },
                 PolicyConfig::Bucket {
                     balance_abs_threshold: 20,
