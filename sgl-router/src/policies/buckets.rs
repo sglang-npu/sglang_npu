@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque, HashSet};
 use std::time::{SystemTime};
 use std::time::Duration;
 use std::sync::{Arc, Mutex, RwLock};
-use tracing::{warn};
+use tracing::{info, warn};
 use rand::Rng;
 
 use uuid::Uuid;
@@ -69,17 +69,62 @@ impl LoadBalancingPolicy for BucketPolicy {
     fn select_worker(
         &self,
         workers: &[Box<dyn Worker>],
-        _request_text: Option<&str>,
+        request_text: Option<&str>,
     ) -> Option<usize> {
-        let healthy_indices = get_healthy_worker_indices(workers);
+        let prefill_list = workers;
 
-        if healthy_indices.is_empty() {
-            return None;
+        let char_count = match request_text {
+            None => 0,
+            Some(text) => text.chars().count()
+        };
+
+        let buc_arc = Arc::clone(&self.bucket);
+        let choiced_url_snapshot;
+        let chars_per_url_snapshot;
+        {
+            let buc = buc_arc.read().unwrap();
+            choiced_url_snapshot = buc.find_boundary(char_count);
+            chars_per_url_snapshot = buc.chars_per_url.lock().unwrap().clone();
         }
 
-        let mut rng = rand::thread_rng();
-        let random_idx = rng.gen_range(0..healthy_indices.len());
-        Some(healthy_indices[random_idx])
+        let max_load = chars_per_url_snapshot.values().copied().max().unwrap_or(0);
+        let min_load = chars_per_url_snapshot.values().copied().min().unwrap_or(0);
+        let abs_diff = max_load.saturating_sub(min_load);
+        let rel_threshold = self.config.balance_rel_threshold * min_load as f32;
+
+        //Load balancing is triggered when (max_load - min_load) > abs_threshold AND max_load > min_load * rel_threshold.
+        let is_imbalanced = abs_diff > self.config.balance_abs_threshold && max_load as f32 > rel_threshold;
+        info!("is_imbalanced:{}", is_imbalanced);
+        let prefill_url = if is_imbalanced {
+            let min_url = chars_per_url_snapshot
+                .iter()
+                .min_by_key(|(_, &chars)| chars)
+                .map(|(url, _)| url.clone())
+                .unwrap_or_else(|| {
+                    let prefill_idx = rand::random::<usize>() % prefill_list.len();
+                    let url = prefill_list[prefill_idx].url();
+                    warn!("No URL found, randomly selecting: {}", url);
+                    url.to_string()
+                });
+            min_url
+        } else {
+            if choiced_url_snapshot.is_empty() {
+                let prefill_idx = rand::random::<usize>() % prefill_list.len();
+                let selected_url = prefill_list[prefill_idx].url();
+                warn!("Boundary not found, randomly selection: {}", selected_url);
+                selected_url.to_string()
+            } else {
+                choiced_url_snapshot
+            }
+        };
+        
+        {
+            let mut buc = buc_arc.write().unwrap();
+            buc.post_process_request(char_count, prefill_url.clone());
+        }
+
+        let prefill_idx = prefill_list.iter().position(|w| w.url() == prefill_url)?;
+        return Some(prefill_idx);
     }
 
     fn select_worker_pair(
@@ -356,6 +401,7 @@ impl Bucket {
     }
 
     pub fn adjust_boundary(&mut self) {
+        info!("{:?}",self.boundary);
         if self.t_req_loads.is_empty() {
             return;
         }
@@ -408,6 +454,7 @@ impl Bucket {
             }
         }
         self.boundary = new_boundary;
+        info!("{:?}",self.boundary);
     }
 }
 
