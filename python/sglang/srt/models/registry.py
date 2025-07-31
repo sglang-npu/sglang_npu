@@ -18,7 +18,7 @@ class _ModelRegistry:
     models: Dict[str, Union[Type[nn.Module], str]] = field(default_factory=dict)
 
     def get_supported_archs(self) -> AbstractSet[str]:
-        print(f"==========lplp{self.models.keys()=}")
+        print(f"==========lplp{self.models.keys()=}", flush=True)
         return self.models.keys()
 
     def _raise_for_unsupported(self, architectures: List[str]):
