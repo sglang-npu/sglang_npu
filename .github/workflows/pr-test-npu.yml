@@ -124,6 +124,7 @@ jobs:
         env:
           SGLANG_USE_MODELSCOPE: true
           SGLANG_IS_IN_CI: true
+          HF_ENDPOINT: https://hf-mirror.com
           TORCH_EXTENSIONS_DIR: /tmp/torch_extensions
         run: |
           cd test/srt
