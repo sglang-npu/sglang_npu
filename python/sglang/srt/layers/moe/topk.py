@@ -257,9 +257,9 @@ class TopK(CustomOp):
             routed_scaling_factor=1,
             eps=float(1e-20),
         )
-        topk_ids = topk_ids_logical_to_physical(topk_ids,expert_location_dispatch_info)
-        get_global_expert_distribution_recorder().on_select_experts(topk_ids=topk_ids)
-        return topk_weights, topk_ids, _
+            topk_ids = topk_ids_logical_to_physical(topk_ids,expert_location_dispatch_info)
+            get_global_expert_distribution_recorder().on_select_experts(topk_ids=topk_ids)
+            return topk_weights, topk_ids, _
         else:
             torch_native = True
             return select_experts(
