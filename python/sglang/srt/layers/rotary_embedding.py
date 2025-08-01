@@ -763,8 +763,8 @@ class DeepseekScalingRotaryEmbedding(RotaryEmbedding):
         else:
             query = query_rot
             key = key_rot
-        
-        # to compatible decoder mlapo rope 
+
+        # to compatible decoder mlapo rope
         if _use_mlapo:
             query = torch.cat([query[..., ::2], query[..., 1::2]], dim=-1)
             key = torch.cat([key[..., ::2], key[..., 1::2]], dim=-1)
@@ -808,7 +808,7 @@ class DeepseekScalingRotaryEmbedding(RotaryEmbedding):
         else:
             query = query_rot
             key = key_rot
-        
+
         # to compatible decoder mlapo rope
         if _use_mlapo:
             query = torch.cat([query[..., ::2], query[..., 1::2]], dim=-1)

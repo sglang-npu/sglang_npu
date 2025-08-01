@@ -38,6 +38,7 @@ from sglang.srt.eplb.expert_location import ModelConfigForExpertLocation
 from sglang.srt.eplb.expert_location_dispatch import ExpertLocationDispatchInfo
 from sglang.srt.layers.activation import SiluAndMul
 from sglang.srt.layers.amx_utils import PackWeightMethod
+from sglang.srt.layers.attention.mla_preprocess import NPU_FusedMLAPreprocess
 from sglang.srt.layers.communicator import (
     LayerCommunicator,
     LayerScatterModes,
@@ -81,7 +82,6 @@ from sglang.srt.layers.quantization.int8_utils import (
     block_dequant as int8_block_dequant,
 )
 from sglang.srt.layers.radix_attention import RadixAttention
-from sglang.srt.layers.attention.mla_preprocess import NPU_FusedMLAPreprocess
 from sglang.srt.layers.rotary_embedding import get_rope, get_rope_wrapper
 from sglang.srt.layers.utils import is_sm100_supported
 from sglang.srt.layers.vocab_parallel_embedding import (
@@ -1321,10 +1321,14 @@ class DeepseekV2AttentionMLA(nn.Module):
         else:
             if forward_batch.forward_mode.is_extend():
                 q = torch.cat([q_nope_out, q_pe], dim=-1)
-                attn_output = self.attn_mqa(q, k_nope, k_pe, forward_batch, save_kv_cache=True)
+                attn_output = self.attn_mqa(
+                    q, k_nope, k_pe, forward_batch, save_kv_cache=True
+                )
             else:
                 q = (q_nope_out, q_pe)
-                attn_output = self.attn_mqa(q, k_nope, k_pe, forward_batch, save_kv_cache=not _use_mlapo)
+                attn_output = self.attn_mqa(
+                    q, k_nope, k_pe, forward_batch, save_kv_cache=not _use_mlapo
+                )
         attn_output = attn_output.view(-1, self.num_local_heads, self.kv_lora_rank)
 
         if self.use_deep_gemm_bmm:

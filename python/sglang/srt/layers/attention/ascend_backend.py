@@ -200,9 +200,7 @@ class AscendAttnBackend(AttentionBackend):
             self.native_attn._run_sdpa_forward_extend(
                 q_,
                 o_,
-                k_cache.view(
-                    -1, layer.tp_k_head_num, self.kv_lora_rank
-                ),
+                k_cache.view(-1, layer.tp_k_head_num, self.kv_lora_rank),
                 v_cache.view(-1, layer.tp_v_head_num, self.qk_rope_head_dim),
                 forward_batch.req_to_token_pool.req_to_token,
                 forward_batch.req_pool_indices,
@@ -302,7 +300,9 @@ class AscendAttnBackend(AttentionBackend):
         else:
             q, q_rope = q
             if self.graph_mode:
-                c_kv, k_rope = forward_batch.token_to_kv_pool.get_kv_buffer(layer.layer_id)
+                c_kv, k_rope = forward_batch.token_to_kv_pool.get_kv_buffer(
+                    layer.layer_id
+                )
                 k_rope_cache = k_rope.view(
                     -1,
                     layer.tp_k_head_num,
@@ -314,9 +314,7 @@ class AscendAttnBackend(AttentionBackend):
                 )
                 if q_rope is not None:
                     q_nope = q.view(-1, layer.tp_q_head_num, 1, layer.head_dim)
-                    q_rope = q_rope.view(
-                        -1, layer.tp_q_head_num, 1, layer.v_head_dim
-                    )
+                    q_rope = q_rope.view(-1, layer.tp_q_head_num, 1, layer.v_head_dim)
                 else:
                     q_all = q.contiguous().view(
                         -1, layer.tp_q_head_num, 1, layer.head_dim
@@ -399,7 +397,7 @@ class AscendAttnBackend(AttentionBackend):
                     layer.tp_q_head_num,
                     layer.scaling,
                     layer.tp_k_head_num,
-                    cache_mode='krope_ctkv'
+                    cache_mode="krope_ctkv",
                 )
                 return attn_output.view(
                     num_tokens, layer.tp_q_head_num * self.kv_lora_rank
