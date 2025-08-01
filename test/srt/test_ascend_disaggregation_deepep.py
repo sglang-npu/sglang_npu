@@ -43,7 +43,77 @@ def launch_prefill_node()
 
 def launch_decode_node()
 
-def launch_router()
+def launch_router():
+    import time
+    import requests
+    import subprocess
+    
+    NODE_IP_LIST = [PREFILL_NODE1_IP, PREFILL_NODE2_IP, DECODE_NODE1_IP, DECODE_NODE2_IP]
+    NODE_PORT = 5000
+
+    def checkout_port(host, port , timeout=3):
+        try: 
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            return result == 0
+        except Exception as e:
+            print(f"Error: {e}")
+            return False
+
+    def wait_server_ready(url, timeout=60):
+        start_time = time.perf_counter()
+        while True:
+            try:
+                response = requests.get(url)
+                if response.status_code == 200:
+                    print(f"Server {url} is ready")
+                    return
+            except Exception:
+                pass
+
+            if time.perf_counter() - start_time > timeout:
+                raise RuntimeError(f"Server {url} failed to start in {timeout}s")
+            time.sleep(1)
+
+    while True:
+        success_nodes = 0
+        for ip in NODE_IP_LIST:
+            if checkout_port(ip, NODE_PORT):
+                print(f"{ip=} {NODE_PORT} is open")
+                success_nodes = success_nodes + 1
+            else:
+                print(f"{ip=} {NODE_PORT} is closed")
+                time.sleep(1)
+        if success_nodes == len(NODE_IP_LIST):
+            break
+    
+    prefill_url = f"http://{PREFILL_NODE1_IP}:{NODE_PORT}"
+    decode_url = f"http://{DECODE_NODE1_IP}:{NODE_PORT}"
+    lb_host = PREFILL_NODE1_IP
+    lb_port = 9000
+    lb_url = f"http://{lb_host}:{lb_port}"
+
+    lb_command = [
+            "python3",
+            "-m",
+            "sglang.srt.disaggregation.mini_lb",
+            "--prefill",
+            prefill_url,
+            "--decode",
+            decode_url,
+            "--host",
+            lb_host,
+            "--port",
+            lb_port,
+        ]
+
+    print("Starting load balancer:", " ".join(lb_command))
+    subprocess.Popen(
+        lb_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    wait_server_ready(lb_url + "/health")
 
 
 class TestAscend_DISAGGREGATION_DEEPEP(CustomTestCase):
