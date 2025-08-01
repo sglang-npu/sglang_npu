@@ -43,7 +43,7 @@ git clone --depth 1 https://github.com/vllm-project/vllm.git --branch $VLLM_TAG
 ### Install PyTorch and PTA
 PYTORCH_VERSION=2.6.0
 TORCHVISION_VERSION=0.21.0
-PTA_VERSION=2.6.0
+PTA_VERSION=2.6.0rc1
 ${PIP_INSTALL} torch==$PYTORCH_VERSION torchvision==$TORCHVISION_VERSION --index-url https://download.pytorch.org/whl/cpu
 ${PIP_INSTALL} torch_npu==$PTA_VERSION
 
@@ -59,5 +59,6 @@ ${PIP_INSTALL} -v -e "python[srt_npu]"
 
 
 ### Modify PyTorch TODO: to be removed later
+pip show torch
 TORCH_LOCATION=$(pip show torch | grep Location | awk -F' ' '{print $2}')
 sed -i 's/from triton.runtime.autotuner import OutOfResources/from triton.runtime.errors import OutOfResources/' "${TORCH_LOCATION}/torch/_inductor/runtime/triton_heuristics.py"
