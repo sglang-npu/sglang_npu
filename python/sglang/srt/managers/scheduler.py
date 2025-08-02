@@ -1795,6 +1795,8 @@ class Scheduler(
             self.enable_overlap,
             self.spec_algorithm,
             self.server_args.enable_custom_logit_processor,
+            sp_size=self.tp_size,
+            sp_rank=self.tp_rank,
             chunked_req=self.chunked_req,
         )
         if self.enable_hierarchical_cache:

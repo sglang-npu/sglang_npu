@@ -44,7 +44,8 @@ from sglang.srt.disaggregation.utils import (
 )
 from sglang.srt.managers.schedule_batch import FINISH_LENGTH, Req, ScheduleBatch
 from sglang.srt.model_executor.forward_batch_info import ForwardMode
-from sglang.srt.utils import require_mlp_sync
+from sglang.srt.utils import require_mlp_sync, get_sp_token_num, get_sp_page_range
+from sglang.srt.managers.schedule_batch import global_server_args_dict
 
 if TYPE_CHECKING:
     from torch.distributed import ProcessGroup
@@ -242,7 +243,16 @@ class PrefillBootstrapQueue:
             )
             assert req.metadata_buffer_index is not None
 
+            if global_server_args_dict["enbale_sp"]:
+                num_kv_indices = get_sp_token_num(self.tp_size, self.tp_rank, num_kv_indices)
+
             num_pages = kv_to_page_num(num_kv_indices, self.token_to_kv_pool.page_size)
+
+            if global_server_args_dict["enable_sp_prefill"]:
+                total_page_num = (num_kv_indices + self.token_to_kv_pool.page_size) // self.token_to_kv_pool.page_size
+                start_page, end_page = get_sp_page_range(self.tp_size, self.tp_rank, total_page_num)
+                num_pages = end_page - start_page + 1
+
             req.disagg_kv_sender.init(num_pages, req.metadata_buffer_index)
             bootstrapped_reqs.append(req)
             indices_to_remove.add(i)
@@ -585,6 +595,9 @@ class SchedulerDisaggregationPrefillMixin:
             else min(len(req.fill_ids), len(req.origin_input_ids))
         )
 
+        if global_server_args_dict["enable_sp"] or global_server_args_dict["enable_sp_prefill"]:
+            end_idx = req.sp_all_token_len
+
         if not last_chunk:
             # if not the last chunk and the last page is partial, delay the last partial page to the next send
             end_idx = end_idx - end_idx % page_size
@@ -599,6 +612,8 @@ class SchedulerDisaggregationPrefillMixin:
             self.disagg_metadata_buffers.set_buf(req)
         page_indices = kv_to_page_indices(kv_indices, page_size)
         if len(page_indices) == 0:
+            # Sending empty pages is used to synchronize the status. Empty pages will appear in very short sequences.
+            req.disagg_kv_sender.send_empty()
             logger.info(
                 f"Skip sending kv chunk for request {req.rid=} {req.bootstrap_room=} because page_indices is empty"
             )

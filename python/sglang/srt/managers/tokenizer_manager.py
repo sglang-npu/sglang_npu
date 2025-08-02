@@ -515,9 +515,17 @@ class TokenizerManager:
                     "accept text prompts. Please provide input_ids or re-initialize "
                     "the engine with skip_tokenizer_init=False."
                 )
-            encoded = self.tokenizer(
-                input_text, return_token_type_ids=is_cross_encoder_request
-            )
+            if self.server_args.enable_sp:
+                encoded = self.tokenizer(
+                    input_text,
+                    return_token_type_ids=is_cross_encoder_request,
+                    padding='max_length',
+                    max_length=self.server_args.tp_size
+                )
+            else:
+                encoded = self.tokenizer(
+                    input_text, return_token_type_ids=is_cross_encoder_request
+                )
 
             input_ids = encoded["input_ids"]
             if is_cross_encoder_request:

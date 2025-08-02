@@ -239,6 +239,8 @@ class ServerArgs:
     disable_fast_image_processor: bool = False
     enable_return_hidden_states: bool = False
     enable_triton_kernel_moe: bool = False
+    enable_sp: bool = False
+    enable_sp_prefill: bool = False
 
     # Debug tensor dumps
     debug_tensor_dump_output_folder: Optional[str] = None
@@ -550,6 +552,13 @@ class ServerArgs:
             self.load_format = "remote"
         if self.custom_weight_loader is None:
             self.custom_weight_loader = []
+
+        if self.tp_size == 1 and self.enable_sp:
+            logger.warning("enable_sp is adjusted to False when tp_size == 1")
+            self.enable_sp = False
+        if self.tp_size == 1 and self.enable_sp_prefill:
+            logger.warning("enable_sp_prefill is adjusted to False when tp_size == 1")
+            self.enable_sp_prefill = False
 
         # PD disaggregation
         if self.disaggregation_mode == "decode":
@@ -1651,6 +1660,16 @@ class ServerArgs:
             "--enable-triton-kernel-moe",
             action="store_true",
             help="Use triton moe grouped gemm kernel.",
+        )
+        parser.add_argument(
+            "--enable-sp",
+            action="store_true",
+            help="Use sp with set --disable-radix-cache and --attention-backend ascend and MLA, sp_size equal tp_size",
+        )
+        parser.add_argument(
+            "--enable-sp-prefill",
+            action="store_true",
+            help="Use sp in pd-disaggregation(only prefill sp) with set --disable-radix-cache and --attention-backend ascend and MLA, sp_size equal tp_size",
         )
 
         # Debug tensor dumps

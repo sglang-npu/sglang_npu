@@ -43,7 +43,10 @@ from sglang.srt.utils import (
     get_local_ip_auto,
     is_valid_ipv6_address,
     maybe_wrap_ipv6_address,
+    get_sp_page_range,
+    get_sp_device_nums,
 )
+from sglang.str.managers.schedule_batch import global_server_args_dict
 
 logger = logging.getLogger(__name__)
 
@@ -693,8 +696,10 @@ class MooncakeKVManager(BaseKVManager):
                         arrived_response_num = len(
                             self.prefill_response_tracker[bootstrap_room]
                         )
+                        # MlA in sp_prefill, need 'arrived_response_num == expected_response_num',
+                        # because kvcache comes from multiple prefill sp_ranks
                         if (
-                            self.is_mla_backend
+                            (self.is_mla_backend and not global_server_args_dict["enable_sp_prefill"])
                             or arrived_response_num == expected_response_num
                         ):
                             self.update_status(bootstrap_room, KVPoll.Success)
@@ -920,6 +925,7 @@ class MooncakeKVSender(BaseKVSender):
         self.init_time = time.time()
         # inner state
         self.curr_idx = 0
+        self.has_send_empty =False
 
     def init(self, num_kv_indices: int, aux_index: Optional[int] = None):
         self.num_kv_indices = num_kv_indices
@@ -949,7 +955,13 @@ class MooncakeKVSender(BaseKVSender):
                 aux_index=self.aux_index,
             )
 
+    def send_empty(self):
+        self.has_send_empty = True
+
     def poll(self) -> KVPoll:
+        if self.has_send_empty == True:
+            return KVPoll.Success
+
         if self.conclude_state is None:
             status = self.kv_mgr.check_status(self.bootstrap_room)
             if status in (KVPoll.Success, KVPoll.Failed):
@@ -1005,6 +1017,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
         bootstrap_addr: str,
         bootstrap_room: Optional[int] = None,
         data_parallel_rank: Optional[int] = None,
+        input_len: Optional[int] = None,
     ):
         self.bootstrap_room = bootstrap_room
         self.bootstrap_addr = bootstrap_addr
@@ -1093,6 +1106,21 @@ class MooncakeKVReceiver(BaseKVReceiver):
                 prefill_tp_size_per_dp_rank // local_tp_size_per_dp_rank
             )
 
+        if global_server_args_dict["enable_sp_prefill"]:
+            # All sp_rank in sp_group need to be notified
+            self.target_tp_ranks = [rank for rank in range(prefill_tp_size_per_dp_rank)]
+
+            # sp_rank in prefill needs send_kvcache to all sp_rank in sp_group in decode
+            self.required_dst_info_num = local_tp_size_per_dp_rank
+
+            # The sp_rank in decode needs to receive the response of each sp_rank in prefill
+            # in the case of short sequences, some sp_rank may be empty and not sent to kvcache
+            self.required_prefill_response_num = get_sp_device_nums(
+                input_len,
+                self.kv_mgr.kv_args.page_size,
+                prefill_tp_size_per_dp_rank
+            )
+
         if self.data_parallel_rank is not None:
             logger.debug(f"Targeting DP rank: {self.data_parallel_rank}")
             self.target_dp_group = self.data_parallel_rank
@@ -1121,6 +1149,9 @@ class MooncakeKVReceiver(BaseKVReceiver):
                             target_tp_rank == self.target_tp_rank
                             or self.target_tp_rank is None
                         )
+                        # For MLA and enable_sp_prefill: all target_tp_ranks are selected real ranks
+                        if global_server_args_dict["enable_sp_prefill"]:
+                            bootstrap_info["is_dummy"] = False
                     else:
                         # For non-MLA: all target_tp_ranks are selected real ranks
                         bootstrap_info["is_dummy"] = False
@@ -1238,7 +1269,22 @@ class MooncakeKVReceiver(BaseKVReceiver):
         return sock, lock
 
     def init(self, kv_indices: npt.NDArray[np.int32], aux_index: Optional[int] = None):
-        for bootstrap_info in self.bootstrap_infos:
+        if global_server_args_dict["enable_sp_prefill"]:
+            kv_indices_origin = kv_indices
+
+        for idx, bootstrap_info in enumerate(self.bootstrap_infos):
+            # sp_rank in decode notifies the kvcache in prefill to transfer 1/sp for each sp_rank
+            # sp-rank  |  sp_rank:0  |  sp_rank:1  |
+            # prefill0 | page0 page1 | ----- ----- |
+            # prefill1 | ----- ----- | page3 page4 |
+            # Transfer |      ↓↓     |     ↓↓      |
+            # Decode   | page0 page1 | page3 page4 |
+            if global_server_args_dict["enable_sp_prefill"]:
+                sp_size = self.prefill_tp_size // self.prefill_dp_size
+                sp_rank = idx
+                start_page, end_page = get_sp_page_range(sp_size, sp_rank, len(kv_indices_origin))
+                kv_indices = kv_indices_origin[start_page : end_page + 1]
+
             sock, lock = self._connect_to_bootstrap_server(bootstrap_info)
             is_dummy = bootstrap_info["is_dummy"]
 

@@ -64,7 +64,7 @@ from sglang.srt.model_executor.forward_batch_info import CaptureHiddenMode, Forw
 from sglang.srt.sampling.sampling_batch_info import SamplingBatchInfo
 from sglang.srt.sampling.sampling_params import SamplingParams
 from sglang.srt.server_args import ServerArgs
-from sglang.srt.utils import flatten_nested_list, support_triton
+from sglang.srt.utils import flatten_nested_list, support_triton, get_sp_token_num, get_sp_page_range
 
 if TYPE_CHECKING:
     from sglang.srt.configs.model_config import ModelConfig
@@ -108,6 +108,9 @@ GLOBAL_SERVER_ARGS_KEYS = [
     "weight_loader_disable_mmap",
     "enable_triton_kernel_moe",
     "enable_multimodal",
+    "enable_sp",
+    "enable_sp_prefill",
+    "disaggregation_mode",
 ]
 
 # Put some global args for easy access
@@ -506,6 +509,10 @@ class Req:
         self.prefix_indices: torch.Tensor = []
         # Number of tokens to run prefill.
         self.extend_input_len = 0
+        # The total number of tokens currently stored in sp_rank
+        self.sp_all_token_len = 0
+        # decode sp_rank for the next infer
+        self.next_sp_rank = 0
         # The relative logprob_start_len in an extend batch
         self.extend_logprob_start_len = 0
         self.last_node: Any = None
@@ -899,6 +906,11 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
     # hicache pointer for synchronizing data loading from CPU to GPU
     hicache_consumer_index: int = 0
 
+    # For sp
+    sp_size: int = 0
+    sp_rank: int = 0
+    sp_seq_lens: torch.Tensor = None # shape: [b], int64
+
     @classmethod
     def init_new(
         cls,
@@ -910,6 +922,8 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
         enable_overlap: bool,
         spec_algorithm: SpeculativeAlgorithm,
         enable_custom_logit_processor: bool,
+        sp_size: Optional[int] = 1,
+        sp_rank: Optional[int] = 1,
         chunked_req: Optional[Req] = None,
     ):
         return_logprob = any(req.return_logprob for req in reqs)
@@ -937,6 +951,8 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             enable_custom_logit_processor=enable_custom_logit_processor,
             return_hidden_states=any(req.return_hidden_states for req in reqs),
             chunked_req=chunked_req,
+            sp_size=sp_size,
+            sp_rank=sp_rank,
         )
 
     def batch_size(self):
@@ -1115,6 +1131,132 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             len(self.out_cache_loc) == self.extend_num_tokens
         ), f"Expected {len(self.out_cache_loc)}, got {self.extend_num_tokens}"
 
+    # sp: alloc out_loc and padding -1
+    def alloc_sp_padding_out_loc(
+        self,
+        seq_lens_tensor: torch.Tensor,
+        prefix_lens_tensor: torch.Tensor,
+        last_loc: torch.Tensor,
+        token_num_tensor: torch.Tensor,
+        sp_seq_start,
+    ):
+        bs = len(self.reqs)
+        extend_num_tokens_sp = sum(l for l in token_num_tensor)
+
+        loc_origin = self.alloc_paged_token_slots_extend(
+            prefix_lens_tensor, token_num_tensor, last_loc, extend_num_tokens_sp
+        )
+        self.sp_seq_lens = token_num_tensor
+
+        len_sum = sum(l for l in seq_lens_tensor)
+        loc_padded = torch.full((len_sum,), -1, dtype=loc_origin.dtype, device=self.device)
+        sp_flatten_seq_start = 0
+        sp_out_loc_start = 0
+        for i in range(bs):
+            sp_flatten_seq_start = sp_flatten_seq_start + (seq_lens_tensor[i - 1].item() if i >= 1 else 0)
+            loc_padded_start = sp_flatten_seq_start + sp_seq_start[i]
+            loc_padded_end = loc_padded_start + token_num_tensor[i].item()
+
+            sp_out_loc_start = sp_out_loc_start + (token_num_tensor[i - 1] if i >= 1 else 0)
+            sp_out_loc_end = sp_out_loc_start + token_num_tensor[i]
+            loc_padded[loc_padded_start : loc_padded_end] = loc_origin[sp_out_loc_start : sp_out_loc_end]
+        return loc_origin, loc_padded
+
+    # sp: For PD disaggregation prefill, aligned by page
+    def alloc_sp_prefill_extend_out_loc(
+        self,
+        seq_lens_tensor: torch.Tensor,
+        prefix_lens_tensor: torch.Tensor,
+        last_loc: torch.Tensor,
+    ):
+        bs = len(self.reqs)
+        sp_seq_start = [0] * bs
+        page_size = self.token_to_kv_pool_allocator.page_size
+        token_num_tensor = torch.zeros_like(seq_lens_tensor)
+
+        for i in range(bs):
+            page_num = (seq_lens_tensor[i].item() + page_size) // page_size
+            remain_token_num = seq_lens_tensor[i] - (page_num - 1) * page_size
+
+            start_page, end_page = get_sp_page_range(self.sp_size, self.sp_rank, page_num)
+            page_count = end_page - start_page + 1
+
+            if end_page == page_num - 1:
+                token_num_tensor[i] = (page_count - 1) * page_size + remain_token_num
+            else:
+                token_num_tensor[i] = page_count * page_size
+
+            # exeist empty page
+            token_num_tensor[i] = max(token_num_tensor[i], 0)
+            self.reqs[i].sp_all_token_len = token_num_tensor[i]
+
+            sp_seq_start[i] = start_page * page_size
+
+        return self.alloc_sp_padding_out_loc(
+            seq_lens_tensor,
+            prefix_lens_tensor,
+            last_loc,
+            token_num_tensor,
+            sp_seq_start
+        )
+
+    # sp: For PD mix prefill
+    def alloc_sp_extend_out_loc(
+        self,
+        seq_lens_tensor: torch.Tensor,
+        prefix_lens_tensor: torch.Tensor,
+        last_loc: torch.Tensor,
+    ):
+        bs = len(self.reqs)
+        sp_seq_start = [0] * bs
+        token_num_tensor = torch.zeros_like(seq_lens_tensor)
+
+        for i in range(bs):
+            token_num_tensor[i] = get_sp_token_num(self.sp_size, self.sp_rank, seq_lens_tensor[i])
+            self.reqs[i].sp_all_token_len = token_num_tensor[i]
+
+            base = seq_lens_tensor[i] // self.sp_size
+            extra = seq_lens_tensor[i] % self.sp_size
+            sp_seq_start[i] = self.sp_rank * base + (self.sp_rank if self.sp_rank < extra else extra)
+
+        return self.alloc_sp_padding_out_loc(
+            seq_lens_tensor,
+            prefix_lens_tensor,
+            last_loc,
+            token_num_tensor,
+            sp_seq_start
+        )
+
+    # sp: For decode
+    def alloc_sp_decode_out_loc(self):
+        bs = len(self.reqs)
+        get_sp_token_num = torch.zeros(bs, dtype=torch.int32, device=self.device)
+        for idx, req in enumerate(self.reqs):
+            if self.sp_rank == req.next_sp_rank:
+                req.sp_all_token_len = req.sp_all_token_len + 1
+            sp_token_num_tensor[idx] = req.sp_all_token_len
+        self.sp_seq_lens = sp_token_num_tensor
+
+        last_loc = self.req_to_token_pool.req_to_token[
+            self.req_pool_indices, sp_token_num_tensor - 2
+        ]
+
+        self.out_cache_loc = torch.full((bs,), -1, dtype=torch.int32, device=self.device)
+        for idx, req in enumerate(self.reqs):
+            if self.sp_rank == req.next_sp_rank:
+                out_cache_loc = self.alloc_paged_token_slots_decode(
+                    sp_token_num_tensor[idx].unsqueeze(0), last_loc[idx].unsqueeze(0)
+                )
+                loc = sp_token_num_tensor[idx] - 1
+                self.req_to_token_pool.write(
+                    (self.req_pool_indices[idx], loc), out_cache_loc.to(torch.int32)
+                )
+            else:
+                # non next_rank padding -1
+                out_cache_loc = torch.tensor([-1], dtype=torch.int32, device=self.device)
+            self.out_cache_loc[idx] = out_cache_loc
+            req.next_sp_rank = 0 if req.next_sp_rank >= self.sp_size - 1 else req.next_sp_rank + 1
+
     def prepare_for_extend(self):
         self.forward_mode = ForwardMode.EXTEND
 
@@ -1248,9 +1390,22 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
                 req_pool_indices_tensor,
                 prefix_lens_tensor,
             )
-            out_cache_loc = self.alloc_paged_token_slots_extend(
-                prefix_lens_tensor, seq_lens_tensor, last_loc, extend_num_tokens
-            )
+            if global_server_args_dict["enable_sp"]:
+                loc_origin, out_cache_loc = self.alloc_sp_extend_out_loc(
+                    seq_lens_tensor,
+                    prefix_lens_tensor,
+                    last_loc
+                )
+            elif global_server_args_dict["enable_sp_prefill"]:
+                loc_origin, out_cache_loc = self.alloc_sp_prefill_extend_out_loc(
+                    seq_lens_tensor,
+                    prefix_lens_tensor,
+                    last_loc
+                )
+            else:
+                out_cache_loc = self.alloc_paged_token_slots_extend(
+                    prefix_lens_tensor, seq_lens_tensor, last_loc, extend_num_tokens
+                )
 
         # Set fields
         self.input_ids = input_ids_tensor
@@ -1299,11 +1454,20 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
         else:
             pt = 0
             for i in range(bs):
-                self.req_to_token_pool.write(
-                    (req_pool_indices[i], slice(prefix_lens[i], seq_lens[i])),
-                    out_cache_loc[pt : pt + extend_lens[i]],
-                )
-                pt += extend_lens[i]
+                if global_server_args_dict["enable_sp"] or global_server_args_dict["enable_sp_prefill"]:
+                    seq_lens_sp = self.reqs[i].sp_all_token_len
+                    extend_lens_sp = self.reqs[i].sp_all_token_len
+                    self.req_to_token_pool.write(
+                        (req_pool_indices[i], slice(prefix_lens[i], seq_lens_sp)),
+                        loc_origin[pt : pt + extend_lens_sp],
+                    )
+                    pt += extend_lens[i]
+                else:
+                    self.req_to_token_pool.write(
+                        (req_pool_indices[i], slice(prefix_lens[i], seq_lens[i])),
+                        out_cache_loc[pt : pt + extend_lens[i]],
+                    )
+                    pt += extend_lens[i]
 
         if self.model_config.is_encoder_decoder:
             self.prepare_encoder_info_extend(input_ids, seq_lens)
@@ -1572,17 +1736,22 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
         # Allocate memory
         if self.token_to_kv_pool_allocator.page_size == 1:
             self.out_cache_loc = self.alloc_token_slots(bs)
-        else:
-            last_loc = self.req_to_token_pool.req_to_token[
-                self.req_pool_indices, self.seq_lens - 2
-            ]
-            self.out_cache_loc = self.alloc_paged_token_slots_decode(
-                self.seq_lens, last_loc
+            self.req_to_token_pool.write(
+                (self.req_pool_indices, locs), self.out_cache_loc.to(torch.int32)
             )
-
-        self.req_to_token_pool.write(
-            (self.req_pool_indices, locs), self.out_cache_loc.to(torch.int32)
-        )
+        else:
+            if global_server_args_dict["enable_sp"]:
+                self.alloc_sp_decode_out_loc()
+            else:
+                last_loc = self.req_to_token_pool.req_to_token[
+                    self.req_pool_indices, self.seq_lens - 2
+                ]
+                self.out_cache_loc = self.alloc_paged_token_slots_decode(
+                    self.seq_lens, last_loc
+                )
+                self.req_to_token_pool.write(
+                    (self.req_pool_indices, locs), self.out_cache_loc.to(torch.int32)
+                )
 
     def filter_batch(
         self,
@@ -1724,6 +1893,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             input_ids=self.input_ids,
             req_pool_indices=self.req_pool_indices,
             seq_lens=self.seq_lens,
+            sp_seq_lens=self.sp_seq_lens,
             out_cache_loc=self.out_cache_loc,
             seq_lens_cpu=seq_lens_cpu,
             seq_lens_sum=self.seq_lens_sum,
@@ -1850,6 +2020,8 @@ class ModelWorkerBatch:
     req_pool_indices: torch.Tensor
     # The sequence length
     seq_lens: torch.Tensor
+    # The sp sequence length
+    sp_seq_lens: torch.Tensor
     # The indices of output tokens in the token_to_kv_pool_allocator
     out_cache_loc: torch.Tensor
     # The sequence length tensor on CPU
