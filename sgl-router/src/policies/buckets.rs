@@ -442,20 +442,20 @@ impl Bucket {
         let mut iter = worker_url.iter().peekable();
         while let Some(url) = iter.next() {
             if last_load_index >= hist_load.len() {
+                info!("adjust boundary upper_bound {:?}, load {:?}, 445", upper_bound, max_value);
                 new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
                 break;
             }
             let mut load_accumulator = 0;
             for (i, &load) in hist_load[last_load_index..].iter().enumerate() {
-                info!("router 444");
                 load_accumulator += load;
                 if load_accumulator >= new_single_bucket_load {
                     if i == hist_load[last_load_index..].len() - 1 && iter.peek().is_none() {
-                        info!("router 448");
+                        info!("adjust boundary upper_bound {:?}, load {:?}, 454", upper_bound, max_value);
                         new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
                         break;
                     }
-                    info!("adjust boundary upper_bound {:?}, load {:?}, 452", upper_bound, load);
+                    info!("adjust boundary upper_bound {:?}, load {:?}, 458", upper_bound, load);
                     new_boundary.push(Boundary::new(url.clone(), [upper_bound, load]));
                     upper_bound = load + 1;
                     last_load_index += i + 1;
