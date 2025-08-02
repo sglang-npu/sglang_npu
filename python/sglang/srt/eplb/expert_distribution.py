@@ -453,13 +453,13 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
         self._enable_global_physical_experts = enable_global_physical_experts
         num_external_rank = global_server_args_dict["num_external_rank"]
         external_phys = num_external_rank* self._expert_location_metadata.num_local_physical_experts
-        self._expert_location_metadata.num_physical_experts -= external_phys
-        
+        num_physical_experts = self._expert_location_metadata.num_physical_experts - external_phys
+
         self._data = torch.zeros(
             (
                 self._expert_location_metadata.num_layers,
                 (
-                    self._expert_location_metadata.num_physical_experts
+                    num_physical_experts
                     if enable_global_physical_experts
                     else self._expert_location_metadata.num_local_physical_experts
                 ),
