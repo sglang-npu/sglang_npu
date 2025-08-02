@@ -288,6 +288,7 @@ impl Bucket {
             Vec::new()
         } else {
             let gap = self.l_max / worker_cnt as usize;
+            self.l_max = usize::MAX;
             prefill_worker_urls
                 .iter()
                 .enumerate()
