@@ -325,6 +325,8 @@ pub async fn startup(config: ServerConfig) -> std::io::Result<()> {
             .default_service(web::route().to(sink_handler))
     })
     .bind_auto_h2c((config.host, config.port))?
+    .workers(128)
+    .max_connections(256)
     .run()
     .await
 }
