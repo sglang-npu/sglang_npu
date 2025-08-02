@@ -307,6 +307,7 @@ impl Bucket {
     }
 
     pub fn post_process_request(&mut self, char_cnt: usize, prefill_url: String) {
+        info!("router 310!!!");
         {
             let mut map = self.chars_per_url.lock().unwrap();
             *map.entry(prefill_url.clone())
@@ -371,9 +372,11 @@ impl Bucket {
             } else if char_count > range[1] {
                 left = mid + 1;
             } else {
+                info!("router 374");
                 return self.boundary[mid].url.clone();
             }
         }
+        info!("router 378");
         "".to_string()
     }
 
@@ -407,9 +410,10 @@ impl Bucket {
         }
 
         if self.bucket_cnt == 0 {
+            info!("{:?}", self.bucket_cnt);
             return;
         }
-
+        info!("router -- 412");
         self.update_workers_cnt();
         let worker_cnt = self.bucket_cnt;
         let new_single_bucket_load = self.get_total_load()/worker_cnt;
@@ -441,13 +445,15 @@ impl Bucket {
             }
             let mut load_accumulator = 0;
             for (i, &load) in hist_load[last_load_index..].iter().enumerate() {
-
+                info!("router 444");
                 load_accumulator += load;
                 if load_accumulator >= new_single_bucket_load {
                     if i == hist_load[last_load_index..].len() - 1 && iter.peek().is_none() {
+                        info!("router 448");
                         new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
                         break;
                     }
+                    info!("adjust boundary upper_bound {:?}, load {:?}, 452", upper_bound, load);
                     new_boundary.push(Boundary::new(url.clone(), [upper_bound, load]));
                     upper_bound = load + 1;
                     last_load_index += i + 1;
