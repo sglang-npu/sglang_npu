@@ -259,11 +259,14 @@ impl PDRouter {
             None
         };
 
+        info!("router 262!!!");
         if prefill_policy.name() == "bucket" {
+            info!("router 264!!!");
             if let Some(bucket_policy) = prefill_policy
                 .as_any()
                 .downcast_ref::<crate::policies::BucketPolicy>()
             {
+                info!("bucket_policy init prefill worker urls!!! 269!!!");
                 bucket_policy.init_prefill_worker_urls(&prefill_workers);
             }
         }
