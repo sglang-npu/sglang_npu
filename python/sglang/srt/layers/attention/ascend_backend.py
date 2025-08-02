@@ -260,7 +260,7 @@ class AscendAttnBackend(AttentionBackend):
                     forward_batch.extend_seq_lens,
                     scaling=layer.scaling,
                     enable_gqa=use_gqa,
-                    casual=causal,
+                    causal=causal,
                 )
             else:
                 self.native_attn._run_sdpa_forward_extend(
