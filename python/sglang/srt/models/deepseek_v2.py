@@ -372,7 +372,7 @@ class DeepseekV2MoE(nn.Module):
         self.rank = torch.distributed.get_rank()
         self.num_external_rank = global_server_args_dict["num_external_rank"]
         self.num_experts = config.n_routed_experts + self.num_fused_shared_experts + global_server_args_dict["ep_num_redundant_experts"]
-        num_local_experts = self.num_experts  // (self.tp_size - elf.num_external_rank)
+        num_local_experts = self.num_experts  // (self.tp_size - self.num_external_rank)
         self.external_phys = self.num_external_rank * num_local_experts
 
         if config.n_shared_experts is not None and self.num_fused_shared_experts == 0:
@@ -600,7 +600,7 @@ class DeepseekV2MoE(nn.Module):
                     layer_id=self.layer_id,
                 ),
             )
-            topk_ids -= self.external_phys
+            topk_idx -= self.external_phys
         else:
             topk_idx = torch.full(
                 (0, self.top_k), -1, dtype=torch.int, device=hidden_states.device
