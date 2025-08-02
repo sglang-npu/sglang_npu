@@ -52,13 +52,13 @@ impl BucketPolicy{
     }
 
     pub fn add_prefill_url(&self, url: String) {
-        let buc = self.bucket.read().unwrap();
+        let buc = self.bucket.write().unwrap();
         let mut prefill_worker_urls = buc.prefill_worker_urls.lock().unwrap(); 
         prefill_worker_urls.push(url);
     }
 
     pub fn remove_prefill_url(&self, url:&str) {
-        let buc = self.bucket.read().unwrap();
+        let buc = self.bucket.write().unwrap();
         let mut prefill_worker_urls = buc.prefill_worker_urls.lock().unwrap();
         prefill_worker_urls.retain(|worker_url| worker_url != url);
     }
@@ -403,6 +403,10 @@ impl Bucket {
     pub fn adjust_boundary(&mut self) {
         info!("{:?}",self.boundary);
         if self.t_req_loads.is_empty() {
+            return;
+        }
+
+        if self.bucket_cnt == 0 {
             return;
         }
 
