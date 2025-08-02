@@ -777,6 +777,7 @@ impl PDRouter {
     }
 
     // Select a pair of prefill and decode servers
+    // Select a pair of prefill and decode servers
     async fn select_pd_pair(
         &self,
         _client: &reqwest::Client,
@@ -800,14 +801,12 @@ impl PDRouter {
             return Err("No decode workers available. Please check if decode servers are configured and healthy.".to_string());
         }
 
-        info!("prefill policy {:?}", self.prefill_policy.name());
         // Select prefill worker using prefill policy
         let prefill_idx = self
             .prefill_policy
             .select_worker(&prefill_workers, request_text)
             .ok_or("Failed to select prefill worker")?;
 
-        info!("decode policy {:?}", self.decode_policy.name());
         // Select decode worker using decode policy
         let decode_idx = self
             .decode_policy
@@ -816,7 +815,7 @@ impl PDRouter {
 
         let prefill = prefill_workers[prefill_idx].clone_worker();
         let decode = decode_workers[decode_idx].clone_worker();
-        info!("prefill instance: [{:?}], decode instance: [{:?}]", prefill, decode);
+        info!("prefill instance: [{:?}], decode instance: [{:?}]", prefill.url(), decode.url());
         Ok((prefill, decode))
     }
 

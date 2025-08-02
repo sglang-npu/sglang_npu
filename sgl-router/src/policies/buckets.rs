@@ -93,6 +93,7 @@ impl LoadBalancingPolicy for BucketPolicy {
         let rel_threshold = self.config.balance_rel_threshold * min_load as f32;
 
         //Load balancing is triggered when (max_load - min_load) > abs_threshold AND max_load > min_load * rel_threshold.
+        // balance_abs_threshold = 1
         let is_imbalanced = abs_diff > self.config.balance_abs_threshold && max_load as f32 > rel_threshold;
         info!("is_imbalanced:{}", is_imbalanced);
         let prefill_url = if is_imbalanced {
