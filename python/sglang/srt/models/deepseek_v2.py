@@ -371,7 +371,7 @@ class DeepseekV2MoE(nn.Module):
 
         self.rank = torch.distributed.get_rank()
         self.num_external_rank = global_server_args_dict["num_external_rank"]
-        self.num_experts = =config.n_routed_experts + self.num_fused_shared_experts + global_server_args_dict["ep_num_redundant_experts"]
+        self.num_experts = config.n_routed_experts + self.num_fused_shared_experts + global_server_args_dict["ep_num_redundant_experts"]
         num_local_experts = self.num_experts  // (self.tp_size - elf.num_external_rank)
         self.external_phys = self.num_external_rank * num_local_experts
 
