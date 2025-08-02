@@ -450,28 +450,32 @@ impl Bucket {
                 break;
             }
             let mut load_accumulator = 0;
+            let mut break_flag = false;
             for (i, &load) in hist_load[last_load_index..].iter().enumerate() {
                 load_accumulator += load;
                 if load_accumulator >= new_single_bucket_load { // 还没装完，但是需要缩小边界
                     if i == hist_load[last_load_index..].len() - 1 && iter.peek().is_none() {
                         info!("adjust boundary upper_bound {:?}, load {:?}, 454", upper_bound, max_value);
                         new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
+                        break_flag = true;
                         break;
                     }
                     info!("adjust boundary upper_bound {:?}, load {:?}, 458", upper_bound, load);
                     new_boundary.push(Boundary::new(url.clone(), [upper_bound, load]));
                     upper_bound = load + 1; // 下一个桶的左边界
-                    last_load_index = i + 1;
+                    last_load_index += 1;
+                    break_flag = true;
                     break;
                 } else {
                     last_load_index += 1;
                 }
             }
-
-            let cur_new_boundary_len = new_boundary.len();
-            let right_bound = &self.boundary[cur_new_boundary_len];
-            new_boundary.push(Boundary::new(url.clone(), [upper_bound, right_bound.range[1]]));
-            upper_bound = right_bound.range[1] + 1;
+            if !break_flag {
+                let cur_new_boundary_len = new_boundary.len();
+                let right_bound = &self.boundary[cur_new_boundary_len];
+                new_boundary.push(Boundary::new(url.clone(), [upper_bound, right_bound.range[1]]));
+                upper_bound = right_bound.range[1] + 1;
+            }
         }
         self.boundary = new_boundary;
         info!("{:?}",self.boundary);
