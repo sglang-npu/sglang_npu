@@ -46,7 +46,7 @@ from sglang.srt.utils import (
     get_sp_page_range,
     get_sp_device_nums,
 )
-from sglang.str.managers.schedule_batch import global_server_args_dict
+from sglang.srt.managers.schedule_batch import global_server_args_dict
 
 logger = logging.getLogger(__name__)
 

@@ -1230,7 +1230,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
     # sp: For decode
     def alloc_sp_decode_out_loc(self):
         bs = len(self.reqs)
-        get_sp_token_num = torch.zeros(bs, dtype=torch.int32, device=self.device)
+        sp_token_num_tensor = torch.zeros(bs, dtype=torch.int32, device=self.device)
         for idx, req in enumerate(self.reqs):
             if self.sp_rank == req.next_sp_rank:
                 req.sp_all_token_len = req.sp_all_token_len + 1

@@ -179,8 +179,8 @@ class ForwardBatch:
     # The sum of all sequence lengths
     seq_lens_sum: int
 
-    # Optional sp_lens_cpu on cpu
-    sp_lens_cpu: Optional[torch.Tensor] = None
+    # Optional sp_seq_lens
+    sp_seq_lens: Optional[torch.Tensor] = None
 
     # Optional seq_lens on cpu
     seq_lens_cpu: Optional[torch.Tensor] = None

@@ -243,7 +243,7 @@ class PrefillBootstrapQueue:
             )
             assert req.metadata_buffer_index is not None
 
-            if global_server_args_dict["enbale_sp"]:
+            if global_server_args_dict["enable_sp"]:
                 num_kv_indices = get_sp_token_num(self.tp_size, self.tp_rank, num_kv_indices)
 
             num_pages = kv_to_page_num(num_kv_indices, self.token_to_kv_pool.page_size)

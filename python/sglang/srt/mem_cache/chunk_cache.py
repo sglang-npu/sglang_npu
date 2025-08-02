@@ -45,7 +45,7 @@ class ChunkCache(BasePrefixCache):
             : len(req.origin_input_ids) + max(len(req.output_ids) - 1, 0),
         ]
         from sglang.srt.managers.schedule_batch import global_server_args_dict
-        if global_server_args_dict["enable_sp"] or global_server_args_dict["enable_sp_prefill"]:
+        if global_server_args_dict["enable_sp"] or (global_server_args_dict["enable_sp_prefill"] and mode == "prefill"):
             kv_indices = self.req_to_token_pool.req_to_token[
                 req.req_pool_idx, : req.sp_all_token_len
             ]
