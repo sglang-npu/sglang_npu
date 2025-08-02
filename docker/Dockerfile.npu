@@ -70,10 +70,13 @@ RUN python3 -m pip install --no-cache-dir \
     pybind11
 
 # Install Deep-ep
-ARG ASCEND_CANN_PATH=/usr/local/Ascend/ascend-toolkit
+ARG ASCEND_PATH=/usr/local/Ascend
 RUN git clone https://github.com/sgl-project/sgl-kernel-npu.git
-ENV LD_LIBRARY_PATH=${ASCEND_CANN_PATH}/latest/runtime/lib64/stub:$LD_LIBRARY_PATH
-RUN source ${ASCEND_CANN_PATH}/set_env.sh && cd sgl-kernel-npu && bash build.sh
+RUN --mount=type=bind,source=${ASCEND_PATH}/driver,target=${ASCEND_PATH}/driver && \
+    source ${ASCEND_PATH}/driver/set_env.sh && \
+    source /usr/local/Ascend/ascend-toolkit/set_env.sh && \
+    cd sgl-kernel-npu && \
+    bash build.sh
 RUN pip install sgl-kernel-npu/output/deep_ep*.whl --no-cache-dir
 RUN cd "$(pip show deep-ep | awk '/^Location:/ {print $2}')" && ln -s deep_ep/deep_ep_cpp*.so
 
