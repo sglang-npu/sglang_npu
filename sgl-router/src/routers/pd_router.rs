@@ -259,7 +259,7 @@ impl PDRouter {
             None
         };
 
-        info!("router 262!!!");
+        info!("router 262!!! {:?}", prefill_policy);
         if prefill_policy.name() == "bucket" {
             info!("router 264!!!");
             if let Some(bucket_policy) = prefill_policy
