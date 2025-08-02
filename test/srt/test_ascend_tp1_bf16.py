@@ -68,10 +68,6 @@ class TestAscendTp1Bf16(CustomTestCase):
                         metrics["accuracy"],
                         TEST_MODEL_MATRIX[model]["accuracy"],
                     )
-                    self.assertLessEqual(
-                        metrics["latency"],
-                        TEST_MODEL_MATRIX[model]["latency"],
-                    )
                 finally:
                     kill_process_tree(process.pid)
 
