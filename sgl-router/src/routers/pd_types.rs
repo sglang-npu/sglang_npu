@@ -57,6 +57,15 @@ pub enum PDSelectionPolicy {
         balance_abs_threshold: usize,
         balance_rel_threshold: f32,
     },
+    Bucket {
+        // adjust system load balance
+        balance_abs_threshold: usize,
+        balance_rel_threshold: f32,
+
+        // bucket boundary adjust interval
+        bucket_adjust_interval_secs: usize,
+
+    }
 }
 // Bootstrap types from PDLB
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -204,6 +213,7 @@ pub struct ChatReqInput {
 
     #[serde(flatten)]
     pub other: Value,
+    pub text: Option<InputText>,
 }
 
 impl Bootstrap for ChatReqInput {

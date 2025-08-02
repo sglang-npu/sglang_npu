@@ -3,6 +3,7 @@
 use super::{pd_router::PDRouter, router::Router, RouterTrait};
 use crate::config::{PolicyConfig, RouterConfig, RoutingMode};
 use crate::policies::PolicyFactory;
+use tracing::{debug, error, info, warn};
 
 /// Factory for creating router instances based on configuration
 pub struct RouterFactory;
@@ -64,6 +65,9 @@ impl RouterFactory {
             PolicyFactory::create_from_config(prefill_policy_config.unwrap_or(main_policy_config));
         let decode_policy =
             PolicyFactory::create_from_config(decode_policy_config.unwrap_or(main_policy_config));
+
+        info!("prefill_policy {:?}", prefill_policy);
+        info!("decode_policy {:?}", decode_policy);
 
         // Create PD router with separate policies
         let router = PDRouter::new(
