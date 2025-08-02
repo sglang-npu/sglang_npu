@@ -439,9 +439,12 @@ impl Bucket {
             let guard = self.prefill_worker_urls.lock().unwrap();
             (*guard).clone()
         };
+
         let mut iter = worker_url.iter().peekable();
+        // let mut curr_worker_id = 0;
         while let Some(url) = iter.next() {
-            if last_load_index >= hist_load.len() {
+            info!("当前 url {:?}, last_load_idx {:?}, hist_load.len {:?}", url, last_load_index, hist_load.len());
+            if last_load_index >= hist_load.len() && iter.peek().is_none() {
                 info!("adjust boundary upper_bound {:?}, load {:?}, 445", upper_bound, max_value);
                 new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
                 break;
@@ -449,7 +452,7 @@ impl Bucket {
             let mut load_accumulator = 0;
             for (i, &load) in hist_load[last_load_index..].iter().enumerate() {
                 load_accumulator += load;
-                if load_accumulator >= new_single_bucket_load {
+                if load_accumulator >= new_single_bucket_load { // 还没装完，但是需要缩小边界
                     if i == hist_load[last_load_index..].len() - 1 && iter.peek().is_none() {
                         info!("adjust boundary upper_bound {:?}, load {:?}, 454", upper_bound, max_value);
                         new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
@@ -457,13 +460,18 @@ impl Bucket {
                     }
                     info!("adjust boundary upper_bound {:?}, load {:?}, 458", upper_bound, load);
                     new_boundary.push(Boundary::new(url.clone(), [upper_bound, load]));
-                    upper_bound = load + 1;
-                    last_load_index += i + 1;
+                    upper_bound = load + 1; // 下一个桶的左边界
+                    last_load_index = i + 1;
                     break;
                 } else {
                     last_load_index += 1;
                 }
             }
+
+            let cur_new_boundary_len = new_boundary.len();
+            let right_bound = &self.boundary[cur_new_boundary_len];
+            new_boundary.push(Boundary::new(url.clone(), [upper_bound, right_bound.range[1]]));
+            upper_bound = right_bound.range[1] + 1;
         }
         self.boundary = new_boundary;
         info!("{:?}",self.boundary);
