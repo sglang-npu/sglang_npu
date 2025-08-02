@@ -448,9 +448,11 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
             device = "npu"
             enable_global_physical_experts = True
         else:
-            device = "npu"
+            device = "cuda"
 
         self._enable_global_physical_experts = enable_global_physical_experts
+        self._expert_location_metadata.num_physical_experts = self.server_args.num_external_rank * self._expert_location_metadata.num_local_physical_experts
+        
         self._data = torch.zeros(
             (
                 self._expert_location_metadata.num_layers,

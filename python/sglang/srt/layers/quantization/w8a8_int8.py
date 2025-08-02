@@ -785,8 +785,13 @@ class NPU_W8A8DynamicLinearMethodImpl:
         bias: Optional[torch.Tensor] = None,
         tp_rank: Optional[int] = 0,
     ) -> torch.Tensor:
-        original_dtype = x.dtype
-        quant_out, dynamic_scale = torch_npu.npu_dynamic_quant(x)
+
+        if isinstance(x,tuple):
+            quant_out, dynamic_scale = x[0], x[1]
+            original_dtype = torch.bfloat16
+        else:
+            original_dtype = x.dtype
+            quant_out, dynamic_scale = torch_npu.npu_dynamic_quant(x)
         return torch_npu.npu_quant_matmul(
             quant_out,
             layer.weight,
