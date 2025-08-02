@@ -20,11 +20,9 @@ from sglang.srt.layers.dp_attention import (
 )
 
 
-
 if TYPE_CHECKING:
     from sglang.srt.layers.radix_attention import RadixAttention
     from sglang.srt.model_executor.model_runner import ModelRunner
-
 
 def fa_update(all_lse, all_out):
     """
@@ -55,7 +53,7 @@ def fa_update(all_lse, all_out):
 
     # oi = lse_exp*oi (b * s * hc, hd, sp) * (b * s * hc, hd, sp)
     lse_exp = lse_exp.unsqueeze(1)
-    lse_exp = lse_exp.repeat(1, hd, sp)
+    lse_exp = lse_exp.repeat(1, hd, 1)
     all_out = all_out.reshape(-1, hd, sp)
     all_out = all_out * lse_exp
 
@@ -66,7 +64,7 @@ def fa_update(all_lse, all_out):
 
 def paged_attention_mla(
     query, #[s, head, 576]
-    key, #[-1, 128, 1, 576]
+    key_cache, #[-1, 128, 1, 576]
     num_kv_heads, #1
     num_heads, #head
     scale_value,
@@ -103,7 +101,7 @@ def paged_attention_mla(
 
         sm = softmax(qk, dim=-1) #[head S, S]
 
-        o = torch.bmm(sm, v) #[headm, S, 512]
+        o = torch.bmm(sm, v) #[head, S, 512]
         out.append(o.transpose(0, 1))
 
     out = torch.cat(out, dim=0)
@@ -174,7 +172,6 @@ class AscendAttnBackend(AttentionBackend):
             self.forward_metadata.extend_seq_lens_cpu_int = (
                 forward_batch.extend_seq_lens.cpu().int()
             )
-        self.forward_metadata.seq_lens_cpu_int = forward_batch.seq_lens_cpu.int()
 
     def get_cuda_graph_seq_len_fill_value(self):
         return 1
@@ -240,7 +237,7 @@ class AscendAttnBackend(AttentionBackend):
             if global_server_args_dict["enable_sp"] or global_server_args_dict["enable_sp_prefill"]:
                 # kv is complete, while  only 1/sp sequences are in req_to_token_pool
                 max_len = forward_batch.seq_lens.max().item()
-                batch_size = len(forward.seq_lens)
+                batch_size = len(forward_batch.seq_lens)
                 # ([[  0,  1,  2,  3,  4,  5,  6],
                 #   [  7,  8,  9, 10, 11,  0,  0],
                 #   [ 12, 13, 14, 15, 16,  0,  0]])
@@ -263,7 +260,7 @@ class AscendAttnBackend(AttentionBackend):
                     forward_batch.extend_seq_lens,
                     scaling=layer.scaling,
                     enable_gqa=use_gqa,
-                    casual=casual,
+                    casual=causal,
                 )
             else:
                 self.native_attn._run_sdpa_forward_extend(
@@ -368,14 +365,14 @@ class AscendAttnBackend(AttentionBackend):
                     key_cache=kv_c_and_k_pe_cache,
                     num_kv_heads=layer.tp_k_head_num,
                     num_heads=layer.tp_q_head_num * attn_tp_size,
-                    scaling_value=layer.scaling,
+                    scale_value=layer.scaling,
                     block_table=self.forward_metadata.block_tables,
                     context_lens=self.forward_metadata.seq_lens_cpu_int,
                     mla_vheadsize=self.kv_lora_rank,
                 )
 
                 # [S, head, head_dim + 1]
-                go_lse_output = torch.cat([go_output, lse_ouytput], dim=-1)
+                go_lse_output = torch.cat([go_output, lse_output], dim=-1)
                 go_lse_output = tensor_model_parallel_all_gather(go_lse_output, dim=0)
 
                 # [S*sp, head, head_dim] [S*sp, head, 1]
