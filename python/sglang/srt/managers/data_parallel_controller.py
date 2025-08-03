@@ -84,6 +84,8 @@ class DataParallelController:
         # Launch data parallel workers
         self.scheduler_procs = []
         self.workers = [None] * server_args.dp_size
+        self.work_req_num = [0] * server_args.dp_size
+        self.total_req_num = 0
 
         if server_args.enable_dp_attention:
             dp_port_args = self.launch_dp_attention_schedulers(server_args, port_args)
@@ -261,7 +263,10 @@ class DataParallelController:
                 logger.debug(f"Direct routing to DP rank {req.data_parallel_rank}")
                 self.workers[req.data_parallel_rank].send_pyobj(req)
             else:
-                self.workers[req.bootstrap_room % len(self.workers)].send_pyobj(req)
+                self.total_req_num = self.total_req_num + 1
+                select_result = (self.total_req_num - 1) % len(self.workers)
+                self.work_req_num[select_result] = self.work_req_num[select_result] + 1
+                self.workers[select_result].send_pyobj(req)
 
     def shortest_queue_scheduler(self, input_requests):
         raise NotImplementedError()
