@@ -1,3 +1,4 @@
+use std::cmp::max;
 use super::{get_healthy_worker_indices, BucketConfig, LoadBalancingPolicy};
 use crate::core::Worker;
 use std::collections::{HashMap, VecDeque, HashSet};
@@ -443,9 +444,8 @@ impl Bucket {
         let mut iter = worker_url.iter().peekable();
         // let mut curr_worker_id = 0;
         while let Some(url) = iter.next() {
-            info!("当前 url {:?}, last_load_idx {:?}, hist_load.len {:?}", url, last_load_index, hist_load.len());
             if last_load_index >= hist_load.len() && iter.peek().is_none() {
-                info!("adjust boundary upper_bound {:?}, load {:?}, 445", upper_bound, max_value);
+                info!("adjust boundary upper_bound {:?}, load {:?}", upper_bound, max_value);
                 new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
                 break;
             }
@@ -455,12 +455,12 @@ impl Bucket {
                 load_accumulator += load;
                 if load_accumulator >= new_single_bucket_load { // 还没装完，但是需要缩小边界
                     if i == hist_load[last_load_index..].len() - 1 && iter.peek().is_none() {
-                        info!("adjust boundary upper_bound {:?}, load {:?}, 454", upper_bound, max_value);
+                        info!("adjust boundary upper_bound {:?}, load {:?}", upper_bound, max_value);
                         new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
                         break_flag = true;
                         break;
                     }
-                    info!("adjust boundary upper_bound {:?}, load {:?}, 458", upper_bound, load);
+                    info!("adjust boundary upper_bound {:?}, load {:?}", upper_bound, load);
                     new_boundary.push(Boundary::new(url.clone(), [upper_bound, load]));
                     upper_bound = load + 1; // 下一个桶的左边界
                     last_load_index += 1;
@@ -481,6 +481,79 @@ impl Bucket {
         }
         self.boundary = new_boundary;
         info!("{:?}",self.boundary);
+    }
+
+    pub fn adjust_boundary_v2(&mut self) {
+        if self.t_req_loads.is_empty() {
+            return;
+        }
+
+        if self.bucket_cnt == 0 {
+            info!("{:?}", self.bucket_cnt);
+            return;
+        }
+
+        self.update_workers_cnt();
+
+        let worker_cnt = self.bucket_cnt;
+        let latest_buc_load_avg = self.get_total_load()/worker_cnt;
+        let earlier_buc_load_avg = self.bucket_load;
+
+        if latest_buc_load_avg <= 2 * earlier_buc_load_avg
+            && (earlier_buc_load_avg <= 2 * latest_buc_load_avg && earlier_buc_load_avg != 0)
+        {
+            info!("No need to adjust the bucket boundaries.");
+            return;
+        }
+
+        info!("Bucket boundaries before adjustment | {:?}", self.boundary);
+        self.bucket_load = latest_buc_load_avg;
+        let mut new_boundaries = Vec::new();
+
+        let mut hist_loads: Vec<usize> = self.t_req_loads.values().cloned().collect();
+        hist_loads.sort();
+
+        let max_value = usize::MAX;
+
+        let worker_urls = {
+            let guard = self.prefill_worker_urls.lock().unwrap();
+            (*guard).clone()
+        };
+
+        let mut boundary;
+        let mut left_bound: usize = 0;
+        let mut right_bound = 0;
+
+        let hist_loads_len = hist_loads.len();
+        let worker_urls_len = worker_urls.len();
+        let mut hist_load_idx = 0;
+        for (worker_url_idx, worker_url) in worker_urls.iter().enumerate() {
+            if worker_url_idx == worker_urls_len - 1 {
+                boundary = Boundary::new(worker_url.clone(), [left_bound, max_value]);
+                new_boundaries.push(boundary);
+                break;
+            }
+
+            let mut load_sum = 0;
+            while hist_load_idx < hist_loads_len {
+                let load = hist_loads[hist_load_idx];  // 通过当前索引获取元素
+                hist_load_idx += 1;
+
+                load_sum += load;
+                right_bound = load;
+
+                if load_sum >= latest_buc_load_avg {
+                    break;
+                }
+            }
+
+            boundary = Boundary::new(worker_url.clone(), [left_bound, right_bound]);
+            new_boundaries.push(boundary);
+            left_bound = right_bound + 1;
+        }
+
+        self.boundary = new_boundaries;
+        info!("Bucket boundaries after adjustment | {:?}",self.boundary);
     }
 }
 
