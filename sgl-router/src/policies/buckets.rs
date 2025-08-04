@@ -52,13 +52,13 @@ impl BucketPolicy{
     }
 
     pub fn add_prefill_url(&self, url: String) {
-        let buc = self.bucket.read().unwrap();
+        let buc = self.bucket.write().unwrap();
         let mut prefill_worker_urls = buc.prefill_worker_urls.lock().unwrap(); 
         prefill_worker_urls.push(url);
     }
 
     pub fn remove_prefill_url(&self, url:&str) {
-        let buc = self.bucket.read().unwrap();
+        let buc = self.bucket.write().unwrap();
         let mut prefill_worker_urls = buc.prefill_worker_urls.lock().unwrap();
         prefill_worker_urls.retain(|worker_url| worker_url != url);
     }
@@ -212,14 +212,14 @@ pub struct Bucket {
     pub period: usize,
     bucket_load: usize,
     boundary: Vec<Boundary>,
-    request_list: VecDeque<SequencerRequset>,
+    request_list: VecDeque<SequencerRequest>,
     t_req_loads: HashMap<String, usize>,
     pub chars_per_url: Arc<Mutex<HashMap<String,usize>>>,
 }
 
 
 #[derive(Debug, Clone)]
-pub struct SequencerRequset {
+pub struct SequencerRequest {
     pub id: String,
     pub char_cnt: usize,
     pub timestamp: SystemTime,
@@ -344,7 +344,7 @@ impl Bucket {
 
         self.t_req_loads.insert(id.clone(), char_cnt.try_into().unwrap());
 
-        self.request_list.push_back(SequencerRequset {
+        self.request_list.push_back(SequencerRequest {
             id,
             char_cnt: char_cnt.try_into().unwrap(),
             timestamp: now,
