@@ -451,15 +451,15 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
             device = "cuda"
 
         self._enable_global_physical_experts = enable_global_physical_experts
+
         num_external_rank = global_server_args_dict["num_external_rank"]
-        external_phys = num_external_rank* self._expert_location_metadata.num_local_physical_experts
-        num_physical_experts = self._expert_location_metadata.num_physical_experts - external_phys
+        self.external_phys = num_external_rank * self._expert_location_metadata.num_local_physical_experts
 
         self._data = torch.zeros(
             (
                 self._expert_location_metadata.num_layers,
                 (
-                    num_physical_experts
+                    self._expert_location_metadata.num_physical_experts
                     if enable_global_physical_experts
                     else self._expert_location_metadata.num_local_physical_experts
                 ),
@@ -476,6 +476,7 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
             global_physical_count = self._data
             if is_npu():
                 global_physical_count = torch.diff(global_physical_count,dim=-1, prepend=global_physical_count[...,:1])
+            global_physical_count[:,:self.external_phys] = 0
         else:
             # Can optimize if bottleneck
             global_physical_count = _convert_local_to_global_physical_count(
@@ -542,7 +543,8 @@ class _DeepepLowLatencySinglePassGatherer(_LayerBasedGpuSinglePassGatherer):
         self, layer_idx: int, local_physical_count_of_layer: torch.Tensor
     ):
         # Most naive implementation, can optimize later
-        self._data[layer_idx, :] += local_physical_count_of_layer
+        if self._data[layer_idx, :].shape == local_physical_count_of_layer.shape:
+            self._data[layer_idx, :] += local_physical_count_of_layer
 
 
 def _convert_local_to_global_physical_count(
