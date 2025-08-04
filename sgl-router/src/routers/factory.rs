@@ -66,9 +66,6 @@ impl RouterFactory {
         let decode_policy =
             PolicyFactory::create_from_config(decode_policy_config.unwrap_or(main_policy_config));
 
-        info!("prefill_policy {:?}", prefill_policy);
-        info!("decode_policy {:?}", decode_policy);
-
         // Create PD router with separate policies
         let router = PDRouter::new(
             prefill_urls.to_vec(),

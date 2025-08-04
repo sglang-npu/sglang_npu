@@ -259,17 +259,18 @@ impl PDRouter {
             None
         };
 
-        info!("router 262!!! {:?}", prefill_policy);
+        info!("Current prefill_policy | {:?}", prefill_policy);
         if prefill_policy.name() == "bucket" {
-            info!("router 264!!!");
             if let Some(bucket_policy) = prefill_policy
                 .as_any()
                 .downcast_ref::<crate::policies::BucketPolicy>()
             {
-                info!("bucket_policy init prefill worker urls!!! 269!!!");
+                info!("Bucket_policy begin init prefill worker urls.");
                 bucket_policy.init_prefill_worker_urls(&prefill_workers);
             }
         }
+
+        info!("After bucket policy init, current prefill_workers | {:?}", prefill_workers);
 
         // Set up background load monitoring for power-of-two selection
         let (tx, rx) = tokio::sync::watch::channel(HashMap::new());
@@ -815,7 +816,7 @@ impl PDRouter {
 
         let prefill = prefill_workers[prefill_idx].clone_worker();
         let decode = decode_workers[decode_idx].clone_worker();
-        info!("prefill instance: [{:?}], decode instance: [{:?}]", prefill.url(), decode.url());
+        info!("select pd pair successful, prefill instance: [{:?}], decode instance: [{:?}]", prefill.url(), decode.url());
         Ok((prefill, decode))
     }
 

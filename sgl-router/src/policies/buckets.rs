@@ -1,4 +1,3 @@
-use std::cmp::max;
 use super::{get_healthy_worker_indices, BucketConfig, LoadBalancingPolicy};
 use crate::core::Worker;
 use std::collections::{HashMap, VecDeque, HashSet};
@@ -96,8 +95,9 @@ impl LoadBalancingPolicy for BucketPolicy {
         //Load balancing is triggered when (max_load - min_load) > abs_threshold AND max_load > min_load * rel_threshold.
         // balance_abs_threshold = 1
         let is_imbalanced = abs_diff > self.config.balance_abs_threshold && max_load as f32 > rel_threshold;
-        info!("is_imbalanced:{}", is_imbalanced);
+        info!("Current PD instance status | is_imbalanced={}", is_imbalanced);
         let prefill_url = if is_imbalanced {
+            info!("select prefill instance by Load Balance policy");
             let min_url = chars_per_url_snapshot
                 .iter()
                 .min_by_key(|(_, &chars)| chars)
@@ -110,6 +110,7 @@ impl LoadBalancingPolicy for BucketPolicy {
                 });
             min_url
         } else {
+            info!("select prefill instance by Bucket policy");
             if choiced_url_snapshot.is_empty() {
                 let prefill_idx = rand::random::<usize>() % prefill_list.len();
                 let selected_url = prefill_list[prefill_idx].url();
@@ -310,7 +311,6 @@ impl Bucket {
     }
 
     pub fn post_process_request(&mut self, char_cnt: usize, prefill_url: String) {
-        info!("router 310!!!");
         {
             let mut map = self.chars_per_url.lock().unwrap();
             *map.entry(prefill_url.clone())
@@ -375,11 +375,9 @@ impl Bucket {
             } else if char_count > range[1] {
                 left = mid + 1;
             } else {
-                info!("router 374");
                 return self.boundary[mid].url.clone();
             }
         }
-        info!("router 378");
         "".to_string()
     }
 
@@ -407,16 +405,13 @@ impl Bucket {
     }
 
     pub fn adjust_boundary(&mut self) {
-        info!("{:?}",self.boundary);
         if self.t_req_loads.is_empty() {
             return;
         }
 
         if self.bucket_cnt == 0 {
-            info!("{:?}", self.bucket_cnt);
             return;
         }
-        info!("router -- 412");
         self.update_workers_cnt();
         let worker_cnt = self.bucket_cnt;
         let new_single_bucket_load = self.get_total_load()/worker_cnt;
@@ -425,9 +420,11 @@ impl Bucket {
         if new_single_bucket_load <= 2 * old_single_bucket_load
             && (old_single_bucket_load <= 2 * new_single_bucket_load && old_single_bucket_load != 0)
         {
+            info!("No need to adjust the bucket boundaries.");
             return;
         }
 
+        info!("Before adjusting boundary | {:?}",self.boundary);
         self.bucket_load = new_single_bucket_load;
         let mut new_boundary = Vec::new();
         let mut hist_load: Vec<usize> = self.t_req_loads.values().cloned().collect();
@@ -445,7 +442,6 @@ impl Bucket {
         // let mut curr_worker_id = 0;
         while let Some(url) = iter.next() {
             if last_load_index >= hist_load.len() && iter.peek().is_none() {
-                info!("adjust boundary upper_bound {:?}, load {:?}", upper_bound, max_value);
                 new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
                 break;
             }
@@ -453,16 +449,20 @@ impl Bucket {
             let mut break_flag = false;
             for (i, &load) in hist_load[last_load_index..].iter().enumerate() {
                 load_accumulator += load;
-                if load_accumulator >= new_single_bucket_load { // 还没装完，但是需要缩小边界
-                    if i == hist_load[last_load_index..].len() - 1 && iter.peek().is_none() {
-                        info!("adjust boundary upper_bound {:?}, load {:?}", upper_bound, max_value);
+                if load_accumulator >= new_single_bucket_load {
+                    if iter.peek().is_none() {
                         new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
                         break_flag = true;
                         break;
                     }
-                    info!("adjust boundary upper_bound {:?}, load {:?}", upper_bound, load);
-                    new_boundary.push(Boundary::new(url.clone(), [upper_bound, load]));
-                    upper_bound = load + 1; // 下一个桶的左边界
+                    let mut real_load = upper_bound + new_single_bucket_load;
+                    if (load <= upper_bound) {
+                        new_boundary.push(Boundary::new(url.clone(), [upper_bound, real_load]));
+                        upper_bound = real_load + 1;
+                    } else {
+                        new_boundary.push(Boundary::new(url.clone(), [upper_bound, load]));
+                        upper_bound = load + 1;
+                    }
                     last_load_index += 1;
                     break_flag = true;
                     break;
@@ -480,7 +480,7 @@ impl Bucket {
             }
         }
         self.boundary = new_boundary;
-        info!("{:?}",self.boundary);
+        info!("After adjusting boundary | {:?}",self.boundary);
     }
 
     pub fn adjust_boundary_v2(&mut self) {
@@ -489,7 +489,6 @@ impl Bucket {
         }
 
         if self.bucket_cnt == 0 {
-            info!("{:?}", self.bucket_cnt);
             return;
         }
 
