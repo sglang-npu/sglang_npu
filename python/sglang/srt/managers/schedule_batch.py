@@ -1461,7 +1461,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
                         (req_pool_indices[i], slice(prefix_lens[i], seq_lens_sp)),
                         loc_origin[pt : pt + extend_lens_sp],
                     )
-                    pt += extend_lens[i]
+                    pt += extend_lens_sp
                 else:
                     self.req_to_token_pool.write(
                         (req_pool_indices[i], slice(prefix_lens[i], seq_lens[i])),

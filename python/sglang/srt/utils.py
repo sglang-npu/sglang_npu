@@ -2867,14 +2867,14 @@ def get_sp_page_range(sp_size, sp_rank, total_page_num):
         start_page = sp_rank * (base_page + 1)
     else:
         sp_page_num = base_page
-        start_page = extra *(base_page + 1) * (sp_rank - extra) * base_page
+        start_page = extra *(base_page + 1) + (sp_rank - extra) * base_page
     end_page = start_page + sp_page_num - 1
     return start_page, end_page
 
 # Calculate sequence will use the number of sp_rank
 def get_sp_device_nums(seq_len, page_size, sp_size):
     total_page_num = (seq_len + page_size) // page_size
-    base_page = total_page_num // page_size
+    base_page = total_page_num // sp_size
     extra = total_page_num % sp_size
     if base_page >= 1:
         return sp_size
