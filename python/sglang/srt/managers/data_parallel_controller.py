@@ -18,6 +18,7 @@ import multiprocessing as mp
 import signal
 import threading
 import time
+import random
 from enum import Enum, auto
 
 import psutil
@@ -110,7 +111,7 @@ class DataParallelController:
 
         self.dp_load = {dp_rank: 0 for dp_rank in range(server_args.dp_size)}
         self.lock = threading.Lock()
-        self.dp_load_internal = 5
+        self.dp_load_internal = 1
         if self.load_balance_method == LoadBalanceMethod.DP_LOAD:
             self.receive_thread = threading.Thread(target=self.send_get_load_req_thread)
             self.receive_thread.start()
@@ -297,8 +298,10 @@ class DataParallelController:
             self.workers[req.data_parallel_rank].send_pyobj(req)
         else:
             dp_load = self.get_dp_load()
-            lowest_load_rank = int(min(dp_load, key=self.dp_load.get))
-            logger.info(
+            min_load = min(dp_load.values())
+            lowest_load_ranks = [rank for rank, value in dp_load.items() if value == min_load]
+            lowest_load_rank = random.choice(lowest_load_ranks)
+            logger.debug(
                 f"Routing req to DP rank {lowest_load_rank}, dp load is {self.get_dp_load()}"
             )
             self.workers[lowest_load_rank].send_pyobj(req)
