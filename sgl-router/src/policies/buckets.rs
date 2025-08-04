@@ -534,8 +534,9 @@ impl Bucket {
             }
 
             let mut load_sum = 0;
+            let mut load = 0;
             while hist_load_idx < hist_loads_len {
-                let load = hist_loads[hist_load_idx];  // 通过当前索引获取元素
+                load = hist_loads[hist_load_idx];  // 通过当前索引获取元素
                 hist_load_idx += 1;
 
                 load_sum += load;
