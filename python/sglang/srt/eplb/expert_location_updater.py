@@ -53,7 +53,7 @@ class ExpertLocationUpdater:
             torch.cuda.empty_cache()
 
         old_expert_location_metadata = get_global_expert_location_metadata()
-        if rank >= global_server_args_dict["num_external_rank"]
+        if rank >= global_server_args_dict["num_external_rank"]:
             _update_expert_weights(
                 routed_experts_weights_of_layer=routed_experts_weights_of_layer,
                 old_expert_location_metadata=old_expert_location_metadata,
