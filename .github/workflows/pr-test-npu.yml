@@ -130,12 +130,43 @@ jobs:
           cd test/srt
           python3 run_suite.py --suite per-commit-4-ascend-npu --timeout-per-file 3600
 
+  per-commit-5-ascend-npu:
+    if: (github.repository == 'sglang-npu/sglang_npu' || github.event_name == 'pull_request') &&
+        github.event.pull_request.draft == false
+    strategy:
+      matrix:
+        runner: [linux-aarch64-a3-node0, linux-aarch64-a3-node1, linux-aarch64-a3-node2, linux-aarch64-a3-node3]
+    runs-on: ${{matrix.runner}}
+    steps:
+      - name: Pre-config git access token
+        run: |
+          # as we use a proxy but checkout@v4 only set basic auth header for github.com
+          # so we set the extraheader manually
+          TOKEN=`echo -n "x-access-token:${{ secrets.GITHUB_TOKEN}}"|base64`
+          git config --global http.https://gh-proxy.test.osinfra.cn/.extraheader "AUTHORIZATION: basic $TOKEN"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Start CI container
+        run: bash scripts/npu_ci_a3_start_container.sh
+
+      - name: Run test
+        timeout-minutes: 30
+        env:
+          SGLANG_USE_MODELSCOPE: true
+          SGLANG_IS_IN_CI: true
+          HF_ENDPOINT: https://hf-mirror.com
+        run: |
+          bash scripts/npu_ci_exec.sh python3 test_ascend_disaggregation_deepep.py
+
   finish:
     if: always()
     needs:
       - per-commit-1-ascend-npu
       - per-commit-2-ascend-npu
       - per-commit-4-ascend-npu
+      - per-commit-5-ascend-npu
     runs-on: ubuntu-latest
     steps:
       - name: Check all dependent job statuses
