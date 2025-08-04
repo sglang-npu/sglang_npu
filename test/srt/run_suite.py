@@ -161,6 +161,9 @@ suites = {
     "per-commit-4-ascend-npu": [
         TestFile("test_ascend_mla_w8a8int8.py", 400),
     ],
+    "per-commit-ascend-npu-ascendep": [
+        TestFile("test_ascend_disaggregation_deepep.py", 300),
+    ],
     "per-commit-2-gpu": [
         TestFile("models/lora/test_lora_tp.py", 116),
         TestFile("test_data_parallelism.py", 73),
