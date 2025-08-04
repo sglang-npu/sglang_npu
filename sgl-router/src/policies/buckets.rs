@@ -53,7 +53,7 @@ impl BucketPolicy{
 
     pub fn add_prefill_url(&self, url: String) {
         let buc = self.bucket.write().unwrap();
-        let mut prefill_worker_urls = buc.prefill_worker_urls.lock().unwrap(); 
+        let mut prefill_worker_urls = buc.prefill_worker_urls.lock().unwrap();
         prefill_worker_urls.push(url);
     }
 
@@ -118,7 +118,7 @@ impl LoadBalancingPolicy for BucketPolicy {
                 choiced_url_snapshot
             }
         };
-        
+
         {
             let mut buc = buc_arc.write().unwrap();
             buc.post_process_request(char_count, prefill_url.clone());
@@ -181,7 +181,7 @@ impl LoadBalancingPolicy for BucketPolicy {
                 choiced_url_snapshot
             }
         };
-        
+
         {
             let mut buc = buc_arc.write().unwrap();
             buc.post_process_request(char_count, prefill_url.clone());
@@ -189,7 +189,7 @@ impl LoadBalancingPolicy for BucketPolicy {
 
         let prefill_idx = prefill_list.iter().position(|w| w.url() == prefill_url)?;
         let decode_idx = rand::random::<usize>() % decode_list.len();
- 
+
 
         Some((prefill_idx, decode_idx))
     }
@@ -242,9 +242,9 @@ impl Boundary {
 impl Bucket {
     pub fn new(period: usize) -> Self {
         let l_max = 4096;
-        
+
         let bucket_cnt = 0;
-        
+
         let load_total = 0;
         let bucket_load = 0;
 
@@ -471,10 +471,11 @@ impl Bucket {
                 }
             }
             if !break_flag {
-                let cur_new_boundary_len = new_boundary.len();
-                let right_bound = &self.boundary[cur_new_boundary_len];
-                new_boundary.push(Boundary::new(url.clone(), [upper_bound, right_bound.range[1]]));
-                upper_bound = right_bound.range[1] + 1;
+                let right_bound_value = upper_bound + new_single_bucket_load;
+                if iter.peek().is_none():
+                    right_bound_value = max_value
+                new_boundary.push(Boundary::new(url.clone(), [upper_bound, right_bound_value]));
+                upper_bound = right_bound_value + 1;
             }
         }
         self.boundary = new_boundary;
@@ -504,26 +505,26 @@ mod tests {
                 WorkerType::Regular,
             )),
         ];
-        
+
         let decode_workers: Vec<Box<dyn Worker>> = vec![
             Box::new(BasicWorker::new(
                 "http://w3:8000".to_string(),
                 WorkerType::Regular,
             )),
         ];
-        
+
         // Initialize the policy with prefill_workers
         policy.init_prefill_worker_urls(&prefill_workers);
-        
-        // First request should be distributed. 
+
+        // First request should be distributed.
         let (idx1, _) = policy.select_worker_pair(&prefill_workers, &decode_workers, Some("hello world")).unwrap();
         // idx1 prefill worker's load is 11. Load is balanced, so use bucket scheduler. idx2 should be the same with idx1.
         let (idx2, _) = policy.select_worker_pair(&prefill_workers, &decode_workers, Some("hello world")).unwrap();
-        
+
         assert_eq!(idx1, idx2);
         // idx1 prefill worker's load is 22. Load is imbalanced, so use load balance scheduler. idx3 should not be the same with idx1.
         let (idx3, _) = policy.select_worker_pair(&prefill_workers, &decode_workers, Some("hello world")).unwrap();
-        
+
         assert_ne!(idx1, idx3);
     }
 

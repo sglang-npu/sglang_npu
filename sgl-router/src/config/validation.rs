@@ -161,12 +161,19 @@ impl ConfigValidator {
                         reason: "Must be >= 1.0".to_string(),
                     });
                 }
-    
+
                 if *bucket_adjust_interval_secs < 1 {
                     return Err(ConfigError::InvalidValue {
                         field: "bucket_adjust_interval_secs".to_string(),
                         value: bucket_adjust_interval_secs.to_string(),
                         reason: "Must be >= 1s".to_string(),
+                    });
+                }
+                if *bucket_adjust_interval_secs >= 4294967296 {
+                    return Err(ConfigError::InvalidValue {
+                        field: "bucket_adjust_interval_secs".to_string(),
+                        value: bucket_adjust_interval_secs.to_string(),
+                        reason: "Must be < 4294967296s".to_string(),
                     });
                 }
             }
