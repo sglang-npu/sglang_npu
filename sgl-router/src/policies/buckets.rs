@@ -472,8 +472,9 @@ impl Bucket {
             }
             if !break_flag {
                 let right_bound_value = upper_bound + new_single_bucket_load;
-                if iter.peek().is_none():
+                if iter.peek().is_none() {
                     right_bound_value = max_value
+                }
                 new_boundary.push(Boundary::new(url.clone(), [upper_bound, right_bound_value]));
                 upper_bound = right_bound_value + 1;
             }
