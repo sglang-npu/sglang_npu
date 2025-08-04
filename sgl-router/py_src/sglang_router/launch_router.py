@@ -110,14 +110,14 @@ class RouterArgs:
             f"--{prefix}policy",
             type=str,
             default=RouterArgs.policy,
-            choices=["random", "round_robin", "cache_aware", "power_of_two", "bucket"],
+            choices=["random", "round_robin", "cache_aware", "power_of_two"],
             help="Load balancing policy to use. In PD mode, this is used for both prefill and decode unless overridden",
         )
         parser.add_argument(
             f"--{prefix}prefill-policy",
             type=str,
             default=None,
-            choices=["random", "round_robin", "cache_aware", "power_of_two"],
+            choices=["random", "round_robin", "cache_aware", "power_of_two", "bucket"],
             help="Specific policy for prefill nodes in PD mode. If not specified, uses the main policy",
         )
         parser.add_argument(

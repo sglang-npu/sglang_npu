@@ -259,11 +259,14 @@ impl PDRouter {
             None
         };
 
+        info!("router 262!!! {:?}", prefill_policy);
         if prefill_policy.name() == "bucket" {
+            info!("router 264!!!");
             if let Some(bucket_policy) = prefill_policy
                 .as_any()
                 .downcast_ref::<crate::policies::BucketPolicy>()
             {
+                info!("bucket_policy init prefill worker urls!!! 269!!!");
                 bucket_policy.init_prefill_worker_urls(&prefill_workers);
             }
         }
@@ -774,6 +777,7 @@ impl PDRouter {
     }
 
     // Select a pair of prefill and decode servers
+    // Select a pair of prefill and decode servers
     async fn select_pd_pair(
         &self,
         _client: &reqwest::Client,
@@ -811,6 +815,7 @@ impl PDRouter {
 
         let prefill = prefill_workers[prefill_idx].clone_worker();
         let decode = decode_workers[decode_idx].clone_worker();
+        info!("prefill instance: [{:?}], decode instance: [{:?}]", prefill.url(), decode.url());
         Ok((prefill, decode))
     }
 

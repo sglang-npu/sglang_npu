@@ -93,6 +93,7 @@ impl LoadBalancingPolicy for BucketPolicy {
         let rel_threshold = self.config.balance_rel_threshold * min_load as f32;
 
         //Load balancing is triggered when (max_load - min_load) > abs_threshold AND max_load > min_load * rel_threshold.
+        // balance_abs_threshold = 1
         let is_imbalanced = abs_diff > self.config.balance_abs_threshold && max_load as f32 > rel_threshold;
         info!("is_imbalanced:{}", is_imbalanced);
         let prefill_url = if is_imbalanced {
@@ -288,6 +289,7 @@ impl Bucket {
             Vec::new()
         } else {
             let gap = self.l_max / worker_cnt as usize;
+            self.l_max = usize::MAX;
             prefill_worker_urls
                 .iter()
                 .enumerate()
@@ -307,6 +309,7 @@ impl Bucket {
     }
 
     pub fn post_process_request(&mut self, char_cnt: usize, prefill_url: String) {
+        info!("router 310!!!");
         {
             let mut map = self.chars_per_url.lock().unwrap();
             *map.entry(prefill_url.clone())
@@ -371,9 +374,11 @@ impl Bucket {
             } else if char_count > range[1] {
                 left = mid + 1;
             } else {
+                info!("router 374");
                 return self.boundary[mid].url.clone();
             }
         }
+        info!("router 378");
         "".to_string()
     }
 
@@ -406,6 +411,11 @@ impl Bucket {
             return;
         }
 
+        if self.bucket_cnt == 0 {
+            info!("{:?}", self.bucket_cnt);
+            return;
+        }
+        info!("router -- 412");
         self.update_workers_cnt();
         let worker_cnt = self.bucket_cnt;
         let new_single_bucket_load = self.get_total_load()/worker_cnt;
@@ -429,28 +439,42 @@ impl Bucket {
             let guard = self.prefill_worker_urls.lock().unwrap();
             (*guard).clone()
         };
+
         let mut iter = worker_url.iter().peekable();
+        // let mut curr_worker_id = 0;
         while let Some(url) = iter.next() {
-            if last_load_index >= hist_load.len() {
+            info!("当前 url {:?}, last_load_idx {:?}, hist_load.len {:?}", url, last_load_index, hist_load.len());
+            if last_load_index >= hist_load.len() && iter.peek().is_none() {
+                info!("adjust boundary upper_bound {:?}, load {:?}, 445", upper_bound, max_value);
                 new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
                 break;
             }
             let mut load_accumulator = 0;
+            let mut break_flag = false;
             for (i, &load) in hist_load[last_load_index..].iter().enumerate() {
-
                 load_accumulator += load;
-                if load_accumulator >= new_single_bucket_load {
+                if load_accumulator >= new_single_bucket_load { // 还没装完，但是需要缩小边界
                     if i == hist_load[last_load_index..].len() - 1 && iter.peek().is_none() {
+                        info!("adjust boundary upper_bound {:?}, load {:?}, 454", upper_bound, max_value);
                         new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
+                        break_flag = true;
                         break;
                     }
+                    info!("adjust boundary upper_bound {:?}, load {:?}, 458", upper_bound, load);
                     new_boundary.push(Boundary::new(url.clone(), [upper_bound, load]));
-                    upper_bound = load + 1;
-                    last_load_index += i + 1;
+                    upper_bound = load + 1; // 下一个桶的左边界
+                    last_load_index += 1;
+                    break_flag = true;
                     break;
                 } else {
                     last_load_index += 1;
                 }
+            }
+            if !break_flag {
+                let cur_new_boundary_len = new_boundary.len();
+                let right_bound = &self.boundary[cur_new_boundary_len];
+                new_boundary.push(Boundary::new(url.clone(), [upper_bound, right_bound.range[1]]));
+                upper_bound = right_bound.range[1] + 1;
             }
         }
         self.boundary = new_boundary;
