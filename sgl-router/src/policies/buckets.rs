@@ -97,6 +97,7 @@ impl LoadBalancingPolicy for BucketPolicy {
         let is_imbalanced = abs_diff > self.config.balance_abs_threshold && max_load as f32 > rel_threshold;
         info!("is_imbalanced:{}", is_imbalanced);
         let prefill_url = if is_imbalanced {
+            info!("Load balance policy");
             let min_url = chars_per_url_snapshot
                 .iter()
                 .min_by_key(|(_, &chars)| chars)
@@ -109,6 +110,7 @@ impl LoadBalancingPolicy for BucketPolicy {
                 });
             min_url
         } else {
+            info!("Bucket policy");
             if choiced_url_snapshot.is_empty() {
                 let prefill_idx = rand::random::<usize>() % prefill_list.len();
                 let selected_url = prefill_list[prefill_idx].url();
@@ -309,7 +311,6 @@ impl Bucket {
     }
 
     pub fn post_process_request(&mut self, char_cnt: usize, prefill_url: String) {
-        info!("router 310!!!");
         {
             let mut map = self.chars_per_url.lock().unwrap();
             *map.entry(prefill_url.clone())
@@ -374,11 +375,9 @@ impl Bucket {
             } else if char_count > range[1] {
                 left = mid + 1;
             } else {
-                info!("router 374");
                 return self.boundary[mid].url.clone();
             }
         }
-        info!("router 378");
         "".to_string()
     }
 
@@ -406,16 +405,14 @@ impl Bucket {
     }
 
     pub fn adjust_boundary(&mut self) {
-        info!("{:?}",self.boundary);
+        info!("Before adjusting boundary{:?}",self.boundary);
         if self.t_req_loads.is_empty() {
             return;
         }
 
         if self.bucket_cnt == 0 {
-            info!("{:?}", self.bucket_cnt);
             return;
         }
-        info!("router -- 412");
         self.update_workers_cnt();
         let worker_cnt = self.bucket_cnt;
         let new_single_bucket_load = self.get_total_load()/worker_cnt;
@@ -443,9 +440,7 @@ impl Bucket {
         let mut iter = worker_url.iter().peekable();
         // let mut curr_worker_id = 0;
         while let Some(url) = iter.next() {
-            info!("当前 url {:?}, last_load_idx {:?}, hist_load.len {:?}", url, last_load_index, hist_load.len());
             if last_load_index >= hist_load.len() && iter.peek().is_none() {
-                info!("adjust boundary upper_bound {:?}, load {:?}, 445", upper_bound, max_value);
                 new_boundary.push(Boundary::new(url.clone(), [upper_bound, max_value]));
                 break;
             }
@@ -484,7 +479,7 @@ impl Bucket {
             }
         }
         self.boundary = new_boundary;
-        info!("{:?}",self.boundary);
+        info!("After adjusting boundary: {:?}",self.boundary);
     }
 }
 
