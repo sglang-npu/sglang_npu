@@ -471,7 +471,7 @@ impl Bucket {
                 }
             }
             if !break_flag {
-                let right_bound_value = upper_bound + new_single_bucket_load;
+                let mut right_bound_value = upper_bound + new_single_bucket_load;
                 if iter.peek().is_none() {
                     right_bound_value = max_value
                 }
