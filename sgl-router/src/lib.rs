@@ -4,6 +4,7 @@ pub mod logging;
 use std::collections::HashMap;
 pub mod core;
 pub mod metrics;
+pub mod middleware;
 pub mod openai_api_types;
 pub mod policies;
 pub mod routers;
@@ -36,6 +37,8 @@ struct Router {
     eviction_interval_secs: u64,
     max_tree_size: usize,
     max_payload_size: usize,
+    dp_aware: bool,
+    api_key: Option<String>,
     log_dir: Option<String>,
     log_level: Option<String>,
     service_discovery: bool,
@@ -49,6 +52,7 @@ struct Router {
     prometheus_port: Option<u16>,
     prometheus_host: Option<String>,
     request_timeout_secs: u64,
+    request_id_headers: Option<Vec<String>>,
     // PD mode flag
     pd_disaggregation: bool,
     // PD-specific fields (only used when pd_disaggregation is true)
@@ -56,6 +60,9 @@ struct Router {
     decode_urls: Option<Vec<String>>,
     prefill_policy: Option<PolicyType>,
     decode_policy: Option<PolicyType>,
+    // Additional server config fields
+    max_concurrent_requests: usize,
+    cors_allowed_origins: Vec<String>,
 }
 
 impl Router {
@@ -134,10 +141,15 @@ impl Router {
             request_timeout_secs: self.request_timeout_secs,
             worker_startup_timeout_secs: self.worker_startup_timeout_secs,
             worker_startup_check_interval_secs: self.worker_startup_check_interval,
+            dp_aware: self.dp_aware,
+            api_key: self.api_key.clone(),
             discovery,
             metrics,
             log_dir: self.log_dir.clone(),
             log_level: self.log_level.clone(),
+            request_id_headers: self.request_id_headers.clone(),
+            max_concurrent_requests: self.max_concurrent_requests,
+            cors_allowed_origins: self.cors_allowed_origins.clone(),
         })
     }
 }
@@ -158,6 +170,8 @@ impl Router {
         eviction_interval_secs = 60,
         max_tree_size = 2usize.pow(24),
         max_payload_size = 256 * 1024 * 1024,  // 256MB default for large batches
+        dp_aware = false,
+        api_key = None,
         log_dir = None,
         log_level = None,
         service_discovery = false,
@@ -170,11 +184,14 @@ impl Router {
         prometheus_port = None,
         prometheus_host = None,
         request_timeout_secs = 600,  // Add configurable request timeout
+        request_id_headers = None,  // Custom request ID headers
         pd_disaggregation = false,  // New flag for PD mode
         prefill_urls = None,
         decode_urls = None,
         prefill_policy = None,
-        decode_policy = None
+        decode_policy = None,
+        max_concurrent_requests = 64,
+        cors_allowed_origins = vec![]
     ))]
     fn new(
         worker_urls: Vec<String>,
@@ -189,6 +206,8 @@ impl Router {
         eviction_interval_secs: u64,
         max_tree_size: usize,
         max_payload_size: usize,
+        dp_aware: bool,
+        api_key: Option<String>,
         log_dir: Option<String>,
         log_level: Option<String>,
         service_discovery: bool,
@@ -201,11 +220,14 @@ impl Router {
         prometheus_port: Option<u16>,
         prometheus_host: Option<String>,
         request_timeout_secs: u64,
+        request_id_headers: Option<Vec<String>>,
         pd_disaggregation: bool,
         prefill_urls: Option<Vec<(String, Option<u16>)>>,
         decode_urls: Option<Vec<String>>,
         prefill_policy: Option<PolicyType>,
         decode_policy: Option<PolicyType>,
+        max_concurrent_requests: usize,
+        cors_allowed_origins: Vec<String>,
     ) -> PyResult<Self> {
         Ok(Router {
             host,
@@ -220,6 +242,8 @@ impl Router {
             eviction_interval_secs,
             max_tree_size,
             max_payload_size,
+            dp_aware,
+            api_key,
             log_dir,
             log_level,
             service_discovery,
@@ -232,11 +256,14 @@ impl Router {
             prometheus_port,
             prometheus_host,
             request_timeout_secs,
+            request_id_headers,
             pd_disaggregation,
             prefill_urls,
             decode_urls,
             prefill_policy,
             decode_policy,
+            max_concurrent_requests,
+            cors_allowed_origins,
         })
     }
 
@@ -297,6 +324,7 @@ impl Router {
                 service_discovery_config,
                 prometheus_config,
                 request_timeout_secs: self.request_timeout_secs,
+                request_id_headers: self.request_id_headers.clone(),
             })
             .await
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
