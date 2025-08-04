@@ -489,9 +489,11 @@ mod tests {
     use crate::core::{BasicWorker, WorkerType};
 
     #[tokio::test]
-    async fn test_bucket() {
+    async fn test_load_balancing_conditions() {
+        // Test 1: Basic load balancing trigger
         let config = BucketConfig {
             balance_abs_threshold: 15,
+            balance_rel_threshold: 2.0,
             ..Default::default()
         };
         let policy = BucketPolicy::with_config(config);
@@ -516,16 +518,48 @@ mod tests {
         // Initialize the policy with prefill_workers
         policy.init_prefill_worker_urls(&prefill_workers);
 
-        // First request should be distributed.
-        let (idx1, _) = policy.select_worker_pair(&prefill_workers, &decode_workers, Some("hello world")).unwrap();
-        // idx1 prefill worker's load is 11. Load is balanced, so use bucket scheduler. idx2 should be the same with idx1.
-        let (idx2, _) = policy.select_worker_pair(&prefill_workers, &decode_workers, Some("hello world")).unwrap();
+        // Initial requests - should use backet scheduling
+        let idx1 = policy.select_worker(&prefill_workers, Some("hello world")).unwrap();
+        let idx2 = policy.select_worker(&prefill_workers, Some("hello world")).unwrap();
+        assert_eq!(idx1, idx2, "First two requests should go to the same worker");
 
-        assert_eq!(idx1, idx2);
-        // idx1 prefill worker's load is 22. Load is imbalanced, so use load balance scheduler. idx3 should not be the same with idx1.
-        let (idx3, _) = policy.select_worker_pair(&prefill_workers, &decode_workers, Some("hello world")).unwrap();
+        // Third request -should trigger load balancing
+        let idx3 = policy.select_worker(&prefill_workers, Some("hello world")).unwrap();
+        assert_ne!(idx1, idx3, "When imbalanced, the request should go to a different worker");
 
-        assert_ne!(idx1, idx3);
+        // Test 2: Not triggering when absolute threshold not met
+        let config = BucketConfig {
+            balance_abs_threshold: 30,
+            balance_rel_threshold: 2.0,
+            ..Default::default()
+        };
+        let policy = BucketPolicy::with_config(config);
+        policy.init_prefill_worker_urls(&prefill_workers);
+
+        // Create load difference (but below absolute threshold)
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(20))).unwrap(); // worker1: 20
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(8))).unwrap(); // worker1: 8
+
+        // Next request should not use bucket scheduling (no load balancing)
+        let idx = policy.select_worker(&prefill_workers, Some("request")).unwrap();
+        assert_eq!(idx, 0, "Should not trigger load balancing when relative threshold not met");
+        
+        // Test 3: Not triggering when relative threshold not met
+        let config = BucketConfig {
+            balance_abs_threshold: 5,
+            balance_rel_threshold: 3.0,
+            ..Default::default()
+        };
+        let policy = BucketPolicy::with_config(config);
+        policy.init_prefill_worker_urls(&prefill_workers);
+
+        // Create load difference (but relative threshold not met)
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(15))).unwrap(); // worker1: 15
+        policy.select_worker(&prefill_workers, Some("short")).unwrap(); // worker2: 5
+
+        // Next request should not use bucket scheduling (no load balancing)
+        let idx = policy.select_worker(&prefill_workers, Some("request")).unwrap();
+        assert_eq!(idx, 0, "Should not trigger load balancing when relative threshold not met");
     }
 
     #[tokio::test]
