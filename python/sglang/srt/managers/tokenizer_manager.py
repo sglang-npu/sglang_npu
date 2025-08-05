@@ -515,7 +515,22 @@ class TokenizerManager:
                     "accept text prompts. Please provide input_ids or re-initialize "
                     "the engine with skip_tokenizer_init=False."
                 )
-            if self.server_args.enable_sp:
+            if self.server_args.cp_size > 1:
+                print("need padding")
+                max_length = self.server_args.cp_size * 2
+                encoded = self.tokenizer(
+                    input_text,
+                    return_token_type_ids=is_cross_encoder_request,
+                    padding='max_length',
+                    max_length=max_length,
+                )
+                input_ids = encoded["input_ids"]
+                input_length = len(input_ids)
+                new_length = ((input_length + max_length - 1) // max_length) * max_length
+                input_ids = [1] * (new_length - input_length) + input_ids
+                encoded["input_ids"] = input_ids
+                
+            elif self.server_args.enable_sp:
                 encoded = self.tokenizer(
                     input_text,
                     return_token_type_ids=is_cross_encoder_request,

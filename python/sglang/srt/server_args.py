@@ -132,6 +132,9 @@ class ServerArgs:
     dp_size: int = 1
     load_balance_method: str = "round_robin"
 
+    # Context parallelism
+    cp_size: int = 1
+
     # Multi-node distributed serving
     dist_init_addr: Optional[str] = None
     nnodes: int = 1
@@ -1133,6 +1136,15 @@ class ServerArgs:
             ],
         )
 
+        # Context parallelism
+        parser.add_argument(
+            "--context-parallel-size",
+            "--cp-size",
+            type=int,
+            default=ServerArgs.cp_size,
+            help="The context parallelism size.",
+        )
+
         # Multi-node distributed serving
         parser.add_argument(
             "--dist-init-addr",
@@ -1789,6 +1801,7 @@ class ServerArgs:
         args.tp_size = args.tensor_parallel_size
         args.pp_size = args.pipeline_parallel_size
         args.dp_size = args.data_parallel_size
+        args.cp_size = args.context_parallel_size
         args.ep_size = args.expert_parallel_size
         attrs = [attr.name for attr in dataclasses.fields(cls)]
         return cls(**{attr: getattr(args, attr) for attr in attrs})

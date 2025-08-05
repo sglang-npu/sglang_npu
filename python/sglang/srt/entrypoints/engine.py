@@ -698,7 +698,7 @@ def _launch_subprocesses(
     )
 
     scheduler_procs = []
-    if server_args.dp_size == 1:
+    if server_args.dp_size == 1 and server_args.cp_size == 1:
         memory_saver_adapter = TorchMemorySaverAdapter.create(
             enable=server_args.enable_memory_saver
         )
@@ -733,6 +733,7 @@ def _launch_subprocesses(
                         gpu_id,
                         tp_rank,
                         pp_rank,
+                        None,
                         None,
                         writer,
                     ),

@@ -94,6 +94,7 @@ def initialize_dp_attention(
     dp_size: int,
     moe_dense_tp_size: int,
     pp_size: int,
+    cp_size: int,
 ):
     global _ATTN_TP_GROUP, _ATTN_TP_RANK, _ATTN_TP_SIZE, _ATTN_DP_RANK, _ATTN_DP_SIZE
     global _LOCAL_ATTN_DP_SIZE, _LOCAL_ATTN_DP_RANK
@@ -116,12 +117,13 @@ def initialize_dp_attention(
     else:
         _ATTN_DP_SIZE = 1
         _LOCAL_ATTN_DP_SIZE = 1
-
+    logger.info(f"initialize dp attention attn_tp_rank:{_ATTN_TP_RANK} attn_tp_size:{_ATTN_TP_SIZE} attn_dp_rank:{_ATTN_DP_RANK}, attn_dp_size:{_ATTN_DP_SIZE}")
     tp_group = get_tp_group()
+    logger.info(f"tp_group: local_Rank {tp_group.local_rank}  rank {tp_group.rank} local_size {tp_group.local_size}")
     _ATTN_TP_GROUP = GroupCoordinator(
         [
             list(range(head, head + _ATTN_TP_SIZE))
-            for head in range(0, pp_size * tp_size, _ATTN_TP_SIZE)
+            for head in range(0, pp_size * tp_size * cp_size, _ATTN_TP_SIZE)
         ],
         tp_group.local_rank,
         torch.distributed.get_backend(tp_group.device_group),

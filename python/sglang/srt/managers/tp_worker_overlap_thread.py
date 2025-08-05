@@ -60,11 +60,12 @@ class TpModelWorkerClient:
         tp_rank: int,
         pp_rank: int,
         dp_rank: Optional[int],
+        cp_rank: Optional[int],
         nccl_port: int,
     ):
         # Load the model
         self.worker = TpModelWorker(
-            server_args, gpu_id, tp_rank, pp_rank, dp_rank, nccl_port
+            server_args, gpu_id, tp_rank, pp_rank, dp_rank, cp_rank, nccl_port
         )
         self.max_running_requests = self.worker.max_running_requests
         self.device = self.worker.device

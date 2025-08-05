@@ -237,15 +237,18 @@ class Scheduler(
         tp_rank: int,
         pp_rank: int,
         dp_rank: Optional[int],
+        cp_rank: Optional[int],
     ):
         # Parse args
         self.server_args = server_args
         self.tp_rank = tp_rank
         self.pp_rank = pp_rank
         self.dp_rank = dp_rank
+        self.cp_rank = cp_rank
         self.tp_size = server_args.tp_size
         self.pp_size = server_args.pp_size
         self.dp_size = server_args.dp_size
+        self.cp_size = server_args.cp_size
         self.schedule_policy = server_args.schedule_policy
         self.enable_lora = server_args.enable_lora
         self.max_loras_per_batch = server_args.max_loras_per_batch
@@ -347,6 +350,7 @@ class Scheduler(
             tp_rank=tp_rank,
             pp_rank=pp_rank,
             dp_rank=dp_rank,
+            cp_rank=cp_rank,
             nccl_port=port_args.nccl_port,
         )
 
@@ -2894,12 +2898,15 @@ def run_scheduler_process(
     tp_rank: int,
     pp_rank: int,
     dp_rank: Optional[int],
+    cp_rank: Optional[int],
     pipe_writer,
 ):
     # Generate the prefix
     prefix = ""
     if dp_rank is not None:
         prefix += f" DP{dp_rank}"
+    if cp_rank is not None:
+        prefix += f" CP{cp_rank}"
     if server_args.tp_size > 1:
         prefix += f" TP{tp_rank}"
     if server_args.pp_size > 1:
@@ -2925,7 +2932,7 @@ def run_scheduler_process(
 
     # Create a scheduler and run the event loop
     try:
-        scheduler = Scheduler(server_args, port_args, gpu_id, tp_rank, pp_rank, dp_rank)
+        scheduler = Scheduler(server_args, port_args, gpu_id, tp_rank, pp_rank, dp_rank, cp_rank)
         pipe_writer.send(
             {
                 "status": "ready",
