@@ -263,7 +263,7 @@ class DataParallelController:
                 logger.debug(f"Direct routing to DP rank {req.data_parallel_rank}")
                 self.workers[req.data_parallel_rank].send_pyobj(req)
             else:
-                self.total_req_num = self.total_req_num + 1
+                self.total_req_num = 1 if self.total_req_num == len(self.workers) else self.total_req_num + 1
                 select_result = (self.total_req_num - 1) % len(self.workers)
                 self.work_req_num[select_result] = self.work_req_num[select_result] + 1
                 self.workers[select_result].send_pyobj(req)
