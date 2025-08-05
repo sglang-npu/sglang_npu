@@ -35,6 +35,7 @@ pub struct PDRouter {
     _decode_health_checker: Option<HealthChecker>,
 }
 
+
 impl PDRouter {
     // Dynamic worker management methods for service discovery
     pub async fn add_prefill_server(
@@ -71,6 +72,15 @@ impl PDRouter {
         // Add to cache tree if using cache-aware policy for prefill
         if let Some(ref tree) = self.prefill_tree {
             tree.lock().unwrap().insert("", &url);
+        }
+
+        // Add to pwu if using bucket policy
+        if self.prefill_policy.name() == "bucket" {
+            if let Some(bucket_policy) = self.prefill_policy
+                .as_any()
+                .downcast_ref::<crate::policies::BucketPolicy>() {
+                    bucket_policy.add_prefill_url(url.clone());
+                }
         }
 
         info!("Added prefill server: {}", url);
@@ -136,6 +146,15 @@ impl PDRouter {
             tree.lock().unwrap().remove_tenant(url);
         }
 
+        // bucket policy
+        if self.prefill_policy.name() == "bucket" {
+            if let Some(bucket_policy) = self.prefill_policy
+                .as_any()
+                .downcast_ref::<crate::policies::BucketPolicy>() {
+                    bucket_policy.remove_prefill_url(url);
+                }
+        }
+
         info!("Removed prefill server: {}", url);
         Ok(format!("Successfully removed prefill server: {}", url))
     }
@@ -193,11 +212,11 @@ impl PDRouter {
             .map(|worker| worker.url().to_string())
             .collect();
         if !all_urls.is_empty() {
-            crate::routers::router::Router::wait_for_healthy_workers(
-                &all_urls,
-                timeout_secs,
-                interval_secs,
-            )?;
+            // crate::routers::router::Router::wait_for_healthy_workers(
+            //     &all_urls,
+            //     timeout_secs,
+            //     interval_secs,
+            // )?;
         }
 
         // Initialize cache-aware components if needed for prefill policy
@@ -239,6 +258,19 @@ impl PDRouter {
         } else {
             None
         };
+
+        info!("Current prefill_policy | {:?}", prefill_policy);
+        if prefill_policy.name() == "bucket" {
+            if let Some(bucket_policy) = prefill_policy
+                .as_any()
+                .downcast_ref::<crate::policies::BucketPolicy>()
+            {
+                info!("Bucket_policy begin init prefill worker urls.");
+                bucket_policy.init_prefill_worker_urls(&prefill_workers);
+            }
+        }
+
+        info!("After bucket policy init, current prefill_workers | {:?}", prefill_workers);
 
         // Set up background load monitoring for power-of-two selection
         let (tx, rx) = tokio::sync::watch::channel(HashMap::new());
@@ -746,6 +778,7 @@ impl PDRouter {
     }
 
     // Select a pair of prefill and decode servers
+    // Select a pair of prefill and decode servers
     async fn select_pd_pair(
         &self,
         _client: &reqwest::Client,
@@ -783,6 +816,7 @@ impl PDRouter {
 
         let prefill = prefill_workers[prefill_idx].clone_worker();
         let decode = decode_workers[decode_idx].clone_worker();
+        info!("select pd pair successful, prefill instance: [{:?}], decode instance: [{:?}]", prefill.url(), decode.url());
         Ok((prefill, decode))
     }
 

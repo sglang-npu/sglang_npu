@@ -3,6 +3,7 @@
 use super::{pd_router::PDRouter, router::Router, RouterTrait};
 use crate::config::{PolicyConfig, RouterConfig, RoutingMode};
 use crate::policies::PolicyFactory;
+use tracing::{debug, error, info, warn};
 
 /// Factory for creating router instances based on configuration
 pub struct RouterFactory;
