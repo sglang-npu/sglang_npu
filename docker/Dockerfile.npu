@@ -60,7 +60,7 @@ RUN wget -O triton_ascend-3.2.0.dev20250729-cp311-cp311-manylinux_2_27_aarch64.m
     pip install triton_ascend-3.2.0.dev20250729-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl --no-cache-dir
 
 # Install SGLang
-ARG SGLANG_TAG=main
+ARG SGLANG_TAG=main-0730
 RUN git clone https://github.com/sgl-project/sglang --branch $SGLANG_TAG && \
     cd ./sglang/python && pip install .[srt_npu] --no-cache-dir
 
