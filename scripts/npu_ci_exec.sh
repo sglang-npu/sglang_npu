@@ -1,6 +1,6 @@
 ENV_DIR="/home/runner/.cache/env_sglang.sh"
-WORK_DIR="/home/runner/actions-runner/_work/sglang_npu/sglang_npu/test/srt"
+echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
 docker exec \
-  -w "$WORK_DIR" \
   sglang_ci_a3 \
-  /bin/bash -c "source $ENV_DIR && $*"
+  /bin/bash -c "source \"$ENV_DIR\" && export PYTHONPATH=\"${GITHUB_WORKSPACE//\\/\/}/python:\${PYTHONPATH:-}\" && exec \"\$@\"" \
+  bash "$@"

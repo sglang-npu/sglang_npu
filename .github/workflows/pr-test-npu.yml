@@ -145,9 +145,15 @@ jobs:
           TOKEN=`echo -n "x-access-token:${{ secrets.GITHUB_TOKEN}}"|base64`
           git config --global http.https://gh-proxy.test.osinfra.cn/.extraheader "AUTHORIZATION: basic $TOKEN"
 
+      - name: Clean workspace
+        run: |
+          sudo rm -rf --one-file-system "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.* 2>/dev/null || true
+
       - name: Checkout code
         uses: actions/checkout@v4
-      
+        with:
+          clean: true
+
       - name: Start CI container
         run: bash scripts/npu_ci_a3_start_container.sh
 
@@ -158,7 +164,7 @@ jobs:
           SGLANG_IS_IN_CI: true
           HF_ENDPOINT: https://hf-mirror.com
         run: |
-          bash scripts/npu_ci_exec.sh python3 test_ascend_disaggregation_deepep.py
+          bash scripts/npu_ci_exec.sh python3 $GITHUB_WORKSPACE/test/srt/test_ascend_disaggregation_deepep.py
 
   finish:
     if: always()

@@ -238,7 +238,7 @@ async def health_generate(request: Request) -> Response:
             input_ids=[0],
             sampling_params=sampling_params,
             log_metrics=False,
-            bootstrap_room=0
+            bootstrap_room=0,
         )
     else:
         gri = EmbeddingReqInput(

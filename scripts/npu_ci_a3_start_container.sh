@@ -1,6 +1,6 @@
 #!/bin/bash
 sudo chmod a+rw /var/run/docker.sock
-IMAGE_NAME="ghcr.nju.edu.cn/sglang-npu/sglang:main"
+IMAGE_NAME="swr.cn-southwest-2.myhuaweicloud.com/base_image/ascend-ci/sglang:main"
 sudo docker pull $IMAGE_NAME
 
 CONTAINER_NAME="sglang_ci_a3"

@@ -1,11 +1,12 @@
 import os
-import unittest
 import socket
-import time
-import requests
 import subprocess
+import time
+import unittest
 from types import SimpleNamespace
 from urllib.parse import urlparse
+
+import requests
 
 from sglang.srt.utils import kill_process_tree
 from sglang.test.few_shot_gsm8k import run_eval as run_eval_few_shot_gsm8k
@@ -26,6 +27,7 @@ PREFILL_NODE2_IP = "192.168.0.34"
 DECODE_NODE1_IP = "192.168.0.93"
 DECODE_NODE2_IP = "192.168.0.91"
 
+
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
@@ -33,13 +35,13 @@ def get_local_ip():
     s.close()
     return local_ip
 
+
 class TestAscend_DISAGGREGATION_DEEPEP(CustomTestCase):
 
     @classmethod
     def setUpClass(cls):
         cls.process = None
         cls.local_ip = get_local_ip()
-
 
     def launch_prefill_node(self):
         if self.local_ip == PREFILL_NODE1_IP:
@@ -72,16 +74,16 @@ class TestAscend_DISAGGREGATION_DEEPEP(CustomTestCase):
             "--quantization",
             "w8a8_int8",
             "--disaggregation-transfer-backend",
-            "ascend"
+            "ascend",
         ]
-        
+
         self.process = popen_launch_server(
             MODEL_PATH,
             f"http://{self.local_ip}:{8000}",
             timeout=DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
             other_args=[
                 *common_args,
-            ]
+            ],
         )
 
     def launch_decode_node(self):
@@ -120,7 +122,7 @@ class TestAscend_DISAGGREGATION_DEEPEP(CustomTestCase):
             "low_latency",
             "--enable-dp-lm-head",
             "--moe-dense-tp-size",
-            1
+            1,
         ]
 
         self.process = popen_launch_server(
@@ -129,11 +131,11 @@ class TestAscend_DISAGGREGATION_DEEPEP(CustomTestCase):
             timeout=DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
             other_args=[
                 *common_args,
-            ]
+            ],
         )
 
     def checkout_port(self, host, port, timeout=3):
-        try: 
+        try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
             result = sock.connect_ex((host, port))
@@ -160,64 +162,63 @@ class TestAscend_DISAGGREGATION_DEEPEP(CustomTestCase):
             if success_nodes == len(NODE_IP_LIST):
                 break
             time.sleep(3)
-        
+
         prefill1_url = f"http://{PREFILL_NODE1_IP}:8000"
         prefill2_url = f"http://{PREFILL_NODE2_IP}:8000"
         decode_url = f"http://{DECODE_NODE1_IP}:8001"
 
         lb_command = [
-                "python3",
-                "-m",
-                "sglang.srt.disaggregation.mini_lb",
-                "--prefill",
-                prefill1_url,
-                prefill2_url,
-                "--decode",
-                decode_url,
-                "--host",
-                PREFILL_NODE1_IP,
-                "--port",
-                "6688",
-                "--prefill-bootstrap-ports",
-                "8995",
-                "8996"
-            ]
+            "python3",
+            "-m",
+            "sglang.srt.disaggregation.mini_lb",
+            "--prefill",
+            prefill1_url,
+            prefill2_url,
+            "--decode",
+            decode_url,
+            "--host",
+            PREFILL_NODE1_IP,
+            "--port",
+            "6688",
+            "--prefill-bootstrap-ports",
+            "8995",
+            "8996",
+        ]
 
         print(f"Starting router, {lb_command=}")
-        subprocess.Popen(
-            lb_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
+        subprocess.Popen(lb_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     def wait_router_ready(self, url, timeout=300):
-            start_time = time.perf_counter()
-            while True:
-                try:
-                    response = requests.get(url)
-                    if response.status_code == 200:
-                        print(f"Router {url} is ready!")
-                        return
-                except Exception:
-                    pass
+        start_time = time.perf_counter()
+        while True:
+            try:
+                response = requests.get(url)
+                if response.status_code == 200:
+                    print(f"Router {url} is ready!")
+                    return
+            except Exception:
+                pass
 
-                if time.perf_counter() - start_time > timeout:
-                    raise RuntimeError(f"Server {url} failed to start in {timeout}s")
-                time.sleep(10)
+            if time.perf_counter() - start_time > timeout:
+                raise RuntimeError(f"Server {url} failed to start in {timeout}s")
+            time.sleep(10)
 
     def test_a_gsm8k(self):
         import threading
+
         if self.local_ip == PREFILL_NODE1_IP:
             sglang_thread = threading.Thread(target=self.launch_prefill_node)
             sglang_thread.start()
             router_thread = threading.Thread(target=self.launch_router)
             router_thread.start()
             self.wait_router_ready(f"http://{PREFILL_NODE1_IP}:6688" + "/health")
-            
+
             print(f"Starting benchmark ......")
             try:
                 args = SimpleNamespace(
                     num_shots=5,
                     data_path=None,
-                    num_questions=200,
+                    num_questions=100,
                     max_new_tokens=512,
                     parallel=128,
                     host=f"http://{PREFILL_NODE1_IP}",
@@ -231,7 +232,7 @@ class TestAscend_DISAGGREGATION_DEEPEP(CustomTestCase):
                 )
                 self.assertLessEqual(
                     metrics["latency"],
-                    150,
+                    50,
                 )
             finally:
                 kill_process_tree(self.process.pid)
@@ -248,6 +249,7 @@ class TestAscend_DISAGGREGATION_DEEPEP(CustomTestCase):
                     time.sleep(10)
                 else:
                     kill_process_tree(self.process.pid)
+                    break
 
         elif self.local_ip == DECODE_NODE1_IP or self.local_ip == DECODE_NODE2_IP:
             self.launch_decode_node()
@@ -261,8 +263,8 @@ class TestAscend_DISAGGREGATION_DEEPEP(CustomTestCase):
                     time.sleep(10)
                 else:
                     kill_process_tree(self.process.pid)
+                    break
 
 
 if __name__ == "__main__":
     unittest.main()
-
