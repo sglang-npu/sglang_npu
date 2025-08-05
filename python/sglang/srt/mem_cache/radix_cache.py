@@ -280,8 +280,10 @@ class RadixCache(BasePrefixCache):
 
         # `req.prefix_indices` will be used in `PrefillAdder::add_chunked_req` later
         if self.page_size != 1:
+            if new_indices.device.type == "cpu":
+                new_indices = new_indices.npu()
             req.prefix_indices = torch.cat(
-                [new_indices, kv_indices[len(new_indices) :]]
+                [new_indices, kv_indices[len(new_indices) :].npu()]
             )
         else:
             req.prefix_indices = new_indices

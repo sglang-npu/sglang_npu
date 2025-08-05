@@ -1966,6 +1966,8 @@ def get_last_loc_torch(
     req_pool_indices_tensor: torch.Tensor,
     prefix_lens_tensor: torch.Tensor,
 ) -> torch.Tensor:
+    prefix_lens_tensor = prefix_lens_tensor.cpu()
+    req_pool_indices_tensor = req_pool_indices_tensor.cpu()
     return torch.where(
         prefix_lens_tensor > 0,
         req_to_token[req_pool_indices_tensor, prefix_lens_tensor - 1],

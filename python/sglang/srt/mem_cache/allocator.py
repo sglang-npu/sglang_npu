@@ -546,7 +546,7 @@ class PagedTokenToKVPoolAllocator(BaseTokenToKVPoolAllocator):
             return
 
         if self.is_not_in_free_group:
-            free_page_indices = torch.unique(free_index // self.page_size)
+            free_page_indices = torch.unique(free_index // self.page_size).npu()
             self.release_pages = torch.cat((free_page_indices, self.release_pages))
         else:
             self.free_group.append(free_index)
