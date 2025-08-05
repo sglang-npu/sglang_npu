@@ -33,6 +33,7 @@ class RouterArgs:
 
     # PD-specific configuration
     pd_disaggregation: bool = False  # Enable PD disaggregated mode
+    bucket_adjust_interval: int = 5
     prefill_urls: List[tuple] = dataclasses.field(
         default_factory=list
     )  # List of (url, bootstrap_port)
@@ -116,7 +117,7 @@ class RouterArgs:
             f"--{prefix}prefill-policy",
             type=str,
             default=None,
-            choices=["random", "round_robin", "cache_aware", "power_of_two"],
+            choices=["random", "round_robin", "cache_aware", "power_of_two", "bucket"],
             help="Specific policy for prefill nodes in PD mode. If not specified, uses the main policy",
         )
         parser.add_argument(
@@ -176,6 +177,12 @@ class RouterArgs:
             type=float,
             default=RouterArgs.balance_rel_threshold,
             help="Load balancing is triggered when (max_load - min_load) > abs_threshold AND max_load > min_load * rel_threshold. Otherwise, use cache aware",
+        )
+        parser.add_argument(
+            f"--{prefix}bucket-adjust-interval",
+            type=int,
+            default=RouterArgs.bucket_adjust_interval,
+            help="Interval in seconds between bucket boundary adjustment operations",
         )
         parser.add_argument(
             f"--{prefix}eviction-interval",
@@ -279,6 +286,7 @@ class RouterArgs:
             host=args.host,
             port=args.port,
             pd_disaggregation=getattr(args, f"{prefix}pd_disaggregation", False),
+            bucket_adjust_interval=getattr(args, f"{prefix}bucket_adjust_interval", False),
             prefill_urls=prefill_urls,
             decode_urls=decode_urls,
             policy=getattr(args, f"{prefix}policy"),
@@ -375,6 +383,7 @@ def policy_from_str(policy_str: str) -> PolicyType:
         "round_robin": PolicyType.RoundRobin,
         "cache_aware": PolicyType.CacheAware,
         "power_of_two": PolicyType.PowerOfTwo,
+        "bucket": PolicyType.Bucket,
     }
     return policy_map[policy_str]
 
@@ -465,6 +474,7 @@ def launch_router(args: argparse.Namespace) -> Optional[Router]:
             prometheus_port=router_args.prometheus_port,
             prometheus_host=router_args.prometheus_host,
             pd_disaggregation=router_args.pd_disaggregation,
+            bucket_adjust_interval_secs=router_args.bucket_adjust_interval,
             prefill_urls=(
                 router_args.prefill_urls if router_args.pd_disaggregation else None
             ),
