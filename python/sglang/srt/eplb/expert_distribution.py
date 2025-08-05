@@ -474,7 +474,6 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
                     dim=-1
                     prepend=global_physical_count[..., :1],
                 )
-                
         else:
             # Can optimize if bottleneck
             global_physical_count = _convert_local_to_global_physical_count(
