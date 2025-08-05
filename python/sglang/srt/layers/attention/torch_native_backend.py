@@ -92,12 +92,12 @@ class TorchNativeAttnBackend(AttentionBackend):
             per_req_tokens = req_to_token[req_pool_idx, :seq_len_kv]
             per_req_key = k_cache[per_req_tokens].movedim(0, query.dim() - 2)
             per_req_value = v_cache[per_req_tokens].movedim(0, query.dim() - 2)
-
+            per_req_kv_value = torch.cat([per_req_key, per_req_value], dim=-1)
             per_req_out_redudant = (
                 scaled_dot_product_attention(
                     per_req_query_redudant.unsqueeze(0),
+                    per_req_kv_value.unsqueeze(0),
                     per_req_key.unsqueeze(0),
-                    per_req_value.unsqueeze(0),
                     enable_gqa=enable_gqa,
                     scale=scaling,
                     is_causal=causal,

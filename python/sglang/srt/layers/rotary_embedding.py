@@ -23,6 +23,7 @@ _use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
 _is_npu = is_npu()
 _is_cpu_amx_available = cpu_has_amx_support()
 _is_cpu = is_cpu()
+_use_mlapo = get_bool_env_var("SGLANG_USE_MLAPO")
 
 if _is_cuda:
     from sgl_kernel import apply_rope_with_cos_sin_cache_inplace
@@ -762,6 +763,11 @@ class DeepseekScalingRotaryEmbedding(RotaryEmbedding):
         else:
             query = query_rot
             key = key_rot
+
+        # to compatible decoder mlapo rope
+        if _use_mlapo:
+            query = torch.cat([query[..., ::2], query[..., 1::2]], dim=-1)
+            key = torch.cat([key[..., ::2], key[..., 1::2]], dim=-1)
         return query.to(dtype), key.to(dtype)
 
     def forward_npu(
@@ -802,6 +808,11 @@ class DeepseekScalingRotaryEmbedding(RotaryEmbedding):
         else:
             query = query_rot
             key = key_rot
+
+        # to compatible decoder mlapo rope
+        if _use_mlapo:
+            query = torch.cat([query[..., ::2], query[..., 1::2]], dim=-1)
+            key = torch.cat([key[..., ::2], key[..., 1::2]], dim=-1)
         return query, key
 
     def forward_cpu(
