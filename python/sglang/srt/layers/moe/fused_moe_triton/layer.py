@@ -107,7 +107,9 @@ class FusedMoE(torch.nn.Module):
             # Create a tensor of size num_experts filled with -1
             self.expert_map = torch.full((self.num_experts,), -1, dtype=torch.int32)
             # Create a expert map for the local experts
-            assert num_experts % self.ep_size == 0
+            # assert num_experts % self.ep_size == 0
+            num_external_rank = global_server_args_dict["num_external_rank"]
+            assert num_experts % (self.ep_size-num_external_rank) == 0
             self.num_local_experts = num_experts // self.ep_size
             self.expert_map[
                 self.ep_rank
