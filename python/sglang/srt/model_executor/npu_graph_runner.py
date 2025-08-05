@@ -21,10 +21,9 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from python.sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.model_executor.cuda_graph_runner import CudaGraphRunner
 from sglang.srt.utils import is_npu
-
-from python.sglang.srt.model_executor.forward_batch_info import ForwardBatch
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +74,7 @@ class NPUGraphRunner(CudaGraphRunner):
     def _update_and_replay(self, forward_batch: ForwardBatch):
         seq_lens = forward_batch.seq_lens.cpu().tolist() + [0] * (self.bs - self.raw_bs)
         
-        thread = threading.Thread(
-            target=self.repaly_update,
-            args=(seq_lens,)
-        )
+        thread = threading.Thread(target=self.repaly_update, args=(seq_lens,))
         thread.start()
         self.graphs[self.bs].replay()
         thread.join()
