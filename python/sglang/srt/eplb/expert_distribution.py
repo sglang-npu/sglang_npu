@@ -471,7 +471,7 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
             if is_npu():
                 global_physical_count = torch.diff(
                     global_physical_count,
-                    dim=-1
+                    dim=-1,
                     prepend=global_physical_count[..., :1],
                 )
         else:

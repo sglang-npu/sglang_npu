@@ -16,6 +16,7 @@ if is_npu():
 
 logger = logging.getLogger(__name__)
 
+
 class EPLBManager:
     def __init__(self, model_runner: "ModelRunner"):
         super().__init__()
