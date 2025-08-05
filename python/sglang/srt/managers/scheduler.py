@@ -74,6 +74,8 @@ from sglang.srt.managers.io_struct import (
     ExpertDistributionReqOutput,
     FlushCacheReqInput,
     FlushCacheReqOutput,
+    GetInternalLoadOutput,
+    GetInternalLoadReq,
     GetInternalStateReq,
     GetInternalStateReqOutput,
     GetWeightsByNameReqInput,
@@ -284,6 +286,9 @@ class Scheduler(
             )
             self.send_to_tokenizer = get_zmq_socket(
                 context, zmq.PUSH, port_args.tokenizer_ipc_name, False
+            )
+            self.send_to_scheduler = get_zmq_socket(
+                context, zmq.PUSH, port_args.dpc_scheduler_input_ipc_name, False
             )
 
             if server_args.skip_tokenizer_init:
@@ -528,6 +533,7 @@ class Scheduler(
                 (SlowDownReqInput, self.slow_down),
                 (ProfileReq, self.profile),
                 (GetInternalStateReq, self.get_internal_state),
+                (GetInternalLoadReq, self.get_dp_load),
                 (SetInternalStateReq, self.set_internal_state),
                 (RpcReqInput, self.handle_rpc_request),
                 (ExpertDistributionReq, self.expert_distribution_handle),
@@ -1091,6 +1097,10 @@ class Scheduler(
                 if isinstance(output, RpcReqOutput):
                     if self.recv_from_rpc is not None:
                         self.recv_from_rpc.send_pyobj(output)
+                elif (
+                    isinstance(output, GetInternalLoadOutput) and self.attn_tp_rank == 0
+                ):
+                    self.send_to_scheduler.send_pyobj(output)
                 else:
                     self.send_to_tokenizer.send_pyobj(output)
 
@@ -1135,7 +1145,9 @@ class Scheduler(
                 vocab_size=self.model_config.vocab_size,
             )
             req.tokenizer = self.tokenizer
+            logger.debug(f"Scheduler {self.tp_rank=} reveice token {len(recv_req.input_ids)}")
 
+            
             if self.disaggregation_mode != DisaggregationMode.NULL:
                 # Invalid request for disaggregated mode
                 if recv_req.bootstrap_room is None:
@@ -2339,6 +2351,12 @@ class Scheduler(
         ret["load"] = self.get_load()
 
         return GetInternalStateReqOutput(internal_state=ret)
+
+    def get_dp_load(self, recv_req: GetInternalLoadReq):
+        ret = dict()
+        ret["load"] = self.get_load()
+        ret["dp_rank"] = self.dp_rank
+        return GetInternalLoadOutput(dp_load=ret)
 
     def set_internal_state(self, recv_req: SetInternalStateReq):
         server_args_dict = recv_req.server_args

@@ -18,6 +18,7 @@ import multiprocessing as mp
 import signal
 import threading
 import time
+import random
 from enum import Enum, auto
 
 import psutil
@@ -26,6 +27,8 @@ import zmq
 
 from sglang.srt.layers.dp_attention import compute_dp_attention_world_info
 from sglang.srt.managers.io_struct import (
+    GetInternalLoadOutput,
+    GetInternalLoadReq,
     TokenizedEmbeddingReqInput,
     TokenizedGenerateReqInput,
 )
@@ -44,6 +47,7 @@ class LoadBalanceMethod(Enum):
 
     ROUND_ROBIN = auto()
     SHORTEST_QUEUE = auto()
+    DP_LOAD = auto()
 
     @classmethod
     def from_str(cls, method: str):
@@ -70,7 +74,7 @@ class DataParallelController:
         self.context = zmq.Context(1 + server_args.dp_size)
         if server_args.node_rank == 0:
             self.recv_from_tokenizer = get_zmq_socket(
-                self.context, zmq.PULL, port_args.scheduler_input_ipc_name, False
+                self.context, zmq.PULL, port_args.scheduler_input_ipc_name, True
             )
 
         # Dispatch method
@@ -78,6 +82,7 @@ class DataParallelController:
         dispatch_lookup = {
             LoadBalanceMethod.ROUND_ROBIN: self.round_robin_scheduler,
             LoadBalanceMethod.SHORTEST_QUEUE: self.shortest_queue_scheduler,
+            LoadBalanceMethod.DP_LOAD: self.dp_load_scheduler,
         }
         self.dispatching = dispatch_lookup[self.load_balance_method]
 
@@ -103,6 +108,27 @@ class DataParallelController:
                 )
 
         self.max_req_input_len = None
+
+        self.dp_load = {dp_rank: 0 for dp_rank in range(server_args.dp_size)}
+        self.lock = threading.Lock()
+        self.dp_load_internal = 1
+        if self.load_balance_method == LoadBalanceMethod.DP_LOAD:
+            self.receive_thread = threading.Thread(target=self.send_get_load_req_thread)
+            self.receive_thread.start()
+
+    def send_get_load_req_thread(self):
+        while True:
+            req = GetInternalLoadReq()
+            self.workers[0].send_pyobj(req)
+            time.sleep(self.dp_load_internal)
+
+    def write_to_dp_load(self, key, value):
+        with self.lock:
+            self.dp_load[key] = value
+
+    def get_dp_load(self):
+        with self.lock:
+            return self.dp_load
 
     def launch_dp_schedulers(self, server_args, port_args):
         base_gpu_id = 0
@@ -221,6 +247,9 @@ class DataParallelController:
                     + ((pp_rank % pp_size_per_node) * tp_size_per_node)
                     + (tp_rank % tp_size_per_node) * server_args.gpu_id_step
                 )
+                rank_port_args.dpc_scheduler_input_ipc_name = (
+                    port_args.scheduler_input_ipc_name
+                )
                 proc = mp.Process(
                     target=run_scheduler_process,
                     args=(
@@ -263,6 +292,20 @@ class DataParallelController:
             else:
                 self.workers[req.bootstrap_room % len(self.workers)].send_pyobj(req)
 
+    def dp_load_scheduler(self, req: Req):
+        if req.data_parallel_rank is not None:
+            logger.debug(f"Direct routing to DP rank {req.data_parallel_rank}")
+            self.workers[req.data_parallel_rank].send_pyobj(req)
+        else:
+            dp_load = self.get_dp_load()
+            min_load = min(dp_load.values())
+            lowest_load_ranks = [rank for rank, value in dp_load.items() if value == min_load]
+            lowest_load_rank = random.choice(lowest_load_ranks)
+            logger.debug(
+                f"Routing req to DP rank {lowest_load_rank}, dp load is {self.get_dp_load()}"
+            )
+            self.workers[lowest_load_rank].send_pyobj(req)
+
     def shortest_queue_scheduler(self, input_requests):
         raise NotImplementedError()
 
@@ -272,6 +315,12 @@ class DataParallelController:
                 try:
                     recv_req = self.recv_from_tokenizer.recv_pyobj(zmq.NOBLOCK)
                 except zmq.ZMQError:
+                    break
+
+                if isinstance(recv_req, GetInternalLoadOutput):
+                    self.write_to_dp_load(
+                        recv_req.dp_load["dp_rank"], recv_req.dp_load["load"]
+                    )
                     break
 
                 if isinstance(
