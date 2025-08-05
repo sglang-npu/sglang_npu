@@ -246,19 +246,23 @@ class TopK(CustomOp):
         if global_num_experts == 256:
             router_logits = router_logits.to(torch.float32)
             topk_weights, topk_ids, _ = torch_npu.npu_moe_gating_top_k(
-            router_logits,
-            k=self.top_k,
-            bias=self.correction_bias.to(torch.float32),
-            k_group=self.topk_group,
-            group_count=self.num_expert_group,
-            group_select_mode=1,
-            renorm=0,
-            norm_type=1,
-            routed_scaling_factor=1,
-            eps=float(1e-20),
-        )
-            topk_ids = topk_ids_logical_to_physical(topk_ids,expert_location_dispatch_info)
-            get_global_expert_distribution_recorder().on_select_experts(topk_ids=topk_ids)
+                router_logits,
+                k=self.top_k,
+                bias=self.correction_bias.to(torch.float32),
+                k_group=self.topk_group,
+                group_count=self.num_expert_group,
+                group_select_mode=1,
+                renorm=0,
+                norm_type=1,
+                routed_scaling_factor=1,
+                eps=float(1e-20),
+            )
+            topk_ids = topk_ids_logical_to_physical(
+                topk_ids,expert_location_dispatch_info
+            )
+            get_global_expert_distribution_recorder().on_select_experts(
+                topk_ids=topk_ids
+            )
             return topk_weights, topk_ids, _
         else:
             torch_native = True
