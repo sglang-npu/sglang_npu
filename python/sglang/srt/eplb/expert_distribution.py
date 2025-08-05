@@ -472,7 +472,7 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
                 global_physical_count = torch.diff(
                     global_physical_count,
                     dim=-1, 
-                    prepend=global_physical_count[...,:1],
+                    prepend=global_physical_count[..., :1],
                 )
                 
         else:
