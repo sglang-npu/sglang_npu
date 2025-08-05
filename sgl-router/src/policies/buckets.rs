@@ -308,6 +308,7 @@ impl Bucket {
         };
 
         self.boundary = boundary;
+        info!("Init boundary:{:?}", self.boundary);
     }
 
     pub fn post_process_request(&mut self, char_cnt: usize, prefill_url: String) {
