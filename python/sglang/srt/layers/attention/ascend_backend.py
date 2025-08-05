@@ -71,7 +71,7 @@ class AscendAttnBackend(AttentionBackend):
         self.forward_metadata = ForwardMetadata()
         self.forward_metadata.block_tables = (
             forward_batch.req_to_token_pool.req_to_token[
-                forward_batch.req_pool_indices, : forward_batch.seq_lens.max()
+                forward_batch.req_pool_indices.cpu(), : forward_batch.seq_lens.max().cpu()
             ][:, :: self.page_size]
             // self.page_size
         )

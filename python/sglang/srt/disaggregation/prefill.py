@@ -591,7 +591,6 @@ class SchedulerDisaggregationPrefillMixin:
 
         kv_indices = (
             self.req_to_token_pool.req_to_token[req.req_pool_idx, start_idx:end_idx]
-            .cpu()
             .numpy()
         )
         req.start_send_idx = end_idx
