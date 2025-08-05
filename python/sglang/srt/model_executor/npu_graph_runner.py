@@ -73,7 +73,7 @@ class NPUGraphRunner(CudaGraphRunner):
 
     def _update_and_replay(self, forward_batch: ForwardBatch):
         seq_lens = forward_batch.seq_lens.cpu().tolist() + [0] * (self.bs - self.raw_bs)
-        
+
         thread = threading.Thread(target=self.repaly_update, args=(seq_lens,))
         thread.start()
         self.graphs[self.bs].replay()
