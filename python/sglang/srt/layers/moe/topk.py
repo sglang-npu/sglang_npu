@@ -258,7 +258,7 @@ class TopK(CustomOp):
                 eps=float(1e-20),
             )
             topk_ids = topk_ids_logical_to_physical(
-                topk_ids,expert_location_dispatch_info
+                topk_ids, expert_location_dispatch_info
             )
             get_global_expert_distribution_recorder().on_select_experts(
                 topk_ids=topk_ids
