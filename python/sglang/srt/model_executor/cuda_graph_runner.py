@@ -755,8 +755,8 @@ class CudaGraphRunner:
         self.raw_num_token = raw_num_token
         self.bs = bs
 
-    def _update_inputs(self, forward_batch: ForwardBatch):
-        pass
+    def _update_and_replay(self, forward_batch: ForwardBatch):
+        self.graphs[self.bs].replay()
 
     def replay(
         self,
@@ -772,8 +772,7 @@ class CudaGraphRunner:
             self.positions[: self.raw_num_token].copy_(forward_batch.positions)
 
         # Replay
-        self._update_inputs(forward_batch)
-        self.graphs[self.bs].replay()
+        self._update_and_replay(forward_batch)
 
         output = self.output_buffers[self.bs]
         if isinstance(output, LogitsProcessorOutput):
