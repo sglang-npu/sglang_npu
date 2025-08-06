@@ -88,8 +88,8 @@ class TpModelWorker:
             tp_size=server_args.tp_size,
             pp_rank=pp_rank,
             pp_size=server_args.pp_size,
-            cp_rank=cp_rank if cp_rank is not None else 0
-            cp_size=server_args.cp_size
+            cp_rank=cp_rank if cp_rank is not None else 0,
+            cp_size=server_args.cp_size,
             nccl_port=nccl_port,
             server_args=server_args,
             is_draft_worker=is_draft_worker,

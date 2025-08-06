@@ -532,7 +532,7 @@ class ModelRunner:
                     )
 
             # Only initialize the distributed environment on the target model worker.
-            logger.info(f"init torch ditributed with {backend} backend. {self.tp_size} {self.pp_isze} {self.cp_size} {self.tp_size * self.pp_size * self. cp_size} {self.tp_size * self.pp_size * self.cp_rank + self.tp_size * self.pp_rank + self.tp_rank}")
+            logger.info(f"init torch ditributed with {backend} backend. {self.tp_size} {self.pp_size} {self.cp_size} {self.tp_size * self.pp_size * self. cp_size} {self.tp_size * self.pp_size * self.cp_rank + self.tp_size * self.pp_rank + self.tp_rank}")
             init_distributed_environment(
                 backend=backend,
                 world_size=self.tp_size * self.pp_size * self.cp_size,

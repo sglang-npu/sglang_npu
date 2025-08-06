@@ -17,7 +17,7 @@ from sglang.srt.distributed import (
     tensor_model_parallel_all_gather,
     get_context_model_parallel_world_size,
     get_context_model_parallel_rank,
-    context_model_parallel_all_gather
+    context_model_parallel_all_gather,
 )
 from sglang.srt.layers.dp_attention import (
     get_attention_tp_rank,
@@ -159,7 +159,7 @@ def ring_mla(
     for i in range(len(seq_lens)):
         seq_len = seq_lens[i]
         q = query[last:last + seq_len]
-        k = key[last:last +  seq_len]
+        k = key[last:last + seq_len]
         v = value[last:last + seq_len]
         last += seq_len
 
@@ -191,7 +191,7 @@ def ring_mla(
         lse = lse - max_lse
         prev_lse = prev_lse - max_lse
         lse_exp = torch.exp(lse)
-        prev_exp = troch.exp(prev_exp)
+        prev_exp = torch.exp(prev_lse)
         sum_exp = lse_exp + prev_exp
 
         new_lse = torch.log(sum_exp) + max_lse
@@ -199,7 +199,7 @@ def ring_mla(
         lse_exp = lse_exp / sum_exp
         prev_exp = prev_exp / sum_exp
 
-        out = out / lse_exp + prev_out * prev_exp
+        out = out * lse_exp + pre_out * prev_exp
         
         return out, new_lse
 
@@ -381,7 +381,7 @@ class AscendAttnBackend(AttentionBackend):
 
                 out = []
                 mask = torch.zeros(512, 512, dtype=q.dtype)
-                triu = torch.triu(torch.ones(512, 512, dtype=troch.bool), diagnal=1)
+                triu = torch.triu(torch.ones(512, 512, dtype=torch.bool), diagonal=1)
                 mask[triu] = float('-inf')
 
                 for q_i in range(len(q_idxs)):

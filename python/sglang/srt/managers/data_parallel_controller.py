@@ -81,10 +81,10 @@ class DataParallelController:
         dispatch_lookup = {
             LoadBalanceMethod.ROUND_ROBIN: self.round_robin_scheduler,
             LoadBalanceMethod.SHORTEST_QUEUE: self.shortest_queue_scheduler,
-            LoadBalanceMethod.CP_SCHEDULERL: self.cp_scheduler,
+            LoadBalanceMethod.CP_SCHEDULER: self.cp_scheduler,
         }
         #self.dispatching = dispatch_lookup[self.load_balance_method]
-        self.dispatcing = self.cp_scheduler
+        self.dispatching = self.cp_scheduler
 
         # Launch data parallel workers
         self.scheduler_procs = []
@@ -122,7 +122,7 @@ class DataParallelController:
             tmp_port_args.detokenizer_ipc_name = port_args.detokenizer_ipc_name
 
             if server_args.cp_size > 1 and dp_port_args:
-                tmp_prot_args.nccl_port = dp_port_args[0].nccl_port
+                tmp_port_args.nccl_port = dp_port_args[0].nccl_port
             else:
                 sockets.append(bind_port(tmp_port_args.nccl_port))
 
@@ -247,7 +247,7 @@ class DataParallelController:
                         ),
                     )
                 else:
-                    roc = mp.Process(
+                    proc = mp.Process(
                         target=run_scheduler_process,
                         args=(
                             server_args,
@@ -279,7 +279,7 @@ class DataParallelController:
         # input_ids = self.tokenizer(
         #   req.input_ids,
         #   padding='max_length',
-        #   max_length='cp_size'
+        #   max_length=cp_size
         #)
 
         print("before split")
@@ -291,7 +291,7 @@ class DataParallelController:
         num_chunks = cp_size * 2
         input_length = len(input_ids)
         chunk_length = input_length // cp_size
-        more_length_chunk= input_length % cp_size
+        more_length_chunk = input_length % cp_size
         for cp_rank in range(cp_size):
             former_rank = cp_rank
             latter_rank = num_chunks - cp_rank - 1
@@ -314,7 +314,7 @@ class DataParallelController:
             req_now.input_ids = input_ids[former_st_idx:former_end_idx] + input_ids[latter_st_idx:latter_end_idx]
             print("after split: cp rank=", cp_rank)
             print(req_now.__dict__)
-            self.workers[req_now.data_paralle_rank].send_pyobj(req_now)
+            self.workers[req_now.data_parallel_rank].send_pyobj(req_now)
 
 
 

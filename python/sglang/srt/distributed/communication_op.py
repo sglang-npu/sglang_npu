@@ -29,7 +29,7 @@ def tensor_model_parallel_gather(
 def context_model_parallel_all_gather(
     input_: torch.Tensor, dim: int  = -1
 ) -> torch.Tensor:
-     """All-gather the input tensor across model parallel group."""
+    """All-gather the input tensor across model parallel group."""
     return get_cp_group().all_gather(input_, dim)
 
 def broadcast_tensor_dict(
