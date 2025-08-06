@@ -1357,15 +1357,15 @@ class DeepseekV2AttentionMLA(nn.Module):
                 self.w_vc.to(torch.bfloat16) * self.w_scale,
             )
             attn_bmm_output = attn_bmm_output.transpose(0, 1).flatten(1, 2)
-        elif _is_npu:
-            import torch_npu
+        # elif _is_npu:
+        #     import torch_npu
 
-            attn_bmm_output = torch_npu.npu_transpose_batchmatmul(
-                attn_output, self.w_vc, perm_x1=(1, 0, 2)
-            )
-            attn_bmm_output = attn_bmm_output.view(
-                -1, self.num_local_heads * self.v_head_dim
-            )
+        #     attn_bmm_output = torch_npu.npu_transpose_batchmatmul(
+        #         attn_output, self.w_vc, perm_x1=(1, 0, 2)
+        #     )
+        #     attn_bmm_output = attn_bmm_output.view(
+        #         -1, self.num_local_heads * self.v_head_dim
+        #     )
         elif self.w_vc.dtype == torch.float8_e4m3fn:
             attn_output_val, attn_output_scale = per_tensor_quant_mla_fp8(
                 attn_output.transpose(0, 1),
