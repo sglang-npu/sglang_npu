@@ -23,7 +23,6 @@ from sglang.srt.distributed import (
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
 )
-from sglang.srt.managers.schedule_batch import global_server_args_dict
 from sglang.srt.layers.amx_utils import _amx_process_weight_after_loading
 from sglang.srt.layers.linear import RowParallelLinear, UnquantizedLinearMethod
 from sglang.srt.layers.parameter import (
@@ -40,6 +39,7 @@ from sglang.srt.layers.quantization.base_config import (
 from sglang.srt.layers.quantization.compressed_tensors.utils import should_ignore_layer
 from sglang.srt.layers.quantization.int8_kernel import per_token_quant_int8
 from sglang.srt.layers.quantization.unquant import UnquantizedLinearMethod
+from sglang.srt.managers.schedule_batch import global_server_args_dict
 from sglang.srt.utils import (
     apply_module_patch,
     cpu_has_amx_support,
