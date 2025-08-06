@@ -3,6 +3,9 @@ import torch.nn.functional as F
 import torch_npu
 from torch import nn
 
+global_cos = None
+global_sin = None
+
 
 def round_up(val: int, align: int) -> int:
     if align == 0:
@@ -56,10 +59,11 @@ class NPU_FusedMLAPreprocess(nn.Module):
         self.q_a_layernorm = q_a_layernorm
         self.kv_a_layernorm = kv_a_layernorm
         self.q_b_proj = q_b_proj
-        self.w_kc = w_kc
+        self.w_kc = w_kc.contiguous()
         self.rotary_emb = rotary_emb
         self.layer_id = layer_id
         self.has_preprocess_weights = False
+        self.dtype = None
 
         self.q_lora_rank = self.q_b_proj.input_size  # 1536
         self.kv_lora_rank = self.kv_a_layernorm.hidden_size  # 512
@@ -226,10 +230,13 @@ class NPU_FusedMLAPreprocess(nn.Module):
         self.kvCache, self.kvCacheRope, self.slotmapping = None, None, None
 
     def get_sin_cos(self, positions):
-        cos_sin = self.rotary_emb.cos_sin_cache[positions]
-        cos, sin = cos_sin.chunk(2, dim=-1)
-        cos = cos.repeat(1, 2)
-        sin = sin.repeat(1, 2)
+        if self.layer_id == 0:
+            cos = self.rotary_emb.get_cos_cached_total()[positions].to(self.dtype)
+            sin = self.rotary_emb.get_sin_cached_total()[positions].to(self.dtype)
+            global global_cos, global_sin
+            global_cos, global_sin = cos, sin
+        else:
+            cos, sin = global_cos, global_sin
         return cos, sin
 
     def get_kv_cache_and_cache_idx(self, forward_batch):
@@ -242,6 +249,7 @@ class NPU_FusedMLAPreprocess(nn.Module):
         if not self.has_preprocess_weights:
             self.preprocess_weights(hidden_states)
             self.has_preprocess_weights = True
+            self.dtype = hidden_states.dtype
 
         self.cos, self.sin = self.get_sin_cos(positions)
         self.kvCache, self.kvCacheRope, self.slotmapping = (

@@ -674,6 +674,8 @@ class DeepseekScalingRotaryEmbedding(RotaryEmbedding):
             / yarn_get_mscale(self.scaling_factor, float(mscale_all_dim))
             * attn_factor
         )
+        self.cos_cached_total = None
+        self.sin_cached_total = None
         self.device = device
         super().__init__(
             head_size, rotary_dim, max_position_embeddings, base, is_neox_style, dtype
@@ -722,7 +724,17 @@ class DeepseekScalingRotaryEmbedding(RotaryEmbedding):
         cos = freqs.cos() * self.mscale
         sin = freqs.sin() * self.mscale
         cache = torch.cat((cos, sin), dim=-1)
+        if _use_mlapo:
+            emb = torch.cat((freqs, freqs), dim=-1)
+            self.cos_cached_total = torch.cos(emb) * self.mscale
+            self.sin_cached_total = torch.sin(emb) * self.mscale
         return cache
+
+    def get_cos_cached_total(self):
+        return self.cos_cached_total
+
+    def get_sin_cached_total(self):
+        return self.sin_cached_total
 
     def forward_native(
         self,
