@@ -66,8 +66,10 @@ class TpModelWorker:
     ):
         # Parse args
         self.tp_size = server_args.tp_size
+        self.pp_size = server_args.pp_size
         self.tp_rank = tp_rank
         self.pp_rank = pp_rank
+        self.cp_rank = cp_rank if cp_rank is not None else 0
 
         # Init model and tokenizer
         self.model_config = ModelConfig.from_server_args(
