@@ -68,7 +68,7 @@ class ReqToTokenPool:
         self.device = device
         with memory_saver_adapter.region(GPU_MEMORY_TYPE_KV_CACHE):
             self.req_to_token = torch.zeros(
-                (size, max_context_len), dtype=torch.int32, device="cpu"
+                (size, max_context_len), dtype=torch.int32, device=device
             )
 
         self.free_slots = list(range(size))
