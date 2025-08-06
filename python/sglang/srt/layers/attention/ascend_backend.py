@@ -30,31 +30,57 @@ class ForwardMetadata:
     seq_lens_cpu_list: Optional[List[int]] = None
 
 
-class AscendAttnBackend(AttentionBackend):
+def _generate_attn_mask(max_seq_len, dtype):
+    # Construct lower triangle matrix.
+    mask_flag = torch.tril(
+        torch.ones((max_seq_len, max_seq_len),
+                   dtype=torch.bool)).view(max_seq_len, max_seq_len)
+    # Create upper triangle matrix used to mark mask positions.
+    mask_flag = ~mask_flag
+    # Currently for fp16 dtype, the mask value should be set to -inf.
+    # TODO: Eliminate this part in the future.
+    if dtype == torch.float16:
+        mask_value = torch.finfo(torch.float32).min
+    else:
+        mask_value = 1
+    attn_mask = torch.masked_fill(torch.zeros(size=(max_seq_len, max_seq_len)),
+                                  mask_flag, mask_value).to(dtype)
+    return attn_mask
 
-    def gen_attention_mask(self, max_seq_len: int, dtype=torch.float16):
-        mask_flag = torch.tril(
-            torch.ones((max_seq_len, max_seq_len), dtype=torch.bool)
-        ).view(max_seq_len, max_seq_len)
-        mask_flag = ~mask_flag
-        if dtype == torch.float16:
-            mask_value = torch.finfo(torch.float32).min
-        else:
-            mask_value = 1
-        self.mask = (
-            torch.masked_fill(
-                torch.zeros(size=(max_seq_len, max_seq_len)), mask_flag, mask_value
-            )
-            .to(dtype)
-            .to(self.device)
-        )
-        self.mask_len = max_seq_len
+
+class AttentionMaskBuilder:
+
+    def __init__(
+        self,
+        max_seq_len: int,
+        dtype: torch.dtype,
+    ):
+        attn_mask = _generate_attn_mask(max_seq_len, dtype)
+
+        self._seq_len_cached = attn_mask.shape[0]
+        self.attn_mask_cache = attn_mask
+
+    def get_attn_mask(self, max_seq_len: int, dtype: torch.dtype,
+                      device: torch.device):
+        self._update_attn_cache(max_seq_len, dtype, device)
+        return self.attn_mask_cache[:max_seq_len, :max_seq_len].contiguous()
+
+    def _update_attn_cache(self, seqlen: int, dtype: torch.dtype,
+                           device: torch.device):
+        if seqlen > self._seq_len_cached:
+            self._seq_len_cached = seqlen
+            self.attn_mask_cache = _generate_attn_mask(seqlen, dtype)
+        if self.attn_mask_cache.device != device:
+            self.attn_mask_cache = self.attn_mask_cache.to(device)
+
+
+class AscendAttnBackend(AttentionBackend):
 
     def __init__(self, model_runner: ModelRunner):
         super().__init__()
         self.forward_metadata = None
         self.device = model_runner.device
-        self.gen_attention_mask(128, model_runner.dtype)
+        self.attn_mask_builder = AttentionMaskBuilder(8192, model_runner.dtype)
         self.page_size = model_runner.page_size
         self.use_mla = model_runner.model_config.attention_arch == AttentionArch.MLA
         if self.use_mla:
@@ -164,12 +190,12 @@ class AscendAttnBackend(AttentionBackend):
                 dtype=query.dtype,
                 device=query.device,
             )
-
+            mask = self.attn_mask_builder.get_attn_mask(128, query.dtype, query.device)
             torch_npu._npu_flash_attention_qlens(
                 query=query,
                 key_cache=k_cache,
                 value_cache=v_cache,
-                mask=self.mask,
+                mask=mask,
                 block_table=self.forward_metadata.block_tables,
                 seq_len=self.forward_metadata.extend_seq_lens_cpu_int,
                 context_lens=self.forward_metadata.seq_lens_cpu_int,
@@ -180,38 +206,25 @@ class AscendAttnBackend(AttentionBackend):
             )
             return output
         else:
-            if layer.qk_head_dim != layer.v_head_dim:
-                o = q.new_empty((q.shape[0], layer.tp_q_head_num * layer.qk_head_dim))
-            else:
-                o = torch.empty_like(q)
-
-            use_gqa = layer.tp_q_head_num != layer.tp_k_head_num
-
-            q_ = q.view(-1, layer.tp_q_head_num, layer.qk_head_dim + layer.v_head_dim)
-            o_ = o.view(-1, layer.tp_q_head_num, layer.qk_head_dim)
-
-            causal = True
-            if (
-                layer.is_cross_attention
-                or layer.attn_type == AttentionType.ENCODER_ONLY
-            ):
-                causal = False
-
-            self.native_attn._run_sdpa_forward_extend(
-                q_,
-                o_,
-                k_cache.view(-1, layer.tp_k_head_num, self.kv_lora_rank),
-                v_cache.view(-1, layer.tp_v_head_num, self.qk_rope_head_dim),
-                forward_batch.req_to_token_pool.req_to_token,
-                forward_batch.req_pool_indices,
-                forward_batch.seq_lens,
-                forward_batch.extend_prefix_lens,
-                forward_batch.extend_seq_lens,
-                scaling=layer.scaling,
-                enable_gqa=use_gqa,
-                causal=causal,
+            attn_output = torch.empty(q.shape[0],
+                                      layer.tp_q_head_num,
+                                      layer.v_head_dim,
+                                      device=q.device)
+            max_s = max(self.forward_metadata.seq_lens_cpu_int)
+            mask = self.attn_mask_builder.get_attn_mask(max_s, q.dtype, q.device)
+            torch_npu._npu_flash_attention(
+                query=q,
+                key=k,
+                value=v,
+                mask=mask,
+                seq_len=self.forward_metadata.seq_lens_cpu_int,
+                scale_value=layer.scaling,
+                num_heads=layer.tp_q_head_num,
+                num_kv_heads=layer.tp_k_head_num,
+                out=attn_output,
             )
-            return o
+            attn_output = attn_output.reshape(-1, layer.tp_q_head_num, layer.v_head_dim)
+            return attn_output
 
     def forward_decode(
         self,
