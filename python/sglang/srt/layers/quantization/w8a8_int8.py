@@ -956,8 +956,6 @@ class NPU_W8A8MoEMethod(FusedMoEMethodBase):
         layer.w13_weight = Parameter(
             layer.w13_weight.data.transpose(1, 2).contiguous(), requires_grad=False
         )
-        if global_server_args_dict["enable_ep_moe"]:
-            layer.w13_weight.data = torch_npu.npu_format_cast(layer.w13_weight.data, 29)
         layer.w2_weight = Parameter(
             layer.w2_weight.data.transpose(1, 2).contiguous(), requires_grad=False
         )
