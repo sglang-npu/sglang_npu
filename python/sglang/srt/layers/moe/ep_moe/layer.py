@@ -1512,9 +1512,20 @@ class AscendDeepEPMoE(EPMoE):
         import torch_npu
 
         # gmm1: gate_up_proj
+        # hidden_states = torch_npu.npu_grouped_matmul(
+        #     x=[hidden_states],
+        #     weight=[self.w13_weight],
+        #     split_item=2,
+        #     group_list_type=group_list_type,
+        #     group_type=0,
+        #     group_list=seg_indptr,
+        #     output_dtype=torch.int32,
+        # )[0]
         hidden_states = torch_npu.npu_grouped_matmul(
             x=[hidden_states],
             weight=[self.w13_weight],
+            scale=[self.w13_weight_scale.to(output_dtype)],
+            per_token_scale=[pertoken_scale],
             split_item=2,
             group_list_type=group_list_type,
             group_type=0,
@@ -1523,17 +1534,17 @@ class AscendDeepEPMoE(EPMoE):
         )[0]
 
         # act_fn: swiglu
-        hidden_states, swiglu_out_scale = torch_npu.npu_dequant_swiglu_quant(
-            x=hidden_states,
-            weight_scale=self.w13_weight_scale.to(torch.float32),
-            activation_scale=pertoken_scale,
-            bias=None,
-            quant_scale=None,
-            quant_offset=None,
-            group_index=seg_indptr,
-            activate_left=True,
-            quant_mode=1,
-        )
+        # hidden_states, swiglu_out_scale = torch_npu.npu_dequant_swiglu_quant(
+        #     x=hidden_states,
+        #     weight_scale=self.w13_weight_scale.to(torch.float32),
+        #     activation_scale=pertoken_scale,
+        #     bias=None,
+        #     quant_scale=None,
+        #     quant_offset=None,
+        #     group_index=seg_indptr,
+        #     activate_left=True,
+        #     quant_mode=1,
+        # )
 
         # gmm2: down_proj
         hidden_states = torch_npu.npu_grouped_matmul(
