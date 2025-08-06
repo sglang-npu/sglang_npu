@@ -111,6 +111,7 @@ GLOBAL_SERVER_ARGS_KEYS = [
     "enable_sp",
     "enable_sp_prefill",
     "disaggregation_mode",
+    "cp_size",
 ]
 
 # Put some global args for easy access

@@ -1106,21 +1106,27 @@ class MooncakeKVReceiver(BaseKVReceiver):
                 prefill_tp_size_per_dp_rank // local_tp_size_per_dp_rank
             )
 
+        prefill_cp_size = global_server_args_dict["cp_size"]
+        self.target_cp_ranks = [rank for rank in range(prefill_cp_size)]
+        prefill_sp_size = 1
         if global_server_args_dict["enable_sp_prefill"]:
+            prefill_sp_size = prefill_tp_size_per_dp_rank
             # All sp_rank in sp_group need to be notified
-            self.target_tp_ranks = [rank for rank in range(prefill_tp_size_per_dp_rank)]
+            self.target_tp_ranks = [rank for rank in range(prefill_sp_size)]
 
-            # sp_rank in prefill needs send_kvcache to all sp_rank in sp_group in decode
-            self.required_dst_info_num = local_tp_size_per_dp_rank
-
+        scp_size = prefill_sp_size * prefill_cp_size
+        if scp_size > 1:
             # The sp_rank in decode needs to receive the response of each sp_rank in prefill
             # in the case of short sequences, some sp_rank may be empty and not sent to kvcache
             self.required_prefill_response_num = get_sp_device_nums(
                 input_len,
                 self.kv_mgr.kv_args.page_size,
-                prefill_tp_size_per_dp_rank
+                scp_size
             )
 
+            # sp_rank in prefill needs send_kvcache to all sp_rank in sp_group in decode
+            self.required_dst_info_num = local_tp_size_per_dp_rank
+      
         if self.data_parallel_rank is not None:
             logger.debug(f"Targeting DP rank: {self.data_parallel_rank}")
             self.target_dp_group = self.data_parallel_rank
@@ -1137,35 +1143,37 @@ class MooncakeKVReceiver(BaseKVReceiver):
 
         if bootstrap_key not in self.kv_mgr.connection_pool:
             bootstrap_infos = []
-            for target_tp_rank in self.target_tp_ranks:
-                bootstrap_info = self._get_bootstrap_info_from_server(
-                    target_tp_rank,
-                    self.target_dp_group,
-                )
-                if bootstrap_info is not None:
-                    if self.kv_mgr.is_mla_backend:
-                        # For MLA: target_tp_rank is the selected real rank, others are dummy ranks
-                        bootstrap_info["is_dummy"] = not bool(
-                            target_tp_rank == self.target_tp_rank
-                            or self.target_tp_rank is None
-                        )
-                        # For MLA and enable_sp_prefill: all target_tp_ranks are selected real ranks
-                        if global_server_args_dict["enable_sp_prefill"]:
+            for target_cp_rank in self.target_cp_ranks:
+                for target_tp_rank in self.target_tp_ranks:
+                    target_dp_or_cp_rank = self.target_dp_group if prefill_cp_size <= 1 else target_cp_rank
+                    bootstrap_info = self._get_bootstrap_info_from_server(
+                        target_tp_rank,
+                        target_dp_or_cp_rank,
+                    )
+                    if bootstrap_info is not None:
+                        if self.kv_mgr.is_mla_backend:
+                            # For MLA: target_tp_rank is the selected real rank, others are dummy ranks
+                            bootstrap_info["is_dummy"] = not bool(
+                                target_tp_rank == self.target_tp_rank
+                                or self.target_tp_rank is None
+                            )
+                            # For MLA and enable_sp_prefill: all target_tp_ranks are selected real ranks
+                            if global_server_args_dict["enable_sp_prefill"]:
+                                bootstrap_info["is_dummy"] = False
+                        else:
+                            # For non-MLA: all target_tp_ranks are selected real ranks
                             bootstrap_info["is_dummy"] = False
+                        logger.debug(
+                            f"Fetched bootstrap info: {bootstrap_info} for DP {self.target_dp_group} TP {target_tp_rank}"
+                        )
+                        bootstrap_infos.append(bootstrap_info)
                     else:
-                        # For non-MLA: all target_tp_ranks are selected real ranks
-                        bootstrap_info["is_dummy"] = False
-                    logger.debug(
-                        f"Fetched bootstrap info: {bootstrap_info} for DP {self.target_dp_group} TP {target_tp_rank}"
-                    )
-                    bootstrap_infos.append(bootstrap_info)
-                else:
-                    self.kv_mgr.record_failure(
-                        self.bootstrap_room,
-                        f"Could not fetch bootstrap info for engine rank: {self.kv_mgr.kv_args.engine_rank} and target_dp_group: {self.target_dp_group}",
-                    )
-                    self.kv_mgr.update_status(self.bootstrap_room, KVPoll.Failed)
-                    return
+                        self.kv_mgr.record_failure(
+                            self.bootstrap_room,
+                            f"Could not fetch bootstrap info for engine rank: {self.kv_mgr.kv_args.engine_rank} and target_dp_group: {self.target_dp_group}",
+                        )
+                        self.kv_mgr.update_status(self.bootstrap_room, KVPoll.Failed)
+                        return
 
             self.bootstrap_infos = bootstrap_infos
             self.kv_mgr.connection_pool[bootstrap_key] = self.bootstrap_infos
@@ -1269,6 +1277,8 @@ class MooncakeKVReceiver(BaseKVReceiver):
         return sock, lock
 
     def init(self, kv_indices: npt.NDArray[np.int32], aux_index: Optional[int] = None):
+        prefill_cp_size = global_server_args_dict["cp_size"]
+        prefill_sp_size = 1
         if global_server_args_dict["enable_sp_prefill"]:
             kv_indices_origin = kv_indices
 
@@ -1280,9 +1290,11 @@ class MooncakeKVReceiver(BaseKVReceiver):
             # Transfer |      ↓↓     |     ↓↓      |
             # Decode   | page0 page1 | page3 page4 |
             if global_server_args_dict["enable_sp_prefill"]:
-                sp_size = self.prefill_tp_size // self.prefill_dp_size
-                sp_rank = idx
-                start_page, end_page = get_sp_page_range(sp_size, sp_rank, len(kv_indices_origin))
+                prefill_sp_size = self.prefill_tp_size // self.prefill_dp_size
+            scp_size = prefill_cp_size * prefill_sp_size
+            if scp_size > 1:
+                scp_rank = idx
+                start_page, end_page = get_sp_page_range(scp_size, scp_rank, len(kv_indices_origin))
                 kv_indices = kv_indices_origin[start_page : end_page + 1]
 
             sock, lock = self._connect_to_bootstrap_server(bootstrap_info)
