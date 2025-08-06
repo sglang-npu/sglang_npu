@@ -25,7 +25,10 @@ from sglang.srt.eplb.expert_location import (
     get_global_expert_location_metadata,
 )
 from sglang.srt.managers.schedule_batch import global_server_args_dict
-from sglang.srt.utils import get_bool_env_var
+from sglang.srt.utils import get_bool_env_var, is_npu
+
+if is_npu():
+    torch.cuda.empty_cache = torch.npu.empty_cache
 
 logger = logging.getLogger(__name__)
 
@@ -50,14 +53,15 @@ class ExpertLocationUpdater:
             torch.cuda.empty_cache()
 
         old_expert_location_metadata = get_global_expert_location_metadata()
-        _update_expert_weights(
-            routed_experts_weights_of_layer=routed_experts_weights_of_layer,
-            old_expert_location_metadata=old_expert_location_metadata,
-            new_expert_location_metadata=new_expert_location_metadata,
-            update_layer_ids=update_layer_ids,
-            nnodes=nnodes,
-            rank=rank,
-        )
+        if rank >= global_server_args_dict["num_external_rank"]:
+            _update_expert_weights(
+                routed_experts_weights_of_layer=routed_experts_weights_of_layer,
+                old_expert_location_metadata=old_expert_location_metadata,
+                new_expert_location_metadata=new_expert_location_metadata,
+                update_layer_ids=update_layer_ids,
+                nnodes=nnodes,
+                rank=rank,
+            )
         old_expert_location_metadata.update(
             new_expert_location_metadata,
             update_layer_ids=update_layer_ids,

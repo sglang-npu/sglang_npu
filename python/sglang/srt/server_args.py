@@ -188,6 +188,8 @@ class ServerArgs:
     deepep_config: Optional[str] = None
     moe_dense_tp_size: Optional[int] = None
 
+    # External shared expert
+    num_external_rank: int = 0
     # Hierarchical cache
     enable_hierarchical_cache: bool = False
     hicache_ratio: float = 2.0
@@ -1763,6 +1765,12 @@ class ServerArgs:
             "--weight-loader-disable-mmap",
             action="store_true",
             help="Disable mmap while loading weight using safetensors.",
+        )
+        parser.add_argument(
+            "--num-external-rank",
+            type=int,
+            default=0,
+            help="The number of external ranks",
         )
 
     @classmethod

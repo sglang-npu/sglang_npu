@@ -285,9 +285,20 @@ class EPMoE(FusedMoE):
                     Contains global_num_experts for experts not assigned to the current rank.
                     Returns None if ep_size is 1.
         """
-        ep_size = self.ep_size
+        ep_size = self.ep_size 
         ep_rank = self.ep_rank
         global_num_experts = self.num_experts
+
+        num_external_rank = global_server_args_dict["num_external_rank"]
+
+        if ep_rank < num_external_rank:
+            expert_map = torch.full(
+                (global_num_experts,), self.num_experts, dtype=torch.int32
+            )
+            return (0, expert_map)
+
+        ep_size -= num_external_rank 
+        ep_rank -= num_external_rank
 
         assert ep_size > 0
         if ep_size == 1:

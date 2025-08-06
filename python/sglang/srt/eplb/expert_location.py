@@ -87,10 +87,21 @@ class ExpertLocationMetadata:
         num_layers = model_config_for_expert_location.num_layers
         num_logical_experts = model_config_for_expert_location.num_logical_experts
 
-        physical_to_logical_map = (
-            torch.arange(0, num_physical_experts).repeat(num_layers, 1)
-            % num_logical_experts
-        )
+        if server_args.num_external_rank:
+            tp_size = server_args.tp_size
+            num_external_rank = server_args.num_external_rank
+            num_local_experts = int(num_physical_experts // tp_size)
+            external_phys = num_external_rank * num_local_experts
+
+            front = torch.full((external_phys,), -1,)
+            physical_to_logical_map_layer = torch.arange(0, num_physical_experts-external_phys) % num_logical_experts
+            physical_to_logical_map_layer = torch.cat([front,physical_to_logical_map_layer], dim=0)
+            physical_to_logical_map = physical_to_logical_map_layer.unsqueeze(0).expand(num_layers, -1)
+        else:
+            physical_to_logical_map = (
+                torch.arange(0, num_physical_experts).repeat(num_layers, 1)
+                % num_logical_experts
+            )
 
         return ExpertLocationMetadata.init_by_mapping(
             server_args,
@@ -113,6 +124,7 @@ class ExpertLocationMetadata:
         logical_to_all_physical_map = _compute_logical_to_all_physical_map(
             physical_to_logical_map,
             num_logical_experts=model_config_for_expert_location.num_logical_experts,
+            server_args=server_args,
         )
 
         return ExpertLocationMetadata._init_raw(
@@ -152,6 +164,16 @@ class ExpertLocationMetadata:
                 ),
             )
         )
+            num_layers, _ = physical_to_logical_map.shape
+            tensor_front = torch.full((num_layers,external_phys),-1,
+                                        dtype= physical_to_logical_map.dtype,
+                                        device = physical_to_logical_map.device)
+            physical_to_logical_map = torch.cat([tensor_front,physical_to_logical_map], dim=1)
+            logical_to_all_physical_map = _compute_logical_to_all_physical_map(
+                physical_to_logical_map,
+                num_logical_experts=logical_count.shape[2],
+                server_args=server_args,
+            )
 
         return ExpertLocationMetadata._init_raw(
             server_args=server_args,
@@ -167,14 +189,19 @@ class ExpertLocationMetadata:
         model_config_for_expert_location = (
             ModelConfigForExpertLocation.from_model_config(model_config)
         )
-
         num_physical_experts = (
             model_config_for_expert_location.num_logical_experts
             + server_args.ep_num_redundant_experts
         )
         ep_size = server_args.ep_size
-        assert num_physical_experts % ep_size == 0
-        num_local_physical_experts = num_physical_experts // ep_size
+
+        if server_args.num_external_rank == 0:
+            assert num_physical_experts % ep_size == 0
+            num_local_physical_experts = num_physical_experts // ep_size
+        else:
+            assert num_physical_experts % (ep_size - server_args.num_external_rank) == 0 
+            num_local_physical_experts = num_physical_experts // (ep_size - server_args.num_external_rank)
+            num_physical_experts = num_local_physical_experts * ep_size
 
         return dict(
             model_config_for_expert_location=model_config_for_expert_location,
@@ -278,17 +305,24 @@ def set_global_expert_location_metadata(value):
 
 
 def _compute_logical_to_all_physical_map(
-    physical_to_logical_map: torch.Tensor, num_logical_experts: int
+    physical_to_logical_map: torch.Tensor, num_logical_experts: int, server_args: ServerArgs,
 ):
     # This is rarely called, so we use for loops for maximum clarity
 
     num_layers, num_physical_experts = physical_to_logical_map.shape
+    external_phys = 0
+
+    if server_args.num_external_rank > 0:
+        tp_size = server_args.tp_size
+        num_external_rank = server_args.num_external_rank
+        num_local_experts = num_physical_experts // tp_size
+        external_phys = num_external_rank * num_local_experts
 
     logical_to_all_physical_map = [
         [[] for _ in range(num_logical_experts)] for _ in range(num_layers)
     ]
     for layer_id in range(num_layers):
-        for physical_expert_id in range(num_physical_experts):
+        for physical_expert_id in range(external_phys, num_physical_experts):
             logical_expert_id = physical_to_logical_map[
                 layer_id, physical_expert_id
             ].item()
