@@ -41,6 +41,9 @@ from sglang.srt.entrypoints.EngineBase import EngineBase
 from sglang.srt.managers.data_parallel_controller import (
     run_data_parallel_controller_process,
 )
+from sglang.srt.managers.context_parallel_controller import (
+    run_context_parallel_controller_process,
+)
 from sglang.srt.managers.detokenizer_manager import run_detokenizer_process
 from sglang.srt.managers.io_struct import (
     EmbeddingReqInput,
@@ -743,6 +746,16 @@ def _launch_subprocesses(
                     proc.start()
                 scheduler_procs.append(proc)
                 scheduler_pipe_readers.append(reader)
+    elif server_args.cp_size > 1:
+        # Launch the context parallel controller
+        reader, writer = mp.Pipe(duplex=False)
+        scheduler_pipe_readers = [reader]
+        proc = mp.Process(
+            target=run_context_parallel_controller_process,
+            args=(server_args, port_args, writer),
+        )
+        proc.start()
+        scheduler_procs.append(proc)
     else:
         # Launch the data parallel controller
         reader, writer = mp.Pipe(duplex=False)

@@ -44,7 +44,6 @@ class LoadBalanceMethod(Enum):
 
     ROUND_ROBIN = auto()
     SHORTEST_QUEUE = auto()
-    CP_SCHEDULER = auto()
 
     @classmethod
     def from_str(cls, method: str):
@@ -59,8 +58,6 @@ class DataParallelController:
     """A controller that dispatches requests to multiple data parallel workers."""
 
     def __init__(self, server_args: ServerArgs, port_args: PortArgs) -> None:
-        if server_args.cp_size > 1:
-            server_args.dp_size = server_args.cp_size
         # Parse args
         self.max_total_num_tokens = None
         self.server_args = server_args
@@ -81,10 +78,8 @@ class DataParallelController:
         dispatch_lookup = {
             LoadBalanceMethod.ROUND_ROBIN: self.round_robin_scheduler,
             LoadBalanceMethod.SHORTEST_QUEUE: self.shortest_queue_scheduler,
-            LoadBalanceMethod.CP_SCHEDULER: self.cp_scheduler,
         }
-        #self.dispatching = dispatch_lookup[self.load_balance_method]
-        self.dispatching = self.cp_scheduler
+        self.dispatching = dispatch_lookup[self.load_balance_method]
 
         # Launch data parallel workers
         self.scheduler_procs = []
@@ -120,17 +115,11 @@ class DataParallelController:
             tmp_port_args = PortArgs.init_new(server_args)
             tmp_port_args.tokenizer_ipc_name = port_args.tokenizer_ipc_name
             tmp_port_args.detokenizer_ipc_name = port_args.detokenizer_ipc_name
-
-            if server_args.cp_size > 1 and dp_port_args:
-                tmp_port_args.nccl_port = dp_port_args[0].nccl_port
-            else:
-                sockets.append(bind_port(tmp_port_args.nccl_port))
-
             dp_port_args.append(tmp_port_args)
 
             # This port is checked free in PortArgs.init_new.
             # We hold it first so that the next dp worker gets a different port
-            # sockets.append(bind_port(tmp_port_args.nccl_port))
+            sockets.append(bind_port(tmp_port_args.nccl_port))
 
             ready_event = threading.Event()
             ready_events.append(ready_event)
@@ -232,34 +221,19 @@ class DataParallelController:
                     + ((pp_rank % pp_size_per_node) * tp_size_per_node)
                     + (tp_rank % tp_size_per_node) * server_args.gpu_id_step
                 )
-                if server_args.cp_size > 1:
-                    proc = mp.Process(
-                        target=run_scheduler_process,
-                        args=(
-                            server_args,
-                            rank_port_args,
-                            gpu_id,
-                            tp_rank,
-                            pp_rank,
-                            None,
-                            dp_rank,
-                            writer,
-                        ),
-                    )
-                else:
-                    proc = mp.Process(
-                        target=run_scheduler_process,
-                        args=(
-                            server_args,
-                            rank_port_args,
-                            gpu_id,
-                            tp_rank,
-                            pp_rank,
-                            dp_rank,
-                            None,
-                            writer,
-                        ),
-                    )
+                proc = mp.Process(
+                    target=run_scheduler_process,
+                    args=(
+                        server_args,
+                        rank_port_args,
+                        gpu_id,
+                        tp_rank,
+                        pp_rank,
+                        dp_rank,
+                        None,
+                        writer,
+                    ),
+                )
                 with memory_saver_adapter.configure_subprocess():
                     proc.start()
                 self.scheduler_procs.append(proc)
@@ -272,51 +246,6 @@ class DataParallelController:
 
         self.max_total_num_tokens = scheduler_info[0]["max_total_num_tokens"]
         self.max_req_input_len = scheduler_info[0]["max_req_input_len"]
-
-    def cp_scheduler(self, req: Req):
-        cp_size = self.server_args.cp_size
-        # padding req
-        # input_ids = self.tokenizer(
-        #   req.input_ids,
-        #   padding='max_length',
-        #   max_length=cp_size
-        #)
-
-        print("before split")
-        print(req.__dict__)
-
-        input_ids = req.input_ids
-
-        #split cp
-        num_chunks = cp_size * 2
-        input_length = len(input_ids)
-        chunk_length = input_length // cp_size
-        more_length_chunk = input_length % cp_size
-        for cp_rank in range(cp_size):
-            former_rank = cp_rank
-            latter_rank = num_chunks - cp_rank - 1
-            if former_rank < more_length_chunk:
-                former_st_idx = (chunk_length + 1) * former_rank
-                former_end_idx = former_st_idx + chunk_length + 1
-            else:
-                former_st_idx = (chunk_length + 1) * more_length_chunk + chunk_length * (former_rank - more_length_chunk)
-                former_end_idx = former_st_idx + chunk_length
-            
-            if latter_rank < more_length_chunk:
-                latter_st_idx = (chunk_length + 1) * latter_rank
-                latter_end_idx = latter_st_idx + chunk_length + 1
-            else:
-                latter_st_idx = (chunk_length + 1) * more_length_chunk + chunk_length * (latter_rank - more_length_chunk)
-                latter_end_idx = latter_st_idx +  chunk_length
-            
-            req_now = req
-            req_now.data_parallel_rank = cp_rank
-            req_now.input_ids = input_ids[former_st_idx:former_end_idx] + input_ids[latter_st_idx:latter_end_idx]
-            print("after split: cp rank=", cp_rank)
-            print(req_now.__dict__)
-            self.workers[req_now.data_parallel_rank].send_pyobj(req_now)
-
-
 
     def round_robin_scheduler(self, req: Req):
         if self.server_args.disaggregation_mode == "null":
