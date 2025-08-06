@@ -33,8 +33,8 @@ class ForwardMetadata:
 def _generate_attn_mask(max_seq_len, dtype):
     # Construct lower triangle matrix.
     mask_flag = torch.tril(
-        torch.ones((max_seq_len, max_seq_len),
-                   dtype=torch.bool)).view(max_seq_len, max_seq_len)
+        torch.ones((max_seq_len, max_seq_len), dtype=torch.bool)
+    ).view(max_seq_len, max_seq_len)
     # Create upper triangle matrix used to mark mask positions.
     mask_flag = ~mask_flag
     # Currently for fp16 dtype, the mask value should be set to -inf.
@@ -43,8 +43,9 @@ def _generate_attn_mask(max_seq_len, dtype):
         mask_value = torch.finfo(torch.float32).min
     else:
         mask_value = 1
-    attn_mask = torch.masked_fill(torch.zeros(size=(max_seq_len, max_seq_len)),
-                                  mask_flag, mask_value).to(dtype)
+    attn_mask = torch.masked_fill(
+        torch.zeros(size=(max_seq_len, max_seq_len)), mask_flag, mask_value
+    ).to(dtype)
     return attn_mask
 
 
@@ -60,13 +61,11 @@ class AttentionMaskBuilder:
         self._seq_len_cached = attn_mask.shape[0]
         self.attn_mask_cache = attn_mask
 
-    def get_attn_mask(self, max_seq_len: int, dtype: torch.dtype,
-                      device: torch.device):
+    def get_attn_mask(self, max_seq_len: int, dtype: torch.dtype, device: torch.device):
         self._update_attn_cache(max_seq_len, dtype, device)
         return self.attn_mask_cache[:max_seq_len, :max_seq_len].contiguous()
 
-    def _update_attn_cache(self, seqlen: int, dtype: torch.dtype,
-                           device: torch.device):
+    def _update_attn_cache(self, seqlen: int, dtype: torch.dtype, device: torch.device):
         if seqlen > self._seq_len_cached:
             self._seq_len_cached = seqlen
             self.attn_mask_cache = _generate_attn_mask(seqlen, dtype)
@@ -206,10 +205,11 @@ class AscendAttnBackend(AttentionBackend):
             )
             return output
         else:
-            attn_output = torch.empty(q.shape[0],
-                                      layer.tp_q_head_num,
-                                      layer.v_head_dim,
-                                      device=q.device)
+            attn_output = torch.empty(
+                (q.shape[0], layer.tp_q_head_num, layer.v_head_dim),
+                device=q.device,
+                dtype=q.dtype,
+            )
             max_s = max(self.forward_metadata.seq_lens_cpu_int)
             mask = self.attn_mask_builder.get_attn_mask(max_s, q.dtype, q.device)
             torch_npu._npu_flash_attention(

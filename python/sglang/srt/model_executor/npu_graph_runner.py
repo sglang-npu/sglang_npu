@@ -16,10 +16,12 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING
 
 import torch
 
+from python.sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.model_executor.cuda_graph_runner import CudaGraphRunner
 from sglang.srt.utils import is_npu
 
@@ -64,8 +66,15 @@ class NPUGraphRunner(CudaGraphRunner):
             out = run_once_fn()
         return out
 
-    def _update_inputs(self, forward_batch: ForwardBatch):
-        seq_lens = forward_batch.seq_lens.cpu().tolist() + [0] * (self.bs - self.raw_bs)
+    def replay_update(self, seq_lens):
         self.graphs[self.bs].update(
             cpu_update_input=[{"actual_seq_lengths_kv": seq_lens}]
         )
+
+    def _update_and_replay(self, forward_batch: ForwardBatch):
+        seq_lens = forward_batch.seq_lens.cpu().tolist() + [0] * (self.bs - self.raw_bs)
+
+        thread = threading.Thread(target=self.replay_update, args=(seq_lens,))
+        thread.start()
+        self.graphs[self.bs].replay()
+        thread.join()
