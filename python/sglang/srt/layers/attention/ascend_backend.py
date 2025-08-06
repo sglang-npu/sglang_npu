@@ -128,7 +128,8 @@ def calc_attention(
     value = value.repeat(1, q_head, 1)
     value = value.transpose(0, 1)
     query = query.transpose(0, 1)
-    qk = torch.bmm(query, key) * scale,
+    qk = torch.bmm(query, key) 
+    qk = qk * scale
     l = torch.logsumexp(qk, dim=-1, keepdim=True).transpose(0, 1)
     sm = softmax(qk, dim=-1)
     o = torch.bmm(sm, value).transpose(0, 1)
