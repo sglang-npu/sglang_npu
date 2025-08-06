@@ -245,7 +245,7 @@ class ContextParallelController:
                 latter_end_idx = latter_st_idx +  chunk_length
             
             req_now = req
-            // req_now.data_parallel_rank = cp_rank
+            # req_now.data_parallel_rank = cp_rank
             req_now.input_ids = input_ids[former_st_idx:former_end_idx] + input_ids[latter_st_idx:latter_end_idx]
             print("after split: cp rank=", cp_rank)
             print(req_now.__dict__)
