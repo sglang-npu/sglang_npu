@@ -1382,6 +1382,7 @@ class MooncakeKVBootstrapServer(BaseKVBootstrapServer):
         self._setup_routes()
         self.tp_size = None
         self.dp_size = None
+        self.cp_size = None
         self.tp_size_per_dp_rank = None
         self.prefill_port_table: Dict[int, Dict[int, Dict[str, Union[str, int]]]] = {}
 
