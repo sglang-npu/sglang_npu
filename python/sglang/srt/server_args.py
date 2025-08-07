@@ -1838,7 +1838,8 @@ class ServerArgs:
 
         # Check Load Balance
         assert not (
-            self.disaggregation_mode == "prefill" and self.load_balance_method == "dp_load"
+            self.disaggregation_mode == "prefill"
+            and self.load_balance_method == "dp_load"
         ), "prefill node couldn't enable dp_load"
 
     def check_lora_server_args(self):
