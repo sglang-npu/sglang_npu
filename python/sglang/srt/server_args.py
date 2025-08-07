@@ -1775,7 +1775,7 @@ class ServerArgs:
             "--moe-shared-expert-rank-num",
             type=int,
             default=0,
-            help="The number of -moe-shared-expert-ranks",
+            help="The number of moe shared expert-ranks",
         )
 
     @classmethod
