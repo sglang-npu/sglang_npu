@@ -610,6 +610,7 @@ class SchedulerDisaggregationPrefillMixin:
         req.start_send_idx = end_idx
         if last_chunk:
             self.disagg_metadata_buffers.set_buf(req)
+            logger.info(f"test-token1========= {req.output_ids[0]}")
         page_indices = kv_to_page_indices(kv_indices, page_size)
         if len(page_indices) == 0:
             # Sending empty pages is used to synchronize the status. Empty pages will appear in very short sequences.
