@@ -1158,7 +1158,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
         bootstrap_key = (
             f"{self.bootstrap_addr}_{self.target_dp_group}_{self.target_tp_rank}"
         )
-
+        print(f"recvtest===={self.target_cp_ranks=} {self.target_tp_ranks=}")
         if bootstrap_key not in self.kv_mgr.connection_pool:
             bootstrap_infos = []
             for target_cp_rank in self.target_cp_ranks:
@@ -1314,6 +1314,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
 
             sock, lock = self._connect_to_bootstrap_server(bootstrap_info)
             is_dummy = bootstrap_info["is_dummy"]
+            print(f"recvtest========== {kv_indices=} {scp_rank=}")
 
             with lock:
                 sock.send_multipart(
