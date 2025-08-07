@@ -447,7 +447,7 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
             enable_global_physical_experts = True
         else:
             device = "cuda"
-            
+
         super().__init__(*args, **kwargs)
 
         self._enable_global_physical_experts = enable_global_physical_experts
@@ -480,6 +480,7 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
                     dim=-1,
                     prepend=global_physical_count[..., :1],
                 )
+            global_physical_count[:, :self.external_phys] = 0
         else:
             # Can optimize if bottleneck
             global_physical_count = _convert_local_to_global_physical_count(
