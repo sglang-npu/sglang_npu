@@ -223,6 +223,7 @@ class MooncakeKVManager(BaseKVManager):
             self.connection_pool: Dict[str, Dict[str, Union[str, int]]] = {}
             self.prefill_tp_size_table: Dict[str, int] = {}
             self.prefill_dp_size_table: Dict[str, int] = {}
+            self.prefill_cp_size_table: Dict[str, int] = {}
             # If a timeout happens on the decode side, it means decode instances
             # fail to receive the KV Cache transfer done signal after bootstrapping.
             # These timeout requests should be aborted to release the tree cache.
@@ -716,7 +717,10 @@ class MooncakeKVManager(BaseKVManager):
             while True:
                 time.sleep(self.heartbeat_interval)
                 with self.connection_lock:
-                    addresses = list(self.prefill_dp_size_table.keys())
+                    if self.dp_size > 1:
+                        addresses = list(self.prefill_dp_size_table.keys())
+                    else:
+                        addresses = list(self.prefill_cp_size_table.keys())
 
                 for bootstrap_addr in addresses:
                     session = None
@@ -886,6 +890,8 @@ class MooncakeKVManager(BaseKVManager):
                 del self.prefill_tp_size_table[failed_bootstrap_addr]
             if failed_bootstrap_addr in self.prefill_dp_size_table:
                 del self.prefill_dp_size_table[failed_bootstrap_addr]
+            if failed_bootstrap_addr in self.prefill_cp_size_table:
+                del self.prefill_cp_size_table[failed_bootstrap_addr]
 
             possible_affected_rooms = self.addr_to_rooms_tracker.get(
                 failed_bootstrap_addr, []
@@ -1033,7 +1039,8 @@ class MooncakeKVReceiver(BaseKVReceiver):
         self.init_time = None
         self.data_parallel_rank = data_parallel_rank
 
-        if self.bootstrap_addr not in self.kv_mgr.prefill_dp_size_table:
+        # todo
+        if self.bootstrap_addr not in self.kv_mgr.prefill_cp_size_table:
             self.prefill_tp_size, self.prefill_dp_size, self.prefill_cp_size = (
                 self._get_prefill_parallel_info_from_server()
             )
