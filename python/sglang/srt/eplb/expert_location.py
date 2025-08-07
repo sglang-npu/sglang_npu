@@ -164,16 +164,16 @@ class ExpertLocationMetadata:
                 ),
             )
         )
-            num_layers, _ = physical_to_logical_map.shape
-            tensor_front = torch.full((num_layers,external_phys),-1,
-                                        dtype= physical_to_logical_map.dtype,
-                                        device = physical_to_logical_map.device)
-            physical_to_logical_map = torch.cat([tensor_front,physical_to_logical_map], dim=1)
-            logical_to_all_physical_map = _compute_logical_to_all_physical_map(
-                physical_to_logical_map,
-                num_logical_experts=logical_count.shape[2],
-                server_args=server_args,
-            )
+        num_layers, _ = physical_to_logical_map.shape
+        tensor_front = torch.full((num_layers,external_phys),-1,
+                                    dtype= physical_to_logical_map.dtype,
+                                    device = physical_to_logical_map.device)
+        physical_to_logical_map = torch.cat([tensor_front,physical_to_logical_map], dim=1)
+        logical_to_all_physical_map = _compute_logical_to_all_physical_map(
+            physical_to_logical_map,
+            num_logical_experts=logical_count.shape[2],
+            server_args=server_args,
+        )
 
         return ExpertLocationMetadata._init_raw(
             server_args=server_args,
