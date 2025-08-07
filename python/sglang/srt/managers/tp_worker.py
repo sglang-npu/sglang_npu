@@ -66,8 +66,10 @@ class TpModelWorker:
     ):
         # Parse args
         self.tp_size = server_args.tp_size
+        self.pp_size = server_args.pp_size
         self.tp_rank = tp_rank
         self.pp_rank = pp_rank
+        self.cp_rank = cp_rank if cp_rank is not None else 0
 
         # Init model and tokenizer
         self.model_config = ModelConfig.from_server_args(
@@ -145,7 +147,7 @@ class TpModelWorker:
         # Sync random seed across TP workers
         self.random_seed = broadcast_pyobj(
             [server_args.random_seed],
-            self.tp_size * self.pp_rank + tp_rank,
+            self.tp_size * self. pp_size * self.cp_rank + self.tp_size * self.pp_rank + tp_rank,
             self.world_group.cpu_group,
             src=self.world_group.ranks[0],
         )[0]
