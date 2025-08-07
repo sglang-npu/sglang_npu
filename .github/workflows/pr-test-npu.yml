@@ -2,14 +2,14 @@ name: PR Test (Ascend NPU)
 
 on:
   push:
-    branches: [ main ]
+    branches: [ br_feature/w8a8int8_dev ]
     paths:
       - "python/**"
       - "scripts/**"
       - "test/**"
       - ".github/workflows/pr-test-npu.yml"
   pull_request:
-    branches: [ main ]
+    branches: [ br_feature/w8a8int8_dev ]
     paths:
       - "python/**"
       - "scripts/**"

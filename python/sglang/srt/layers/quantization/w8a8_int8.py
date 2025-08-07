@@ -138,34 +138,19 @@ def npu_fused_experts(
         expanded_expert_idx, num_experts
     )
     expert_tokens = expert_tokens.to(torch.int64)
-    # gmm1: gate_up_proj
-    hidden_states, pertoken_scale = torch_npu.npu_dynamic_quant(hidden_states)
-    hidden_states = torch_npu.npu_grouped_matmul(
-        x=[hidden_states],
-        weight=[w13],
-        scale=[w13_scale.to(scale_dtype)],
-        per_token_scale=[pertoken_scale],
-        split_item=2,
-        group_list_type=0,
-        group_type=0,
-        group_list=expert_tokens,
-        output_dtype=original_dtype,
-    )[0]
-    # act_fn: swiglu
-    hidden_states = torch_npu.npu_swiglu(hidden_states)
-    hidden_states, pertoken_scale = torch_npu.npu_dynamic_quant(hidden_states)
-    # gmm2: down_proj
-    hidden_states = torch_npu.npu_grouped_matmul(
-        x=[hidden_states],
-        weight=[w2],
-        scale=[w2_scale.to(scale_dtype)],
-        per_token_scale=[pertoken_scale],
-        split_item=2,
-        group_list_type=0,
-        group_type=0,
-        group_list=expert_tokens,
-        output_dtype=original_dtype,
-    )[0]
+
+    # TODO: 待实现
+    # 第一步：对bf16的hidden_states进行int8 per-token动态量化
+
+    # 第二步：gmm1：将量化后的hidden_states与权重w13进行分组矩阵乘,
+    # 分组输入为expert_tokens，需要反量化回bf16
+
+    # 第三步：计算swiglu激活值
+
+    # 第四步：对bf16的hidden_states进行int8 per-token动态量化
+
+    # 第五步：gmm2：将量化后的hidden_states与权重w2进行分组分组矩阵乘,
+    # 分组输入为expert_tokens，需要反量化回bf16
 
     final_hidden_states = torch_npu.npu_moe_finalize_routing(
         hidden_states,
@@ -933,10 +918,7 @@ class NPU_W8A8MoEMethod(FusedMoEMethodBase):
         layer.register_parameter("w2_weight_scale", w2_weight_scale)
         set_weight_attrs(w2_weight_scale, extra_weight_attrs)
         # offset
-        w13_weight_offset = torch.nn.Parameter(
-            torch.empty(num_experts, 2 * intermediate_size, 1, dtype=torch.float32),
-            requires_grad=False,
-        )
+        w13_weight_offset = torch.nn.Parameter(torch.empty(num_experts, 2 * intermediate_size, 1, dtype=torch.float32), requires_grad=False)
         layer.register_parameter("w13_weight_offset", w13_weight_offset)
         set_weight_attrs(w13_weight_offset, extra_weight_attrs)
         w2_weight_offset = torch.nn.Parameter(
@@ -947,24 +929,12 @@ class NPU_W8A8MoEMethod(FusedMoEMethodBase):
         set_weight_attrs(w2_weight_offset, extra_weight_attrs)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
-        layer.w13_weight = Parameter(
-            layer.w13_weight.data.transpose(1, 2).contiguous(), requires_grad=False
-        )
-        layer.w2_weight = Parameter(
-            layer.w2_weight.data.transpose(1, 2).contiguous(), requires_grad=False
-        )
-        layer.w13_weight_scale = Parameter(
-            layer.w13_weight_scale.data.squeeze(-1).contiguous(), requires_grad=False
-        )
-        layer.w2_weight_scale = Parameter(
-            layer.w2_weight_scale.data.squeeze(-1).contiguous(), requires_grad=False
-        )
-        layer.w13_weight_offset = Parameter(
-            layer.w13_weight_offset.data.squeeze(-1).contiguous(), requires_grad=False
-        )
-        layer.w2_weight_offset = Parameter(
-            layer.w2_weight_offset.data.squeeze(-1).contiguous(), requires_grad=False
-        )
+        layer.w13_weight = Parameter(layer.w13_weight.data.transpose(1, 2).contiguous(), requires_grad=False)
+        layer.w2_weight = Parameter(layer.w2_weight.data.transpose(1, 2).contiguous(), requires_grad=False)
+        layer.w13_weight_scale = Parameter(w13_weight_scale.data.squeeze(-1).contiguous(), requires_grad=False)
+        layer.w2_weight_scale = Parameter(layer.w2_weight_scale.data.squeeze(-1).contiguous(), requires_grad=False)
+        layer.w13_weight_offset = Parameter(layer.w13_weight_offset.data.squeeze(-1).contiguous(), requires_grad=False)
+        layer.w2_weight_offset = Parameter(layer.w2_weight_offset.data.squeeze(-1).contiguous(), requires_grad=False)
 
     def apply(
         self,
