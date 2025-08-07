@@ -39,6 +39,7 @@ from sglang.srt.layers.quantization.base_config import (
 from sglang.srt.layers.quantization.compressed_tensors.utils import should_ignore_layer
 from sglang.srt.layers.quantization.int8_kernel import per_token_quant_int8
 from sglang.srt.layers.quantization.unquant import UnquantizedLinearMethod
+from sglang.srt.managers.schedule_batch import global_server_args_dict
 from sglang.srt.utils import (
     apply_module_patch,
     cpu_has_amx_support,
@@ -531,12 +532,25 @@ class W8A8Int8MoEMethod(FusedMoEMethodBase):
         )
 
 
+class DynamicQuantOps(object):
+    """
+    :param x, scale, offset
+    :return
+    """
+
+    def execute(self, x_input):
+        out = torch.empty_like(x_input[0], dtype=torch.int8)
+        torch_npu._npu_quantize_per_tensor(x_input[0], x_input[1], x_input[2], out)
+        return [out]
+
+
 class NPU_W8A8LinearMethodImpl:
     """Linear method for NPU W8A8."""
 
     def __init__(self) -> None:
         # aclnn quant matmul requires to transpose matrix B, set to true by default.
         self.transpose_weight = True
+        self.elewise_quant = DynamicQuantOps()
 
     @staticmethod
     def get_weight(
@@ -569,22 +583,17 @@ class NPU_W8A8LinearMethodImpl:
         params_dict["weight_offset"] = torch.empty(output_size, 1, dtype=params_dtype)
         return params_dict
 
-    @staticmethod
     def apply(
+        self,
         layer: torch.nn.Module,
         x: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         original_dtype = x.dtype
         if original_dtype != torch.int8:
-            x = torch_npu.npu_quantize(
-                x,
-                layer.aclnn_input_scale,
-                layer.aclnn_input_offset,
-                torch.qint8,
-                -1,
-                True,
-            )
+            x = self.elewise_quant.execute([x, layer.input_scale, layer.input_offset])[
+                0
+            ]
         # Only fuse bias add into GEMM for rank 0 (this ensures that
         # bias will not get added more than once in Attention TP>1 case)
         if isinstance(layer, RowParallelLinear) and layer.tp_rank > 0:
@@ -955,6 +964,9 @@ class NPU_W8A8MoEMethod(FusedMoEMethodBase):
         layer.w2_weight = Parameter(
             layer.w2_weight.data.transpose(1, 2).contiguous(), requires_grad=False
         )
+        # The weight format of npu_grouped_matmul_finalize_routing must be nz
+        if global_server_args_dict["enable_ep_moe"]:
+            layer.w2_weight.data = torch_npu.npu_format_cast(layer.w2_weight.data, 29)
         layer.w13_weight_scale = Parameter(
             layer.w13_weight_scale.data.squeeze(-1).contiguous(), requires_grad=False
         )
