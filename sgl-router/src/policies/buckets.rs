@@ -593,7 +593,7 @@ mod tests {
         // Initialize the policy with prefill_workers
         policy.init_prefill_worker_urls(&prefill_workers);
 
-        // Initial requests - should use backet scheduling
+        // Initial requests - should use bucket scheduling
         let idx1 = policy.select_worker(&prefill_workers, Some("hello world")).unwrap();
         let idx2 = policy.select_worker(&prefill_workers, Some("hello world")).unwrap();
         assert_eq!(idx1, idx2, "First two requests should go to the same worker");
