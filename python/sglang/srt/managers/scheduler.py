@@ -1147,6 +1147,7 @@ class Scheduler(
             req.tokenizer = self.tokenizer
             logger.debug(f"Scheduler {self.tp_rank=} reveice token {len(recv_req.input_ids)}")
 
+            
             if self.disaggregation_mode != DisaggregationMode.NULL:
                 # Invalid request for disaggregated mode
                 if recv_req.bootstrap_room is None:
