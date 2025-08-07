@@ -1133,7 +1133,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
             self.required_dst_info_num = local_tp_size_per_dp_rank
 
         scp_size = self.prefill_sp_size * self.prefill_cp_size
-        if global_server_args_dict["enable_sp_prefill"] or self.prefill_cp_size > 1:
+        if global_server_args_dict["enable_sp_prefill"]:
             # All sp_rank in sp_group need to be notified
             self.target_tp_ranks = [rank for rank in range(prefill_tp_size_per_dp_rank)]
 
@@ -1314,7 +1314,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
 
             sock, lock = self._connect_to_bootstrap_server(bootstrap_info)
             is_dummy = bootstrap_info["is_dummy"]
-            logger.debug(f"recvtest========== {kv_indices=} {scp_rank=} {is_dummy=}")
+            logger.debug(f"recvtest========== {kv_indices=} {scp_size=} {scp_rank=} {is_dummy=} {len(kv_indices_origin)=}")
 
             with lock:
                 sock.send_multipart(
