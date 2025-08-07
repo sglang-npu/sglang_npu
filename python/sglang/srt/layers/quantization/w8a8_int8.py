@@ -141,16 +141,41 @@ def npu_fused_experts(
 
     # TODO: 待实现
     # 第一步：对bf16的hidden_states进行int8 per-token动态量化
+    hidden_states, pertoken_scale = torch_npu.npu_dynamic_quant(hidden_states)
 
     # 第二步：gmm1：将量化后的hidden_states与权重w13进行分组矩阵乘,
     # 分组输入为expert_tokens，需要反量化回bf16
+    hidden_states = torch_npu.npu_grouped_matmul(
+        x=[hidden_states],
+        weight=[w13],
+        scale=[w13_scale.to(scale_dtype)],
+        per_token_scale=[pertoken_scale],
+        split_item=2,
+        group_list_type=0,
+        group_type=0,
+        group_list=expert_tokens,
+        output_dtype=original_dtype,
+    )[0]
 
     # 第三步：计算swiglu激活值
+    hidden_states = torch_npu.npu_swiglu(hidden_states)
 
     # 第四步：对bf16的hidden_states进行int8 per-token动态量化
+    hidden_states, pertoken_scale = torch_npu.npu_dynamic_quant(hidden_states)
 
     # 第五步：gmm2：将量化后的hidden_states与权重w2进行分组分组矩阵乘,
     # 分组输入为expert_tokens，需要反量化回bf16
+    hidden_states = torch_npu.npu_grouped_matmul(
+        x=[hidden_states],
+        weight=[w2],
+        scale=[w2_scale.to(scale_dtype)],
+        per_token_scale=[pertoken_scale],
+        split_item=2,
+        group_list_type=0,
+        group_type=0,
+        group_list=expert_tokens,
+        output_dtype=original_dtype,
+    )[0]
 
     final_hidden_states = torch_npu.npu_moe_finalize_routing(
         hidden_states,
