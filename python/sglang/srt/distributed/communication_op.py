@@ -36,7 +36,7 @@ def context_model_parallel_broadcast(
     input_: torch.Tensor, src: int = -1
 ) -> torch.Tensor:
     """Broadcast the input tensor across model parallel group"""
-    return get_cp_group().broadcast(input_, scr)
+    return get_cp_group().broadcast(input_, src)
 
 def broadcast_tensor_dict(
     tensor_dict: Optional[Dict[Any, Union[torch.Tensor, Any]]] = None, src: int = 0
