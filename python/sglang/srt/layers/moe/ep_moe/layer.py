@@ -294,8 +294,8 @@ class EPMoE(FusedMoE):
             hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
         num_tokens, hidden_size = hidden_states.shape
         topk_weights = topk_weights.to(hidden_states.dtype)
-        ep_rank = self.ep_rank
-        ep_size = self.ep_size
+        ep_rank = self.moe_ep_rank
+        ep_size = self.moe_ep_size
         local_num_experts = self.num_experts // ep_size
 
         import torch_npu

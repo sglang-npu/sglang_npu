@@ -963,7 +963,8 @@ class NPU_W8A8MoEMethod(FusedMoEMethodBase):
             layer.w2_weight.data.transpose(1, 2).contiguous(), requires_grad=False
         )
         # The weight format of npu_grouped_matmul_finalize_routing must be nz
-        if global_server_args_dict["enable_ep_moe"]:
+        from sglang.srt.distributed.parallel_state import get_moe_expert_parallel_world_size
+        if get_moe_expert_parallel_world_size() > 1:
             layer.w2_weight.data = torch_npu.npu_format_cast(layer.w2_weight.data, 29)
         layer.w13_weight_scale = Parameter(
             layer.w13_weight_scale.data.squeeze(-1).contiguous(), requires_grad=False
