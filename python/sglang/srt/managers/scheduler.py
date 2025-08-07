@@ -288,17 +288,19 @@ class Scheduler(
             self.send_to_tokenizer = get_zmq_socket(
                 context, zmq.PUSH, port_args.tokenizer_ipc_name, False
             )
-
-            if server_args.skip_tokenizer_init:
-                # Directly send to the TokenizerManager
-                self.send_to_detokenizer = get_zmq_socket(
-                    context, zmq.PUSH, port_args.tokenizer_ipc_name, False
-                )
+            if self.cp_rank is None or self.cp_rank == self.cp_size - 1:
+                if server_args.skip_tokenizer_init:
+                    # Directly send to the TokenizerManager
+                    self.send_to_detokenizer = get_zmq_socket(
+                        context, zmq.PUSH, port_args.tokenizer_ipc_name, False
+                    )
+                else:
+                    # Send to the DetokenizerManager
+                    self.send_to_detokenizer = get_zmq_socket(
+                        context, zmq.PUSH, port_args.detokenizer_ipc_name, False
+                    )
             else:
-                # Send to the DetokenizerManager
-                self.send_to_detokenizer = get_zmq_socket(
-                    context, zmq.PUSH, port_args.detokenizer_ipc_name, False
-                )
+                self.send_to_detokenizer = SimpleNamespace(send_pyobj=lambda x: None)
 
             self.recv_from_rpc = get_zmq_socket(
                 context, zmq.DEALER, port_args.rpc_ipc_name, False
