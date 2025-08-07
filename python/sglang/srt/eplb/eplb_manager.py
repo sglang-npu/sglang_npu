@@ -6,9 +6,13 @@ import torch.cuda
 
 from sglang.srt.eplb.expert_distribution import get_global_expert_distribution_recorder
 from sglang.srt.eplb.expert_location import ExpertLocationMetadata
+from sglang.srt.utils import is_npu
 
 if TYPE_CHECKING:
     from sglang.srt.model_executor.model_runner import ModelRunner
+
+if is_npu():
+    torch.cuda.synchronize = torch.npu.synchronize
 
 logger = logging.getLogger(__name__)
 

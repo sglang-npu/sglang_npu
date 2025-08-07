@@ -47,6 +47,8 @@ PTA_VERSION=2.6.0
 ${PIP_INSTALL} torch==$PYTORCH_VERSION torchvision==$TORCHVISION_VERSION --index-url https://download.pytorch.org/whl/cpu
 ${PIP_INSTALL} torch_npu==$PTA_VERSION
 
+wget https://gitee.com/ascend/pytorch/releases/download/v7.1.0-pytorch2.6.0/torch_npu-2.6.0-cp311-cp311-manylinux_2_28_aarch64.whl --no-check-certificate
+pip install ./torch_npu-2.6.0-cp311-cp311-manylinux_2_28_aarch64.whl
 
 ### Install Triton-Ascend
 TRITON_ASCEND_NAME="triton_ascend-3.2.0.dev20250729-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl"
