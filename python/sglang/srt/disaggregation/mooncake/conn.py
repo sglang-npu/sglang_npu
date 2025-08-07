@@ -609,6 +609,7 @@ class MooncakeKVManager(BaseKVManager):
                             )
 
                             # Only sync status when all the dst ranks have received the kvcache
+                            logger.debug(f"sendtest========== {len(polls)=} {req.required_dst_info_num=}")
                             if len(polls) == req.required_dst_info_num:
                                 status = KVPoll.Success if all(polls) else KVPoll.Failed
                                 self.update_status(req.room, status)
@@ -1128,13 +1129,13 @@ class MooncakeKVReceiver(BaseKVReceiver):
         self.prefill_sp_size = 1
         if global_server_args_dict["enable_sp_prefill"]:
             self.prefill_sp_size = prefill_tp_size_per_dp_rank
+            # sp_rank in prefill needs send_kvcache to all sp_rank in sp_group in decode
+            self.required_dst_info_num = local_tp_size_per_dp_rank
 
         scp_size = self.prefill_sp_size * self.prefill_cp_size
         if global_server_args_dict["enable_sp_prefill"] or self.prefill_cp_size > 1:
             # All sp_rank in sp_group need to be notified
             self.target_tp_ranks = [rank for rank in range(prefill_tp_size_per_dp_rank)]
-            # sp_rank in prefill needs send_kvcache to all sp_rank in sp_group in decode
-            self.required_dst_info_num = local_tp_size_per_dp_rank
 
             # The sp_rank in decode needs to receive the response of each sp_rank in prefill
             # in the case of short sequences, some sp_rank may be empty and not sent to kvcache
