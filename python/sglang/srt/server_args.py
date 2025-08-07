@@ -1836,6 +1836,11 @@ class ServerArgs:
             self.chunked_prefill_size % self.page_size == 0
         ), "chunked_prefill_size must be divisible by page_size"
 
+        # Check Load Balance
+        assert not (
+            self.disaggregation_mode == "prefill" and self.load_balance_method == "dp_load"
+        ), "prefill node couldn't enable dp_load"
+
     def check_lora_server_args(self):
         assert (
             self.max_loras_per_batch > 0
