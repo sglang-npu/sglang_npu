@@ -199,13 +199,9 @@ class ExpertLocationMetadata:
         )
         ep_size = server_args.ep_size
 
-        if server_args.moe_shared_expert_rank_num == 0:
-            assert num_physical_experts % ep_size == 0
-            num_local_physical_experts = num_physical_experts // ep_size
-        else:
-            assert num_physical_experts % (ep_size - server_args.moe_shared_expert_rank_num) == 0 
-            num_local_physical_experts = num_physical_experts // (ep_size - server_args.moe_shared_expert_rank_num)
-            num_physical_experts = num_local_physical_experts * ep_size
+        assert num_physical_experts % (ep_size - server_args.moe_shared_expert_rank_num) == 0 
+        num_local_physical_experts = num_physical_experts // (ep_size - server_args.moe_shared_expert_rank_num)
+        num_physical_experts = num_local_physical_experts * ep_size
 
         return dict(
             model_config_for_expert_location=model_config_for_expert_location,

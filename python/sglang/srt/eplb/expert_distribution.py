@@ -447,13 +447,8 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
             enable_global_physical_experts = True
         else:
             device = "cuda"
+            
         super().__init__(*args, **kwargs)
-
-        if is_npu():
-            device = "npu"
-            enable_global_physical_experts = True
-        else:
-            device = "cuda"
 
         self._enable_global_physical_experts = enable_global_physical_experts
 
