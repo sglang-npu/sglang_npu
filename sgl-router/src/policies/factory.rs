@@ -1,7 +1,7 @@
 //! Factory for creating load balancing policies
 
 use super::{
-    CacheAwareConfig, CacheAwarePolicy, LoadBalancingPolicy, PowerOfTwoPolicy, RandomPolicy, 
+    CacheAwareConfig, CacheAwarePolicy, LoadBalancingPolicy, PowerOfTwoPolicy, RandomPolicy,
     BucketConfig, BucketPolicy, RoundRobinPolicy,
 };
 use crate::config::PolicyConfig;

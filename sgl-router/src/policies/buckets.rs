@@ -618,7 +618,7 @@ mod tests {
         // Next request should not use bucket scheduling (no load balancing)
         let idx = policy.select_worker(&prefill_workers, Some("request")).unwrap();
         assert_eq!(idx, 0, "Should not trigger load balancing when relative threshold not met");
-        
+
         // Test 3: Not triggering when relative threshold not met
         let config = BucketConfig {
             balance_abs_threshold: 5,
