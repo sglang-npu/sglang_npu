@@ -1129,12 +1129,13 @@ class MooncakeKVReceiver(BaseKVReceiver):
         if global_server_args_dict["enable_sp_prefill"]:
             self.prefill_sp_size = prefill_tp_size_per_dp_rank
 
+        scp_size = self.prefill_sp_size * self.prefill_cp_size
         if global_server_args_dict["enable_sp_prefill"] or self.prefill_cp_size > 1:
             # All sp_rank in sp_group need to be notified
             self.target_tp_ranks = [rank for rank in range(prefill_tp_size_per_dp_rank)]
+            # sp_rank in prefill needs send_kvcache to all sp_rank in sp_group in decode
+            self.required_dst_info_num = local_tp_size_per_dp_rank
 
-        scp_size = self.prefill_sp_size * self.prefill_cp_size
-        if scp_size > 1:
             # The sp_rank in decode needs to receive the response of each sp_rank in prefill
             # in the case of short sequences, some sp_rank may be empty and not sent to kvcache
             self.required_prefill_response_num = get_sp_device_nums(
@@ -1142,9 +1143,6 @@ class MooncakeKVReceiver(BaseKVReceiver):
                 self.kv_mgr.kv_args.page_size,
                 scp_size
             )
-
-            # sp_rank in prefill needs send_kvcache to all sp_rank in sp_group in decode
-            self.required_dst_info_num = local_tp_size_per_dp_rank
       
         if self.data_parallel_rank is not None:
             logger.debug(f"Targeting DP rank: {self.data_parallel_rank}")
@@ -1297,7 +1295,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
         return sock, lock
 
     def init(self, kv_indices: npt.NDArray[np.int32], aux_index: Optional[int] = None):
-        if global_server_args_dict["enable_sp_prefill"]:
+        if global_server_args_dict["enable_sp_prefill"] or self.prefill_cp_size > 1:
             kv_indices_origin = kv_indices
 
         for idx, bootstrap_info in enumerate(self.bootstrap_infos):
