@@ -289,16 +289,16 @@ class EPMoE(FusedMoE):
         ep_rank = self.ep_rank
         global_num_experts = self.num_experts
 
-        num_external_rank = global_server_args_dict["num_external_rank"]
+        moe_shared_expert_rank_num = global_server_args_dict["moe_shared_expert_rank_num"]
 
-        if ep_rank < num_external_rank:
+        if ep_rank < moe_shared_expert_rank_num:
             expert_map = torch.full(
                 (global_num_experts,), self.num_experts, dtype=torch.int32
             )
             return (0, expert_map)
 
-        ep_size -= num_external_rank 
-        ep_rank -= num_external_rank
+        ep_size -= moe_shared_expert_rank_num 
+        ep_rank -= moe_shared_expert_rank_num
 
         assert ep_size > 0
         if ep_size == 1:

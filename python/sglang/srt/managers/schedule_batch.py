@@ -108,7 +108,7 @@ GLOBAL_SERVER_ARGS_KEYS = [
     "weight_loader_disable_mmap",
     "enable_triton_kernel_moe",
     "enable_multimodal",
-    "num_external_rank",
+    "moe_shared_expert_rank_num",
 ]
 
 # Put some global args for easy access

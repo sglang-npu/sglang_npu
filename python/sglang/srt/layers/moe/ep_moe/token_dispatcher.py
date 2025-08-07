@@ -92,8 +92,8 @@ class DeepEPBuffer:
         if deepep_mode.enable_low_latency():
             assert num_max_dispatch_tokens_per_rank is not None
             # assert num_experts is not None and num_experts % group.size() == 0
-            num_external_rank = global_server_args_dict["num_external_rank"]
-            assert num_experts is not None and num_experts % (group.size() - num_external_rank) == 0
+            moe_shared_expert_rank_num = global_server_args_dict["moe_shared_expert_rank_num"]
+            assert num_experts is not None and num_experts % (group.size() - moe_shared_expert_rank_num) == 0
             num_rdma_bytes = max(
                 Buffer.get_low_latency_rdma_size_hint(
                     num_max_dispatch_tokens_per_rank,

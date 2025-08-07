@@ -87,11 +87,11 @@ class ExpertLocationMetadata:
         num_layers = model_config_for_expert_location.num_layers
         num_logical_experts = model_config_for_expert_location.num_logical_experts
 
-        if server_args.num_external_rank:
+        if server_args.moe_shared_expert_rank_num:
             tp_size = server_args.tp_size
-            num_external_rank = server_args.num_external_rank
+            moe_shared_expert_rank_num = server_args.moe_shared_expert_rank_num
             num_local_experts = int(num_physical_experts // tp_size)
-            external_phys = num_external_rank * num_local_experts
+            external_phys = moe_shared_expert_rank_num * num_local_experts
 
             front = torch.full((external_phys,), -1,)
             physical_to_logical_map_layer = torch.arange(0, num_physical_experts-external_phys) % num_logical_experts
@@ -150,9 +150,9 @@ class ExpertLocationMetadata:
         num_groups = model_config_for_expert_location.num_groups
         num_nodes = server_args.nnodes
 
-        num_external_rank = server_args.num_external_rank
+        moe_shared_expert_rank_num = server_args.moe_shared_expert_rank_num
         num_local_physical_experts = num_physical_experts // common["ep_size"]
-        external_phys = num_external_rank * num_local_physical_experts
+        external_phys = moe_shared_expert_rank_num * num_local_physical_experts
         physical_to_logical_map, logical_to_all_physical_map, expert_count = (
             eplb_algorithms.rebalance_experts(
                 tokens_per_expert=logical_count,
@@ -199,12 +199,12 @@ class ExpertLocationMetadata:
         )
         ep_size = server_args.ep_size
 
-        if server_args.num_external_rank == 0:
+        if server_args.moe_shared_expert_rank_num == 0:
             assert num_physical_experts % ep_size == 0
             num_local_physical_experts = num_physical_experts // ep_size
         else:
-            assert num_physical_experts % (ep_size - server_args.num_external_rank) == 0 
-            num_local_physical_experts = num_physical_experts // (ep_size - server_args.num_external_rank)
+            assert num_physical_experts % (ep_size - server_args.moe_shared_expert_rank_num) == 0 
+            num_local_physical_experts = num_physical_experts // (ep_size - server_args.moe_shared_expert_rank_num)
             num_physical_experts = num_local_physical_experts * ep_size
 
         return dict(
@@ -316,11 +316,11 @@ def _compute_logical_to_all_physical_map(
     num_layers, num_physical_experts = physical_to_logical_map.shape
     external_phys = 0
 
-    if server_args.num_external_rank > 0:
+    if server_args.moe_shared_expert_rank_num > 0:
         tp_size = server_args.tp_size
-        num_external_rank = server_args.num_external_rank
+        moe_shared_expert_rank_num = server_args.moe_shared_expert_rank_num
         num_local_experts = num_physical_experts // tp_size
-        external_phys = num_external_rank * num_local_experts
+        external_phys = moe_shared_expert_rank_num * num_local_experts
 
     logical_to_all_physical_map = [
         [[] for _ in range(num_logical_experts)] for _ in range(num_layers)

@@ -189,7 +189,7 @@ class ServerArgs:
     moe_dense_tp_size: Optional[int] = None
 
     # External shared expert
-    num_external_rank: int = 0
+    moe_shared_expert_rank_num: int = 0
     # Hierarchical cache
     enable_hierarchical_cache: bool = False
     hicache_ratio: float = 2.0
@@ -465,6 +465,11 @@ class ServerArgs:
                 "EPLB is enabled or init_expert_location is provided. ep_dispatch_algorithm is configured."
             )
 
+        if self.enable_deepep_moe and self.moe_shared_expert_rank_num > 0:
+            logger.info(
+                "Moe shared expert externalization is enabled."
+            ) 
+    
         if self.enable_eplb:
             assert self.enable_ep_moe or self.enable_deepep_moe
 
@@ -1767,10 +1772,10 @@ class ServerArgs:
             help="Disable mmap while loading weight using safetensors.",
         )
         parser.add_argument(
-            "--num-external-rank",
+            "--moe-shared-expert-rank-num",
             type=int,
             default=0,
-            help="The number of external ranks",
+            help="The number of -moe-shared-expert-ranks",
         )
 
     @classmethod
