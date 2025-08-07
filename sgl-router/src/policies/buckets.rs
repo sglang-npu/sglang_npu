@@ -549,10 +549,10 @@ impl Bucket {
                     break;
                 }
             }
-            if (hist_load_idx >= hist_loads_len) {
-                right_bound += latest_buc_load_avg;
+            if (hist_load_idx >= hist_loads_len && load_sum < latest_buc_load_avg) {
+                right_bound = left_bound + latest_buc_load_avg;
             }
-            if (right_bound - left_bound <= latest_buc_load_avg / 4) {
+            if (right_bound - left_bound <= 0) {
                 right_bound = left_bound + latest_buc_load_avg;
             }
             boundary = Boundary::new(worker_url.clone(), [left_bound, right_bound]);
