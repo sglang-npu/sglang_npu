@@ -150,10 +150,13 @@ class ExpertLocationMetadata:
         num_groups = model_config_for_expert_location.num_groups
         num_nodes = server_args.nnodes
 
+        num_external_rank = server_args.num_external_rank
+        num_local_physical_experts = num_physical_experts // common["ep_size"]
+        external_phys = num_external_rank * num_local_physical_experts
         physical_to_logical_map, logical_to_all_physical_map, expert_count = (
             eplb_algorithms.rebalance_experts(
                 tokens_per_expert=logical_count,
-                num_physical_experts=num_physical_experts,
+                num_physical_experts=num_physical_experts - external_phys,
                 num_local_physical_experts=num_physical_experts // common["ep_size"],
                 num_groups=num_groups,
                 num_nodes=num_nodes,
@@ -164,6 +167,7 @@ class ExpertLocationMetadata:
                 ),
             )
         )
+
         num_layers, _ = physical_to_logical_map.shape
         tensor_front = torch.full((num_layers,external_phys),-1,
                                     dtype= physical_to_logical_map.dtype,
