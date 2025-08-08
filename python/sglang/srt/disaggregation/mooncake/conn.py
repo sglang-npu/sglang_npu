@@ -1320,7 +1320,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
             if self.prefill_cp_size > 1 and self.prefill_sp_size == 1:
                 cp_rank = idx
                 kv_indices = get_cp_kvindices(self.prefill_cp_size, cp_rank, kv_indices_origin)
-                logger.info(f"decode index send to prefill(CP): {kv_indices=} {cp_rank=} {kv_indices_origin=}")
+                logger.info(f"decode index send to prefill(CP): {kv_indices=} {self.prefill_cp_size=} {cp_rank=} {kv_indices_origin=}")
 
             # sp and cp
             if self.prefill_cp_size > 1 and self.prefill_sp_size > 1:

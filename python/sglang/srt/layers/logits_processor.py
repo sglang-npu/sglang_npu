@@ -509,10 +509,7 @@ class LogitsProcessor(nn.Module):
             )
             dp_scatter(logits, global_logits, logits_metadata)
 
-        logger.info(f"logits before broadcast: {logits.shape} {logits.sum()}")
         logits = context_model_parallel_broadcast(logits)
-        logger.info(f"logits after broadcast:  {logits.shape} {logits.sum()}")
-
         logits = logits[:, : self.config.vocab_size].float()
 
         if self.final_logit_softcapping:
