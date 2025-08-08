@@ -611,7 +611,7 @@ class MooncakeKVManager(BaseKVManager):
                             )
 
                             # Only sync status when all the dst ranks have received the kvcache
-                            logger.debug(f"sendtest========== {len(polls)=} {req.required_dst_info_num=}")
+                            logger.debug(f"prefill sync_status_to_decode_endpoint {len(polls)=} {req.required_dst_info_num=}")
                             if len(polls) == req.required_dst_info_num:
                                 status = KVPoll.Success if all(polls) else KVPoll.Failed
                                 self.update_status(req.room, status)
@@ -1160,7 +1160,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
         bootstrap_key = (
             f"{self.bootstrap_addr}_{self.target_dp_group}_{self.target_tp_rank}"
         )
-        logger.debug(f"recvtest===={self.target_cp_ranks=} {self.target_tp_ranks=}")
+        logger.debug(f"decode connect prefill {self.target_cp_ranks=} {self.target_tp_ranks=}")
         if bootstrap_key not in self.kv_mgr.connection_pool:
             bootstrap_infos = []
             for target_cp_rank in self.target_cp_ranks:
@@ -1305,10 +1305,9 @@ class MooncakeKVReceiver(BaseKVReceiver):
             # sp_rank in decode notifies the kvcache in prefill to transfer 1/sp for each sp_rank
             # sp-rank  |  sp_rank:0  |  sp_rank:1  |
             # prefill0 | page0 page1 | ----- ----- |
-            # prefill1 | ----- ----- | page3 page4 |
+            # prefill1 | ----- ----- | page2 page3 |
             # Transfer |      ↓↓     |     ↓↓      |
-            # Decode   | page0 page1 | page3 page4 |
-
+            # Decode   | page0 page1   page2 page3 |
             # only sp
             if self.prefill_cp_size == 1 and self.prefill_sp_size > 1:
                 sp_rank = idx
@@ -1316,6 +1315,12 @@ class MooncakeKVReceiver(BaseKVReceiver):
                 kv_indices = kv_indices_origin[start_page : end_page + 1]
                 logger.info(f"decode index send to prefill(SP): {kv_indices=} {sp_rank=} {kv_indices_origin=}")
 
+            # cp_rank in decode notifies the kvcache in prefill to transfer 1/cp for each cp_rank
+            # sp-rank  |  cp_rank:0  |  cp_rank:1  |
+            # prefill0 | page0 page3 | ----- ----- |
+            # prefill1 | ----- ----- | page1 page2 |
+            # Transfer |    ↓    ↘       ↙    ↙    |
+            # Decode   | page0 page1   page2 page3 |
             # only cp
             if self.prefill_cp_size > 1 and self.prefill_sp_size == 1:
                 cp_rank = idx
