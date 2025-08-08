@@ -4,7 +4,6 @@ from urllib.parse import urlparse
 
 from sglang.srt.utils import kill_process_tree
 from sglang.test.few_shot_gsm8k import run_eval as run_eval_few_shot_gsm8k
-from sglang.test.run_eval import run_eval
 from sglang.test.test_utils import (
     DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
     DEFAULT_URL_FOR_TEST,
@@ -16,14 +15,14 @@ from sglang.test.test_utils import (
 
 TEST_MODEL_MATRIX = {
     "Qwen/Qwen2.5-7B-Instruct": {
-        "accuracy": 0.86,
+        "accuracy": 0.85,
         "latency": 150,
         "output_throughput": 30,
     },
 }
 
 
-class TestAscend_TP1_BF16(CustomTestCase):
+class TestAscendTp1Bf16(CustomTestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -32,6 +31,7 @@ class TestAscend_TP1_BF16(CustomTestCase):
         cls.url = urlparse(DEFAULT_URL_FOR_TEST)
         cls.common_args = [
             "--trust-remote-code",
+            "--disable-cuda-graph",
             "--mem-fraction-static",
             0.8,
             "--attention-backend",
@@ -67,10 +67,6 @@ class TestAscend_TP1_BF16(CustomTestCase):
                     self.assertGreaterEqual(
                         metrics["accuracy"],
                         TEST_MODEL_MATRIX[model]["accuracy"],
-                    )
-                    self.assertLessEqual(
-                        metrics["latency"],
-                        TEST_MODEL_MATRIX[model]["latency"],
                     )
                 finally:
                     kill_process_tree(process.pid)

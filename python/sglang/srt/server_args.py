@@ -1121,6 +1121,7 @@ class ServerArgs:
             choices=[
                 "round_robin",
                 "shortest_queue",
+                "dp_load",
             ],
         )
 
@@ -1835,6 +1836,12 @@ class ServerArgs:
             self.chunked_prefill_size % self.page_size == 0
         ), "chunked_prefill_size must be divisible by page_size"
 
+        # Check Load Balance
+        assert not (
+            self.disaggregation_mode == "prefill"
+            and self.load_balance_method == "dp_load"
+        ), "prefill node couldn't enable dp_load"
+
     def check_lora_server_args(self):
         assert (
             self.max_loras_per_batch > 0
@@ -1975,6 +1982,8 @@ class PortArgs:
     scheduler_input_ipc_name: str
     # The ipc filename for detokenizer to receive inputs from scheduler (zmq)
     detokenizer_ipc_name: str
+    # The ipc filename for dpc scheduler to receive dp load from scheduler (zmq)
+    dpc_scheduler_input_ipc_name: str
 
     # The port for nccl initialization (torch.dist)
     nccl_port: int
@@ -2004,6 +2013,7 @@ class PortArgs:
             return PortArgs(
                 tokenizer_ipc_name=f"ipc://{tempfile.NamedTemporaryFile(delete=False).name}",
                 scheduler_input_ipc_name=f"ipc://{tempfile.NamedTemporaryFile(delete=False).name}",
+                dpc_scheduler_input_ipc_name=f"ipc://{tempfile.NamedTemporaryFile(delete=False).name}",
                 detokenizer_ipc_name=f"ipc://{tempfile.NamedTemporaryFile(delete=False).name}",
                 nccl_port=nccl_port,
                 rpc_ipc_name=f"ipc://{tempfile.NamedTemporaryFile(delete=False).name}",
@@ -2034,6 +2044,7 @@ class PortArgs:
             return PortArgs(
                 tokenizer_ipc_name=f"tcp://{dist_init_host}:{port_base}",
                 scheduler_input_ipc_name=f"tcp://{dist_init_host}:{scheduler_input_port}",
+                dpc_scheduler_input_ipc_name=f"tcp://{dist_init_host}:{scheduler_input_port}",
                 detokenizer_ipc_name=f"tcp://{dist_init_host}:{port_base + 1}",
                 nccl_port=nccl_port,
                 rpc_ipc_name=f"tcp://{dist_init_host}:{port_base + 2}",
