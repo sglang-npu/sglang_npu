@@ -336,19 +336,12 @@ class AscendAttnBackend(AttentionBackend):
                 #q [bs/cp, q_head, qk_dim(nope+rope)]
                 #k [bs/cp, 1, qk_dim(nope+rope)]
                 #v [bs/cp, 1, v_dim(nope)]
-                logger.info(f"q: {q.shape}, {q.sum}")
 
                 k_ = k.view(-1, layer.tp_k_head_num, layer.qk_head_dim)
                 v_ = v.view(-1, layer.tp_k_head_num, layer.v_head_dim)
 
-                logger.info(f"k_: {k_.shape} {k_.sum()}")
-                logger.info(f"v_: {v_.shape} {v_.sum()}")
-
                 k_ = context_model_parallel_all_gather(k_, dim=0)
                 v_ = context_model_parallel_all_gather(v_, dim=0)
-
-                logger.info(f"k_: {k_.shape} {k_.sum()}")
-                logger.info(f"v_: {v_.shape} {v_.sum()}")
 
                 def ring_split(mtx, cp_size, num_head, head_dim, seq_lens):
                     front_part = []
@@ -372,13 +365,7 @@ class AscendAttnBackend(AttentionBackend):
                 k_ = ring_split(k_, cp_size, layer.tp_k_head_num, layer.qk_head_dim, forward_batch.seq_lens)
                 v_ = ring_split(v_, cp_size, layer.tp_k_head_num, layer.v_head_dim, forward_batch.seq_lens)
                 
-
-                logger.info(f"after split q_: {q_.shape} {q_.sum()}")
-                logger.info(f"after split k_: {k_.shape} {k_.sum()}")
-                logger.info(f"after split v_: {v_.shape} {v_.sum()}")
-
                 q_idxs = [cp_rank, cp_size * 2 - cp_rank - 1]
-                logger.info(f"q_idxs: {q_idxs}")
 
                 out = []
                 mask = torch.zeros(512, 512, dtype=q.dtype)
@@ -432,7 +419,6 @@ class AscendAttnBackend(AttentionBackend):
 
                             prev_out = go_output.clone()
                             prev_lse = lse_output.clone()
-                    logger.info(f"q_i:{q_i}  go_output:{go_output.shape} {go_output.sum()}")
                     out.append(go_output)
 
                 def ring_concat(out, seq_lens):
@@ -446,9 +432,7 @@ class AscendAttnBackend(AttentionBackend):
                     return torch.cat(ret, dim=0)
 
                 o = ring_concat(out, forward_batch.seq_lens)
-                logger.info(f"o1: {o.shape} {o.sum()}")
                 o = o.reshape(num_tokens, layer.tp_q_head_num * layer.v_head_dim)
-                logger.info(f"o2: {o.shape} {o.sum()}")
 
             # In SP mode, complete kv is required for prefill
             elif global_server_args_dict["enable_sp"] or global_server_args_dict["enable_sp_prefill"]:
