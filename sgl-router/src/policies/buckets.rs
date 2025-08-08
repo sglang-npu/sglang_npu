@@ -606,7 +606,7 @@ mod tests {
 
 
         // === Phase S1: Construct bucket boundaries ===
-        // Requsets len =33 -> Bucket 1(expected range: 0-33)
+        // Requests len =33 -> Bucket 1(expected range: 0-33)
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(33))).unwrap();
         // Two requests len =34 ->load balancing
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(34))).unwrap();
@@ -699,7 +699,7 @@ mod tests {
             assert_eq!(bucket_guard.boundary[1].range[1], 2729);
         }
 
-        // ===Phase S1: Initial requests to trigger boundary ajustment ===
+        // ===Phase S1: Initial requests to trigger boundary adjustment ===
         // Send requests with lengths: [5, 10, 15, 20, 24, 26] (total = 100)
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(5))).unwrap();
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(10))).unwrap();
@@ -716,7 +716,7 @@ mod tests {
             assert_eq!(bucket_guard.boundary[1].range[1], 26);
         }
 
-        // ===Phase S2: Second set of  requests to trigger boundary ajustment ===
+        // ===Phase S2: Second set of  requests to trigger boundary adjustment ===
         // Send requests with lengths: [10, 20, 30, 40, 45, 57] (total = 202)
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(10))).unwrap();
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(20))).unwrap();
