@@ -226,24 +226,15 @@ class ContextParallelController:
         num_chunks = cp_size * 2
         input_length = len(input_ids)
         chunk_length = input_length // cp_size
-        more_length_chunk = input_length % cp_size
         for cp_rank in range(cp_size):
             former_rank = cp_rank
+            former_st_idx = chunk_length * former_rank
+            former_end_idx = former_st_idx +  chunk_length
+
             latter_rank = num_chunks - cp_rank - 1
-            if former_rank < more_length_chunk:
-                former_st_idx = (chunk_length + 1) * former_rank
-                former_end_idx = former_st_idx + chunk_length + 1
-            else:
-                former_st_idx = (chunk_length + 1) * more_length_chunk + chunk_length * (former_rank - more_length_chunk)
-                former_end_idx = former_st_idx + chunk_length
-            
-            if latter_rank < more_length_chunk:
-                latter_st_idx = (chunk_length + 1) * latter_rank
-                latter_end_idx = latter_st_idx + chunk_length + 1
-            else:
-                latter_st_idx = (chunk_length + 1) * more_length_chunk + chunk_length * (latter_rank - more_length_chunk)
-                latter_end_idx = latter_st_idx +  chunk_length
-            
+            latter_st_idx = chunk_length * latter_rank
+            latter_end_idx = latter_st_idx + chunk_length
+
             req_now = req
             # req_now.data_parallel_rank = cp_rank
             req_now.input_ids = input_ids[former_st_idx:former_end_idx] + input_ids[latter_st_idx:latter_end_idx]
