@@ -2898,7 +2898,7 @@ def get_cp_kvindices(cp_size, cp_rank, indices):
     head_block = indices[head_start:head_end]
     tail_block = indices[tail_start:tail_end]
 
-    return head_block + tail_block
+    return np.concatenate([head_block, tail_block])
 
 def get_scp_kvindices(cp_size, cp_rank, sp_size, sp_rank, indices):
     cp_kvindices = get_cp_kvindices(cp_size, cp_rank, indices)
