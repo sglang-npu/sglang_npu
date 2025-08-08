@@ -604,17 +604,22 @@ mod tests {
         // Initialize the policy with prefill_workers
         policy.init_prefill_worker_urls(&prefill_workers);
 
-        // Initial requests
+        // === Phase S1: Construct bucket boundaries ===
+        // Requsets len =33 -> Bucket 1(expected range: 0-33)
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(33))).unwrap();
+        // Two requests len =34 ->load balancing
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(34))).unwrap();
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(34))).unwrap();
-        // Boundary should be [0, 33] [34, 67] [68, MAX]
+
         tokio::time::sleep(std::time::Duration::from_secs(10)).await;
         {
             let bucket_guard = policy.bucket.read().unwrap();
+            // Expected Boundary: [0, 33] [34, 67] [68, MAX]
             assert_eq!(bucket_guard.boundary[0].range[1], 33);
             assert_eq!(bucket_guard.boundary[1].range[1], 67);
         }
+        // === Phase S2: Validate load balancing ===
+        // Three consecutive len=33 requests (Should route to different buckets)
         let idx_1 = policy.select_worker(&prefill_workers, Some(&*"a".repeat(33))).unwrap();
         let idx_2 = policy.select_worker(&prefill_workers, Some(&*"a".repeat(33))).unwrap();
         let idx_3 = policy.select_worker(&prefill_workers, Some(&*"a".repeat(33))).unwrap();
@@ -631,7 +636,7 @@ mod tests {
         let policy = BucketPolicy::with_config(config);
         policy.init_prefill_worker_urls(&prefill_workers);
 
-        // Create load difference (but below absolute threshold)
+        // Create load difference below absolute threshold(20 + 8 = 28 < 30)
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(20))).unwrap(); // worker1: 20
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(8))).unwrap(); // worker1: 8
 
@@ -649,6 +654,7 @@ mod tests {
         policy.init_prefill_worker_urls(&prefill_workers);
 
         // Create load difference (but relative threshold not met)
+        // Max/Min ratio = 15/5 = 3.0
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(15))).unwrap(); // worker1: 15
         policy.select_worker(&prefill_workers, Some("short")).unwrap(); // worker2: 5
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(10))).unwrap(); // worker3: 10
@@ -660,108 +666,185 @@ mod tests {
 
     #[tokio::test]
     async fn test_adjust_boundary_1() {
-        let mut bucket = Bucket::new(1000);
-        let urls = vec!["http://w1:8000".to_string(),
-        "http://w2:8000".to_string(),
-        "http://w3:8000".to_string(),
+        // Test configuration: Set high threshold to prevent load balancing policy.
+        let config = BucketConfig {
+            balance_abs_threshold: 300,
+            balance_rel_threshold: 1.0001,
+            bucket_adjust_interval_secs: 3,
+        };
+        let policy = BucketPolicy::with_config(config);
+        let prefill_workers: Vec<Box<dyn Worker>> = vec![
+            Box::new(BasicWorker::new(
+                "http://w1:8000".to_string(),
+                WorkerType::Regular,
+            )),
+            Box::new(BasicWorker::new(
+                "http://w2:8000".to_string(),
+                WorkerType::Regular,
+            )),
+            Box::new(BasicWorker::new(
+                "http://w3:8000".to_string(),
+                WorkerType::Regular,
+            )),
         ];
 
-        bucket.init_prefill_worker_urls(urls.clone());
+        // Initialize the policy with prefill_workers
+        policy.init_prefill_worker_urls(&prefill_workers);
+
         // Initial boundary
-        assert_eq!(bucket.boundary[0].range[1], 1364);
-        assert_eq!(bucket.boundary[1].range[1], 2729);
+        {
+            let bucket_guard = policy.bucket.read().unwrap();
+            assert_eq!(bucket_guard.boundary[0].range[1], 1364);
+            assert_eq!(bucket_guard.boundary[1].range[1], 2729);
+        }
 
-        // Send requests with char_count [5, 10, 15, 20, 24, 26]
-        bucket.post_process_request(5, "http://w1:8000".to_string());
-        bucket.post_process_request(10, "http://w1:8000".to_string());
-        bucket.post_process_request(15, "http://w1:8000".to_string());
-        bucket.post_process_request(20, "http://w1:8000".to_string());
-        bucket.post_process_request(24, "http://w1:8000".to_string());
-        bucket.post_process_request(26, "http://w1:8000".to_string());
+        // ===Phase S1: Initial requests to trigger boundary ajustment ===
+        // Send requests with lengths: [5, 10, 15, 20, 24, 26] (total = 100)
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(5))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(10))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(15))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(20))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(24))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(26))).unwrap();
+        
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        // Verify boundaries adjusted to: [0, 20], [21, 26], [27, MAX]
+        {
+            let bucket_guard = policy.bucket.read().unwrap();
+            assert_eq!(bucket_guard.boundary[0].range[1], 20);
+            assert_eq!(bucket_guard.boundary[1].range[1], 26);
+        }
 
-        bucket.adjust_boundary();
-        assert_eq!(bucket.boundary[0].range[1], 20);
-        assert_eq!(bucket.boundary[1].range[1], 26);
+        // ===Phase S2: Second set of  requests to trigger boundary ajustment ===
+        // Send requests with lengths: [10, 20, 30, 40, 45, 57] (total = 202)
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(10))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(20))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(30))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(40))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(45))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(57))).unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-        bucket.post_process_request(10, "http://w1:8000".to_string());
-        bucket.post_process_request(20, "http://w1:8000".to_string());
-        bucket.post_process_request(30, "http://w1:8000".to_string());
-        bucket.post_process_request(40, "http://w1:8000".to_string());
-        bucket.post_process_request(45, "http://w1:8000".to_string());
-        bucket.post_process_request(57, "http://w1:8000".to_string());
-
-        bucket.adjust_boundary();
-        assert_eq!(bucket.boundary[0].range[1], 40);
-        assert_eq!(bucket.boundary[1].range[1], 57);
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        // Verify boundaries adjusted to: [0, 40], [41, 57], [58, MAX]
+        {
+            let bucket_guard = policy.bucket.read().unwrap();
+            assert_eq!(bucket_guard.boundary[0].range[1], 40);
+            assert_eq!(bucket_guard.boundary[1].range[1], 57);
+        }
     }
 
     #[tokio::test]
     async fn test_adjust_boundary_2() {
-        let mut bucket = Bucket::new(1000);
-        let urls = vec!["http://w1:8000".to_string(),
-        "http://w2:8000".to_string(),
-        "http://w3:8000".to_string(),
+        let config = BucketConfig {
+            balance_abs_threshold: 300,
+            balance_rel_threshold: 1.0001,
+            bucket_adjust_interval_secs: 3,
+        };
+        let policy = BucketPolicy::with_config(config);
+        let prefill_workers: Vec<Box<dyn Worker>> = vec![
+            Box::new(BasicWorker::new(
+                "http://w1:8000".to_string(),
+                WorkerType::Regular,
+            )),
+            Box::new(BasicWorker::new(
+                "http://w2:8000".to_string(),
+                WorkerType::Regular,
+            )),
+            Box::new(BasicWorker::new(
+                "http://w3:8000".to_string(),
+                WorkerType::Regular,
+            )),
         ];
 
-        bucket.init_prefill_worker_urls(urls.clone());
+        // Initialize the policy with prefill_workers
+        policy.init_prefill_worker_urls(&prefill_workers);
+
         // Initial boundary
-        assert_eq!(bucket.boundary[0].range[1], 1364);
-        assert_eq!(bucket.boundary[1].range[1], 2729);
+        {
+            let bucket_guard = policy.bucket.read().unwrap();
+            assert_eq!(bucket_guard.boundary[0].range[1], 1364);
+            assert_eq!(bucket_guard.boundary[1].range[1], 2729);
+        }
 
         // Send requests with char_count 20
-        bucket.post_process_request(20, "http://w1:8000".to_string());
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(20))).unwrap();
 
-        bucket.adjust_boundary();
-        assert_eq!(bucket.boundary[0].range[1], 20);
-        assert_eq!(bucket.boundary[1].range[1], 27);
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        {
+            let bucket_guard = policy.bucket.read().unwrap();
+            assert_eq!(bucket_guard.boundary[0].range[1], 20);
+            assert_eq!(bucket_guard.boundary[1].range[1], 27);
+        }
+        
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(7))).unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-        bucket.post_process_request(7, "http://w1:8000".to_string());
-
-        bucket.adjust_boundary();
-        assert_eq!(bucket.boundary[0].range[1], 7);
-        assert_eq!(bucket.boundary[1].range[1], 10);
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        {
+            let bucket_guard = policy.bucket.read().unwrap();
+            assert_eq!(bucket_guard.boundary[0].range[1], 7);
+            assert_eq!(bucket_guard.boundary[1].range[1], 10);
+        }
     }
 
     #[tokio::test]
     async fn test_not_adjust_boundary() {
-        let mut bucket = Bucket::new(1000);
-        let urls = vec!["http://w1:8000".to_string(),
-        "http://w2:8000".to_string(),
-        "http://w3:8000".to_string(),
+        let config = BucketConfig {
+            balance_abs_threshold: 300,
+            balance_rel_threshold: 1.0001,
+            bucket_adjust_interval_secs: 3,
+        };
+        let policy = BucketPolicy::with_config(config);
+        let prefill_workers: Vec<Box<dyn Worker>> = vec![
+            Box::new(BasicWorker::new(
+                "http://w1:8000".to_string(),
+                WorkerType::Regular,
+            )),
+            Box::new(BasicWorker::new(
+                "http://w2:8000".to_string(),
+                WorkerType::Regular,
+            )),
+            Box::new(BasicWorker::new(
+                "http://w3:8000".to_string(),
+                WorkerType::Regular,
+            )),
         ];
 
-        bucket.init_prefill_worker_urls(urls.clone());
+        // Initialize the policy with prefill_workers
+        policy.init_prefill_worker_urls(&prefill_workers);
+
         // Initial boundary
-        assert_eq!(bucket.boundary[0].range[1], 1364);
-        assert_eq!(bucket.boundary[1].range[1], 2729);
+        {
+            let bucket_guard = policy.bucket.read().unwrap();
+            assert_eq!(bucket_guard.boundary[0].range[1], 1364);
+            assert_eq!(bucket_guard.boundary[1].range[1], 2729);
+        }
 
-        // Send requests with char_count [5, 10, 15, 20, 24, 26]
-        bucket.post_process_request(5, "http://w1:8000".to_string());
-        bucket.post_process_request(10, "http://w1:8000".to_string());
-        bucket.post_process_request(15, "http://w1:8000".to_string());
-        bucket.post_process_request(20, "http://w1:8000".to_string());
-        bucket.post_process_request(24, "http://w1:8000".to_string());
-        bucket.post_process_request(26, "http://w1:8000".to_string());
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(5))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(10))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(15))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(20))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(24))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(26))).unwrap();
+        
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        {
+            let bucket_guard = policy.bucket.read().unwrap();
+            assert_eq!(bucket_guard.boundary[0].range[1], 20);
+            assert_eq!(bucket_guard.boundary[1].range[1], 26);
+        }
 
-        bucket.adjust_boundary();
-        assert_eq!(bucket.boundary[0].range[1], 20);
-        assert_eq!(bucket.boundary[1].range[1], 26);
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(10))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(20))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(30))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(32))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(45))).unwrap();
+        policy.select_worker(&prefill_workers, Some(&*"a".repeat(55))).unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-        bucket.post_process_request(10, "http://w1:8000".to_string());
-        bucket.post_process_request(20, "http://w1:8000".to_string());
-        bucket.post_process_request(30, "http://w1:8000".to_string());
-        bucket.post_process_request(32, "http://w1:8000".to_string());
-        bucket.post_process_request(45, "http://w1:8000".to_string());
-        bucket.post_process_request(55, "http://w1:8000".to_string());
-
-        bucket.adjust_boundary();
-        assert_eq!(bucket.boundary[0].range[1], 20);
-        assert_eq!(bucket.boundary[1].range[1], 26);
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        {
+            let bucket_guard = policy.bucket.read().unwrap();
+            assert_eq!(bucket_guard.boundary[0].range[1], 20);
+            assert_eq!(bucket_guard.boundary[1].range[1], 26);
+        }
     }
 }
