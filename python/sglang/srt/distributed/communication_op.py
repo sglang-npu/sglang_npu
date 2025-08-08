@@ -33,7 +33,7 @@ def context_model_parallel_all_gather(
     return get_cp_group().all_gather(input_, dim)
 
 def context_model_parallel_broadcast(
-    input_: torch.Tensor, src: int = -1
+    input_: torch.Tensor, src: int = 0
 ) -> torch.Tensor:
     """Broadcast the input tensor across model parallel group"""
     return get_cp_group().broadcast(input_, src)
