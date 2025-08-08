@@ -225,7 +225,7 @@ class ContextParallelController:
         #split cp
         num_chunks = cp_size * 2
         input_length = len(input_ids)
-        chunk_length = input_length // cp_size
+        chunk_length = input_length // num_chunks
         for cp_rank in range(cp_size):
             former_rank = cp_rank
             former_st_idx = chunk_length * former_rank
