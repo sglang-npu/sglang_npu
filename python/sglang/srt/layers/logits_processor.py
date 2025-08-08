@@ -25,6 +25,7 @@ from torch import nn
 from sglang.srt.distributed import (
     get_tensor_model_parallel_world_size,
     tensor_model_parallel_all_gather,
+    context_model_parallel_broadcast,
 )
 from sglang.srt.layers.dp_attention import (
     DPPaddingMode,
@@ -507,6 +508,10 @@ class LogitsProcessor(nn.Module):
                 logits,
             )
             dp_scatter(logits, global_logits, logits_metadata)
+
+        logger.info(f"logits before broadcast: {logits.shape} {logits.sum()}")
+        logits = context_model_parallel_broadcast(logits)
+        logger.info(f"logits after broadcast:  {logits.shape} {logits.sum()}")
 
         logits = logits[:, : self.config.vocab_size].float()
 
