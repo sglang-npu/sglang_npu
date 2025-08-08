@@ -706,7 +706,7 @@ mod tests {
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(20))).unwrap();
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(24))).unwrap();
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(26))).unwrap();
-        
+
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         // Verify boundaries adjusted to: [0, 20], [21, 26], [27, MAX]
         {
@@ -775,7 +775,7 @@ mod tests {
             assert_eq!(bucket_guard.boundary[0].range[1], 20);
             assert_eq!(bucket_guard.boundary[1].range[1], 27);
         }
-        
+
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(7))).unwrap();
 
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
@@ -825,7 +825,7 @@ mod tests {
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(20))).unwrap();
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(24))).unwrap();
         policy.select_worker(&prefill_workers, Some(&*"a".repeat(26))).unwrap();
-        
+
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         {
             let bucket_guard = policy.bucket.read().unwrap();
