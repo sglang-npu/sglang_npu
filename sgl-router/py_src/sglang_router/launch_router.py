@@ -286,7 +286,9 @@ class RouterArgs:
             host=args.host,
             port=args.port,
             pd_disaggregation=getattr(args, f"{prefix}pd_disaggregation", False),
-            bucket_adjust_interval=getattr(args, f"{prefix}bucket_adjust_interval", False),
+            bucket_adjust_interval=getattr(
+                args, f"{prefix}bucket_adjust_interval", False
+            ),
             prefill_urls=prefill_urls,
             decode_urls=decode_urls,
             policy=getattr(args, f"{prefix}policy"),
