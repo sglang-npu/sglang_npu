@@ -515,10 +515,10 @@ class TokenizerManager:
                     "accept text prompts. Please provide input_ids or re-initialize "
                     "the engine with skip_tokenizer_init=False."
                 )
-            if self.server_args.cp_size > 1:
+            if self.server_args.cp_size > 1 or self.server_args.cp_prefill_size > 1:
                 print("need padding")
                 page_size = self.server_args.page_size if self.server_args.page_size is not None else 1
-                max_length = page_size * self.server_args.cp_size * 2
+                max_length = page_size * max(self.server_args.cp_size, self.server_args.cp_prefill_size) * 2
                 encoded = self.tokenizer(
                     input_text,
                     return_token_type_ids=is_cross_encoder_request,

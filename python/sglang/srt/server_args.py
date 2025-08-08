@@ -134,6 +134,7 @@ class ServerArgs:
 
     # Context parallelism
     cp_size: int = 1
+    cp_prefill_size: int = 1
 
     # Multi-node distributed serving
     dist_init_addr: Optional[str] = None
@@ -1142,6 +1143,12 @@ class ServerArgs:
             "--cp-size",
             type=int,
             default=ServerArgs.cp_size,
+            help="The context parallelism size.",
+        )
+        parser.add_argument(
+            "--cp-prefill-size",
+            type=int,
+            default=ServerArgs.cp_prefill_size,
             help="The context parallelism size.",
         )
 
