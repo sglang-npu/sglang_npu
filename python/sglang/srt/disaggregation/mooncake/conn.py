@@ -1314,20 +1314,20 @@ class MooncakeKVReceiver(BaseKVReceiver):
                 sp_rank = idx
                 start_page, end_page = get_sp_page_range(sp_size, sp_rank, len(kv_indices_origin))
                 kv_indices = kv_indices_origin[start_page : end_page + 1]
-                logger.info(f"decode index send to prefill(SP): {kv_indices=} {sp_rank=} {is_dummy=} {kv_indices_origin=}")
+                logger.info(f"decode index send to prefill(SP): {kv_indices=} {sp_rank=} {kv_indices_origin=}")
 
             # only cp
             if self.prefill_cp_size > 1 and self.prefill_sp_size == 1:
                 cp_rank = idx
                 kv_indices = get_cp_kvindices(self.prefill_cp_size, cp_rank, kv_indices_origin)
-                logger.info(f"decode index send to prefill(CP): {kv_indices=} {cp_rank=} {is_dummy=} {kv_indices_origin=}")
+                logger.info(f"decode index send to prefill(CP): {kv_indices=} {cp_rank=} {kv_indices_origin=}")
 
             # sp and cp
             if self.prefill_cp_size > 1 and self.prefill_sp_size > 1:
                 cp_rank = idx // self.prefill_cp_size
                 sp_rank = idx % self.prefill_sp_size
                 kv_indices = get_scp_kvindices(self.prefill_cp_size, cp_rank, self.prefill_sp_size, sp_rank, kv_indices_origin)
-                logger.info(f"decode index send to prefill(SCP): {kv_indices=} {cp_rank=} {sp_rank=} {is_dummy=} {kv_indices_origin=}")
+                logger.info(f"decode index send to prefill(SCP): {kv_indices=} {cp_rank=} {sp_rank=} {kv_indices_origin=}")
 
             sock, lock = self._connect_to_bootstrap_server(bootstrap_info)
             is_dummy = bootstrap_info["is_dummy"]  
