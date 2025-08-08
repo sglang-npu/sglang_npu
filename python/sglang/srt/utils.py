@@ -2881,6 +2881,30 @@ def get_sp_device_nums(seq_len, page_size, sp_size):
     else:
         return extra
 
+def get_cp_kvindices(cp_size, cp_rank, indices):
+    n = len(indices)
+    chunk_total = n // cp_size
+    block_size = chunk_total // 2
+
+    if chunk_total % 2 != 0:
+        raise ValueError("chunk_total must be even number")
+
+    head_start = cp_rank * block_size
+    head_end = head_start + block_size
+
+    tail_start = n - (cp_rank + 1) * block_size
+    tail_end = tail_start + block_size
+
+    head_block = indices[head_start:head_end]
+    tail_block = indices[tail_start:tail_end]
+
+    return head_block + tail_block
+
+def get_scp_kvindices(cp_size, cp_rank, sp_size, sp_rank, indices):
+    cp_kvindices = get_cp_kvindices(cp_size, cp_rank, indices)
+    start, end = get_sp_page_range(sp_size, sp_rank, cp_kvindices)
+    return cp_kvindices[start:end]
+
 # LoRA-related constants and utilities
 SUPPORTED_LORA_TARGET_MODULES = [
     "q_proj",
