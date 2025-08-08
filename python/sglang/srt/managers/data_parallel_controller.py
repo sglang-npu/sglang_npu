@@ -15,10 +15,10 @@
 
 import logging
 import multiprocessing as mp
+import random
 import signal
 import threading
 import time
-import random
 from enum import Enum, auto
 
 import psutil
@@ -299,7 +299,9 @@ class DataParallelController:
         else:
             dp_load = self.get_dp_load()
             min_load = min(dp_load.values())
-            lowest_load_ranks = [rank for rank, value in dp_load.items() if value == min_load]
+            lowest_load_ranks = [
+                rank for rank, value in dp_load.items() if value == min_load
+            ]
             lowest_load_rank = random.choice(lowest_load_ranks)
             logger.debug(
                 f"Routing req to DP rank {lowest_load_rank}, dp load is {self.get_dp_load()}"

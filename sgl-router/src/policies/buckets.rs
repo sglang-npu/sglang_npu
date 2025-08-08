@@ -593,7 +593,7 @@ mod tests {
         // Initialize the policy with prefill_workers
         policy.init_prefill_worker_urls(&prefill_workers);
 
-        // Initial requests - should use backet scheduling
+        // Initial requests - should use bucket scheduling
         let idx1 = policy.select_worker(&prefill_workers, Some("hello world")).unwrap();
         let idx2 = policy.select_worker(&prefill_workers, Some("hello world")).unwrap();
         assert_eq!(idx1, idx2, "First two requests should go to the same worker");
@@ -618,7 +618,7 @@ mod tests {
         // Next request should not use bucket scheduling (no load balancing)
         let idx = policy.select_worker(&prefill_workers, Some("request")).unwrap();
         assert_eq!(idx, 0, "Should not trigger load balancing when relative threshold not met");
-        
+
         // Test 3: Not triggering when relative threshold not met
         let config = BucketConfig {
             balance_abs_threshold: 5,
