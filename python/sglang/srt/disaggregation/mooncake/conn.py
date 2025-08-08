@@ -774,7 +774,7 @@ class MooncakeKVManager(BaseKVManager):
                                 del self.session_pool[bootstrap_addr]
 
         threading.Thread(target=decode_thread).start()
-        threading.Thread(target=heartbeat_checker).start()
+        #threading.Thread(target=heartbeat_checker).start()
 
     def add_transfer_request(
         self,
