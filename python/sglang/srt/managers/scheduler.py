@@ -288,7 +288,7 @@ class Scheduler(
             self.send_to_tokenizer = get_zmq_socket(
                 context, zmq.PUSH, port_args.tokenizer_ipc_name, False
             )
-            if self.cp_rank is None or self.cp_rank == self.cp_size - 1:
+            if self.cp_rank is None or self.cp_rank == 0:
                 if server_args.skip_tokenizer_init:
                     # Directly send to the TokenizerManager
                     self.send_to_detokenizer = get_zmq_socket(
