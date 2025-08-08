@@ -1037,7 +1037,8 @@ class AscendMLAPagedTokenToKVPool(MLATokenToKVPool):
     ):
         layer_id = layer.layer_id
         if layer_id == 0:
-            logger.info(f"set_kv_buffer before {self.kv_buffer[0].sum()=} {self.kv_buffer[0].shape=}")
+            sums = self.kv_buffer[0].sum(dim=(1,2))
+            logger.info(f"set_kv_buffer before {sums[:12]=} {self.kv_buffer[0].shape=}")
 
         if cache_k.dtype != self.dtype:
             cache_k = cache_k.to(self.dtype)
@@ -1055,7 +1056,8 @@ class AscendMLAPagedTokenToKVPool(MLATokenToKVPool):
             slot_indices=loc,
         )
         if layer_id == 0:
-            logger.info(f"set_kv_buffer after {self.kv_buffer[0].sum()=} {self.kv_buffer[0].shape=}")
+            sums = self.kv_buffer[0].sum(dim=(1,2))
+            logger.info(f"set_kv_buffer after {sums[:12]=} {self.kv_buffer[0].shape=}")
 
 
 class DoubleSparseTokenToKVPool(KVCache):
