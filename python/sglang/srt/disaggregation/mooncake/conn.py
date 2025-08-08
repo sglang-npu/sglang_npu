@@ -44,7 +44,7 @@ from sglang.srt.utils import (
     is_valid_ipv6_address,
     maybe_wrap_ipv6_address,
     get_sp_page_range,
-    get_sp_device_nums,
+    get_prefill_device_nums,
     get_cp_kvindices,
     get_scp_kvindices,
 )
@@ -1042,8 +1042,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
         self.init_time = None
         self.data_parallel_rank = data_parallel_rank
 
-        # todo
-        if self.bootstrap_addr not in self.kv_mgr.prefill_cp_size_table:
+        if self.bootstrap_addr not in self.kv_mgr.prefill_dp_size_table:
             self.prefill_tp_size, self.prefill_dp_size, self.prefill_cp_size = (
                 self._get_prefill_parallel_info_from_server()
             )
@@ -1134,18 +1133,16 @@ class MooncakeKVReceiver(BaseKVReceiver):
             # sp_rank in prefill needs send_kvcache to all sp_rank in sp_group in decode
             self.required_dst_info_num = local_tp_size_per_dp_rank
 
-        scp_size = self.prefill_sp_size * self.prefill_cp_size
-        if global_server_args_dict["enable_sp_prefill"]:
             # All sp_rank in sp_group need to be notified
             self.target_tp_ranks = [rank for rank in range(prefill_tp_size_per_dp_rank)]
 
             # The sp_rank in decode needs to receive the response of each sp_rank in prefill
             # in the case of short sequences, some sp_rank may be empty and not sent to kvcache
-            self.required_prefill_response_num = get_sp_device_nums(
+            self.required_prefill_response_num = get_prefill_device_nums(
                 input_len,
                 self.kv_mgr.kv_args.page_size,
-                scp_size
-            )
+                self.prefill_sp_size * self.prefill_cp_size
+            )         
       
         if self.data_parallel_rank is not None:
             logger.debug(f"Targeting DP rank: {self.data_parallel_rank}")
@@ -1327,7 +1324,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
                 kv_indices = get_cp_kvindices(self.prefill_cp_size, cp_rank, kv_indices_origin)
                 logger.info(f"decode index send to prefill(CP): {kv_indices=} {self.prefill_cp_size=} {cp_rank=} {kv_indices_origin=}")
 
-            # sp and cp
+            # sp and cp, split sp based on cp.
             if self.prefill_cp_size > 1 and self.prefill_sp_size > 1:
                 cp_rank = idx // self.prefill_cp_size
                 sp_rank = idx % self.prefill_sp_size
