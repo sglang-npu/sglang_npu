@@ -1847,6 +1847,10 @@ class ServerArgs:
             self.dp_size > 1 and self.nnodes != 1 and not self.enable_dp_attention
         ), "multi-node data parallel is not supported unless dp attention!"
 
+        assert not (
+            self.dp_size > 1 and self.cp_size > 1
+        ), "only one of data parallel or context parallel can be enabled!"
+
         assert self.base_gpu_id >= 0, "base_gpu_id must be non-negative"
         assert self.gpu_id_step >= 1, "gpu_id_step must be positive"
 

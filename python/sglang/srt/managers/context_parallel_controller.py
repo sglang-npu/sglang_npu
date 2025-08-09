@@ -87,8 +87,7 @@ class ContextParallelController:
             tmp_port_args.tokenizer_ipc_name = port_args.tokenizer_ipc_name
             tmp_port_args.detokenizer_ipc_name = port_args.detokenizer_ipc_name
 
-            # This port is checked free in PortArgs.init_new.
-            # We hold it first so that the next cp worker gets a different port
+            # Every cp need the same nccl_port for communication.
             if cp_port_args:
                 tmp_port_args.nccl_port = cp_port_args[0].nccl_port
             else:
@@ -236,7 +235,6 @@ class ContextParallelController:
             latter_end_idx = latter_st_idx + chunk_length
 
             req_now = req
-            # req_now.data_parallel_rank = cp_rank
             req_now.input_ids = input_ids[former_st_idx:former_end_idx] + input_ids[latter_st_idx:latter_end_idx]
             print("after split: cp rank=", cp_rank)
             print(req_now.__dict__)

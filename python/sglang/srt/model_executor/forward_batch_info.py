@@ -429,6 +429,7 @@ class ForwardBatch:
                 batch.extend_prefix_lens, dtype=torch.int32
             ).to(device, non_blocking=True)
             ret.extend_num_tokens = batch.extend_num_tokens
+            # triton position not support context parallel now
             if support_triton(model_runner.server_args.attention_backend):
                 positions, ret.extend_start_loc = compute_position_triton(
                     ret.extend_prefix_lens,
