@@ -212,7 +212,7 @@ class MooncakeKVManager(BaseKVManager):
             self.addr_to_rooms_tracker = defaultdict(set)
             self.connection_lock = threading.Lock()
             self.required_prefill_response_num_table: Dict[int, int] = {}
-            self.prefill_response_tracker: Dict[int, Set[int]] = defaultdict(set)
+            self.prefill_response_tracker: Dict[int, List[int]] = defaultdict(list)
             # Heartbeat interval should be at least 2 seconds
             self.heartbeat_interval = max(
                 float(os.getenv("SGLANG_DISAGGREGATION_HEARTBEAT_INTERVAL", 5.0)), 2.0
@@ -696,7 +696,7 @@ class MooncakeKVManager(BaseKVManager):
 
                 if status == KVPoll.Success:
                     if bootstrap_room in self.request_status:
-                        self.prefill_response_tracker[bootstrap_room].add(prefill_rank)
+                        self.prefill_response_tracker[bootstrap_room].append(prefill_rank)
                         expected_response_num = (
                             self.required_prefill_response_num_table[bootstrap_room]
                         )
@@ -705,7 +705,7 @@ class MooncakeKVManager(BaseKVManager):
                         )
                         # MlA in sp_prefill, need 'arrived_response_num == expected_response_num',
                         # because kvcache comes from multiple prefill sp_ranks
-                        logger.debug(f"decode recv sync_status_to_decode_endpoint {arrived_response_num=} {expected_response_num=}")
+                        logger.debug(f"decode recv sync_status_to_decode_endpoint {arrived_response_num=} {expected_response_num=} {prefill_rank=}")
                         if (
                             (self.is_mla_backend and not global_server_args_dict["enable_sp_prefill"])
                             or arrived_response_num == expected_response_num

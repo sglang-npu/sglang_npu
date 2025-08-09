@@ -2903,7 +2903,7 @@ def get_cp_kvindices(cp_size, cp_rank, indices):
 def get_scp_kvindices(cp_size, cp_rank, sp_size, sp_rank, indices):
     cp_kvindices = get_cp_kvindices(cp_size, cp_rank, indices)
     start, end = get_sp_page_range(sp_size, sp_rank, len(cp_kvindices))
-    return cp_kvindices[start:end]
+    return cp_kvindices[start : end + 1]
 
 # LoRA-related constants and utilities
 SUPPORTED_LORA_TARGET_MODULES = [

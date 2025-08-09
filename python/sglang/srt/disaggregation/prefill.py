@@ -249,7 +249,7 @@ class PrefillBootstrapQueue:
             num_pages = kv_to_page_num(num_kv_indices, self.token_to_kv_pool.page_size)
 
             if global_server_args_dict["enable_sp_prefill"]:
-                total_page_num = (num_kv_indices + self.token_to_kv_pool.page_size) // self.token_to_kv_pool.page_size
+                total_page_num = (num_kv_indices + self.token_to_kv_pool.page_size - 1) // self.token_to_kv_pool.page_size
                 start_page, end_page = get_sp_page_range(self.tp_size, self.tp_rank, total_page_num)
                 num_pages = end_page - start_page + 1
 

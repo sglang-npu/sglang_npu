@@ -1176,7 +1176,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
         token_num_tensor = torch.zeros_like(seq_lens_tensor)
 
         for i in range(bs):
-            page_num = (seq_lens_tensor[i].item() + page_size) // page_size
+            page_num = (seq_lens_tensor[i].item() + page_size - 1) // page_size
             remain_token_num = seq_lens_tensor[i] - (page_num - 1) * page_size
 
             start_page, end_page = get_sp_page_range(self.sp_size, self.sp_rank, page_num)
