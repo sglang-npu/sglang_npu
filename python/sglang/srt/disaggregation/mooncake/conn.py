@@ -705,6 +705,7 @@ class MooncakeKVManager(BaseKVManager):
                         )
                         # MlA in sp_prefill, need 'arrived_response_num == expected_response_num',
                         # because kvcache comes from multiple prefill sp_ranks
+                        logger.debug(f"decode recv sync_status_to_decode_endpoint {arrived_response_num=} {expected_response_num=}")
                         if (
                             (self.is_mla_backend and not global_server_args_dict["enable_sp_prefill"])
                             or arrived_response_num == expected_response_num
