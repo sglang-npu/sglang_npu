@@ -30,7 +30,9 @@ from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.utils import Withable, get_bool_env_var, is_npu
 
-if is_npu():
+_is_npu = is_npu()
+
+if _is_npu:
     torch.cuda.empty_cache = torch.npu.empty_cache
     torch.cuda.is_current_stream_capturing = torch.npu.is_current_stream_capturing
 
@@ -450,7 +452,7 @@ def _list_sum(a: List, b: List) -> List:
 class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
     def __init__(self, *args, enable_global_physical_experts: bool, **kwargs):
         super().__init__(*args, **kwargs)
-        if is_npu():
+        if _is_npu:
             device = "npu"
             enable_global_physical_experts = True
         else:
@@ -475,7 +477,7 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
     def collect(self) -> Dict:
         if self._enable_global_physical_experts:
             global_physical_count = self._data
-            if is_npu():
+            if _is_npu:
                 diffed = torch.diff(global_physical_count, dim=-1)
                 global_physical_count = torch.cat(
                     [global_physical_count[..., :1], diffed],
