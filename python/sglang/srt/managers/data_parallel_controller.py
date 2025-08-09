@@ -291,7 +291,7 @@ class DataParallelController:
                 select_result = (self.total_req_num - 1) % len(self.workers)
                 self.work_req_num[select_result] = self.work_req_num[select_result] + 1
                 self.workers[select_result].send_pyobj(req)
-                
+
     def shortest_queue_scheduler(self, input_requests):
         raise NotImplementedError()
 
