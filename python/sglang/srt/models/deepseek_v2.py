@@ -28,6 +28,7 @@ from torch import nn
 from tqdm import tqdm
 from transformers import PretrainedConfig
 
+from python.sglang.srt.model_executor.forward_batch_info import ForwardMode
 from sglang.srt.distributed import (
     get_moe_expert_parallel_world_size,
     get_tensor_model_parallel_world_size,
@@ -1103,7 +1104,9 @@ class DeepseekV2AttentionMLA(nn.Module):
                 positions, hidden_states, forward_batch, zero_allocator
             )
         elif attn_forward_method == AttnForwardMethod.MLA:
-            if forward_batch.forward_mode.is_extend() or not _use_mlapo:
+            is_extend = (forward_batch.forward_mode == ForwardMode.EXTEND
+                         or forward_batch.forward_mode == ForwardMode.MIXED)
+            if is_extend or not _use_mlapo:
                 inner_state = self.forward_absorb_prepare(
                     positions, hidden_states, forward_batch, zero_allocator
                 )
@@ -1307,7 +1310,11 @@ class DeepseekV2AttentionMLA(nn.Module):
                 q_nope_out, k_nope, k_nope, forward_batch, q_rope=q_pe, k_rope=k_pe
             )
         else:
-            if forward_batch.forward_mode.is_extend():
+            is_extend = (
+                forward_batch.forward_mode == ForwardMode.EXTEND
+                    or forward_batch.forward_mode == ForwardMode.MIXED
+            )
+            if is_extend:
                 q = torch.cat([q_nope_out, q_pe], dim=-1)
                 attn_output = self.attn_mqa(
                     q, k_nope, k_pe, forward_batch, save_kv_cache=True
@@ -2190,7 +2197,7 @@ class DeepseekV2ForCausalLM(nn.Module):
 
         # Perform post-processing after loading weights
         if is_nextn:
-            layer_ids = [self.config.num_hidden_layers]
+            layer_ids = [61]
         else:
             if weight_names is None:
                 layer_ids = range(self.config.num_hidden_layers)
@@ -2425,9 +2432,7 @@ class DeepseekV2ForCausalLM(nn.Module):
                 assert num_nextn_layers == 1, "Only 1 nextn layer is supported"
                 # compatible with old design
                 nextn_layer_id = (
-                    0
-                    if self.config.num_hidden_layers == 1
-                    else self.config.num_hidden_layers
+                    61
                 )
             else:
                 raise ValueError("num_nextn_predict_layers is not in the config")
@@ -2652,8 +2657,8 @@ class DeepseekV2ForCausalLM(nn.Module):
         del self.lm_head.weight
         self.model.embed_tokens.weight = embed
         self.lm_head.weight = head
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
+        # torch.cuda.empty_cache()
+        # torch.cuda.synchronize()
 
     @classmethod
     def get_model_config_for_expert_location(cls, config):

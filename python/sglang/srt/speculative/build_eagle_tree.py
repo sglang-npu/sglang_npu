@@ -3,15 +3,114 @@
 import math
 from enum import IntEnum
 from typing import List, Optional
+import logging
 
 import torch
 
-from sglang.srt.utils import is_cuda, is_hip
+from sglang.srt.utils import is_cuda, is_hip, is_npu
 
 if is_cuda() or is_hip():
     from sgl_kernel import (
         build_tree_kernel_efficient as sgl_build_tree_kernel_efficient,
     )
+
+logger = logging.getLogger(__name__)
+
+def build_tree_efficient_native(
+    parent_list: torch.Tensor,
+    selected_index: torch.Tensor,
+    verified_seq_len: torch.Tensor,
+    tree_mask: torch.Tensor,
+    retrive_index: torch.Tensor,
+    retrive_next_token: torch.Tensor,
+    retrive_next_sibling: torch.Tensor,
+    topk: int,
+    draft_token_num: int,
+    tree_mask_mode: int,
+    bs: int
+):
+    # Generate batch and token index ranges
+    bs_range = torch.arange(bs, device=parent_list.device).view(-1, 1)
+    draft_token_num_range = torch.arange(draft_token_num, device=parent_list.device)
+
+    if draft_token_num == 2 and topk == 1 and tree_mask_mode == TreeMaskMode.FULL_MASK:
+        positions = verified_seq_len.repeat_interleave(draft_token_num)
+        positions = (positions.view(bs, -1) + draft_token_num_range).view(-1)
+
+        retrive_index[:] = bs_range * draft_token_num + draft_token_num_range
+        retrive_next_token[:, 0] = 1
+        retrive_next_token[:, 1] = -1
+        return positions, retrive_index, retrive_next_token, retrive_next_sibling, tree_mask
+
+    # Precompute sequence tree indices
+    draft_token_num_range1 = torch.arange(draft_token_num - 1, device=parent_list.device)
+    cum_seq_len = torch.cumsum(verified_seq_len * draft_token_num, dim=0)
+    cum_seq_len = torch.cat((torch.tensor([0], device=parent_list.device), cum_seq_len))
+    cum_seq_len = cum_seq_len[: -1]
+    seq_tree_idx = draft_token_num * draft_token_num * bs_range + cum_seq_len
+
+    # Batch processing for tree mask
+    if tree_mask_mode == TreeMaskMode.FULL_MASK:
+        token_tree_base = seq_tree_idx.view(-1, 1) + (verified_seq_len.view(-1, 1) + draft_token_num) * draft_token_num_range
+        token_tree_indices = token_tree_base + verified_seq_len.view(-1, 1) + 1
+    else:
+        token_tree_indices = bs_range * draft_token_num ** 2 + draft_token_num_range * draft_token_num + 1
+
+    tree_mask[token_tree_indices.flatten() - 1] = True
+    indices = token_tree_indices.unsqueeze(-1) + draft_token_num_range1.view(1, 1, -1)
+    tree_mask[indices.view(-1)] = False
+
+    positions = verified_seq_len.repeat_interleave(draft_token_num)
+    parent_tb_indices = selected_index // topk
+    retrive_index[:] = bs_range * draft_token_num + draft_token_num_range
+    tree_mask[token_tree_indices.view(-1, 1) + draft_token_num_range1] = True
+
+    for bid in range(bs):
+        for tid in range(draft_token_num):
+            position = 0
+            if tid == 0:
+                # Process root node
+                for i in range(draft_token_num - 1, 0, -1):
+                    parent_position = 0
+                    parent_tb_idx = parent_tb_indices[bid][i - 1]
+                    if parent_tb_idx > 0:
+                        parent_token_idx = parent_list[bid][parent_tb_idx]
+                        loop_num = draft_token_num - parent_position
+                        for _ in range(loop_num):
+                            if selected_index[bid][parent_position] == parent_token_idx:
+                                parent_position += 1
+                                break
+                            parent_position += 1
+                    if parent_position == draft_token_num:
+                        logger.warning("WARNING: invalid eagle tree!! Detected a token with no parent token selected."
+                                       "Please check if the logprob has nan. The token will be ignored to keep "
+                                       "proceeding.")
+                        continue
+
+                    if retrive_next_token[bid][parent_position] != -1:
+                        retrive_next_sibling[bid][i] = retrive_next_token[bid][parent_position]
+                    retrive_next_token[bid][parent_position] = i
+            else:
+                # Process no-root nodes
+                cur_position = tid - 1
+                while True:
+                    position += 1
+                    if cur_position >= draft_token_num:
+                        tree_mask[token_tree_indices + cur_position] = True
+                        parent_tb_idx = selected_index[bid][cur_position] // topk
+                    else:
+                        parent_tb_idx = parent_tb_indices[bid][cur_position]
+                    if parent_tb_idx == 0:
+                        break
+                    token_idx = parent_list[bid][parent_tb_idx]
+                    cur_position = 0
+                    for _ in range(draft_token_num):
+                        if selected_index[bid][cur_position] == token_idx:
+                            break
+                        cur_position += 1
+                positions[bid * draft_token_num + tid] += position
+    return  positions, retrive_index, retrive_next_token, retrive_next_sibling, tree_mask
+
 
 
 def build_tree_kernel_efficient_preprocess(
@@ -126,21 +225,35 @@ def build_tree_kernel_efficient(
         positions = torch.empty(
             (bs * num_verify_tokens,), device=device, dtype=torch.long
         )
-
-    sgl_build_tree_kernel_efficient(
-        parent_list,
-        top_scores_index,
-        seq_lens,
-        tree_mask,
-        positions,
-        retrive_index,
-        retrive_next_token,
-        retrive_next_sibling,
-        topk,
-        spec_steps,
-        num_verify_tokens,
-        tree_mask_mode,
-    )
+    if is_npu():
+        positions, retrive_index, retrive_next_token, retrive_next_sibling, tree_mask = build_tree_efficient_native(
+            parent_list,
+            top_scores_index,
+            seq_lens,
+            tree_mask,
+            retrive_index,
+            retrive_next_token,
+            retrive_next_sibling,
+            topk,
+            num_verify_tokens,
+            tree_mask_mode,
+            bs
+        )
+    else:
+        sgl_build_tree_kernel_efficient(
+            parent_list,
+            top_scores_index,
+            seq_lens,
+            tree_mask,
+            positions,
+            retrive_index,
+            retrive_next_token,
+            retrive_next_sibling,
+            topk,
+            spec_steps,
+            num_verify_tokens,
+            tree_mask_mode,
+        )
     return (
         tree_mask,
         positions,

@@ -255,8 +255,9 @@ class NPU_FusedMLAPreprocess(nn.Module):
         self.kvCache, self.kvCacheRope, self.slotmapping = (
             self.get_kv_cache_and_cache_idx(forward_batch)
         )
+        self.slotmapping = self.slotmapping.to(dtype=torch.int32)
 
-        q_node_out = torch.zeros(
+        q_nope_out = torch.zeros(
             (hidden_states.shape[0], self.w_kc.shape[0], self.kvCache.shape[-1]),
             dtype=input_dtype,
             device=hidden_states.device,
@@ -292,7 +293,7 @@ class NPU_FusedMLAPreprocess(nn.Module):
             bias1=self.bias1,
             cache_mode="krope_ctkv",
             quant_mode="per_tensor_quant_asymm",
-            q_out0=q_node_out,
+            q_out0=q_nope_out,
             kv_cache_out0=self.kvCache,
             q_out1=q_rope_out,
             kv_cache_out1=self.kvCacheRope,
@@ -300,7 +301,7 @@ class NPU_FusedMLAPreprocess(nn.Module):
         return (
             q_rope_out,
             self.kvCacheRope,
-            q_node_out,
+            q_nope_out,
             self.kvCache,
             forward_batch,
             zero_allocator,

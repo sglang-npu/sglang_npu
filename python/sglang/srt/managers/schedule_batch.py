@@ -885,7 +885,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
     has_grammar: bool = False
 
     # Device
-    device: str = "cuda"
+    device: str = "npu"
 
     # Speculative decoding
     spec_algorithm: SpeculativeAlgorithm = None

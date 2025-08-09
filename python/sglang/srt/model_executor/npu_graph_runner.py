@@ -91,7 +91,11 @@ class NPUGraphRunner(CudaGraphRunner):
         )
 
     def _update_and_replay(self, forward_batch: ForwardBatch):
-        seq_lens = forward_batch.seq_lens.cpu().tolist() + [0] * (self.bs - self.raw_bs)
+        if forward_batch.forward_mode.is_target_verify():
+            seq_lens_cpu = forward_batch.seq_lens.cpu() + self.num_tokens_per_bs
+            seq_lens = seq_lens_cpu.tolist() + [0] * (self.bs - self.raw_bs)
+        else:
+            seq_lens = forward_batch.seq_lens.cpu().tolist() + [0] * (self.bs - self.raw_bs)
 
         thread = threading.Thread(target=self.replay_update, args=(seq_lens,))
         thread.start()

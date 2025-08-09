@@ -5,6 +5,10 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 
+from python.sglang.srt.utils import get_bool_env_var
+
+_use_mlapo = get_bool_env_var("SGLANG_USE_MLAPO")
+
 if TYPE_CHECKING:
     from sglang.srt.layers.radix_attention import RadixAttention
     from sglang.srt.model_executor.forward_batch_info import ForwardBatch, ForwardMode
@@ -66,7 +70,11 @@ class AttentionBackend(ABC):
     ):
         """Run forward on an attention layer."""
         if forward_batch.forward_mode.is_idle():
-            return q.new_empty(q.shape[0], layer.tp_q_head_num * layer.v_head_dim)
+            if _use_mlapo:
+                q, q_rope = q
+                return q.new_empty(q.shape[0], layer.tp_q_head_num * layer.head_dim)
+            else:
+                return q.new_empty(q.shape[0], layer.tp_q_head_num * layer.v_head_dim)
         elif forward_batch.forward_mode.is_decode():
             return self.forward_decode(
                 q,

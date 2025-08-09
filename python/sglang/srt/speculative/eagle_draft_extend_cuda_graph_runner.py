@@ -21,8 +21,9 @@ from sglang.srt.model_executor.forward_batch_info import (
     ForwardBatch,
     ForwardMode,
 )
-from sglang.srt.speculative.eagle_utils import EagleDraftInput, fast_topk
+from sglang.srt.speculative.eagle_utils import EagleDraftInput
 from sglang.srt.utils import (
+    fast_topk,
     require_attn_tp_gather,
     require_gathered_buffer,
     require_mlp_sync,
@@ -75,7 +76,7 @@ class EAGLEDraftExtendCudaGraphRunner:
             set_torch_compile_config()
 
         # Graph inputs
-        with torch.device("cuda"):
+        with torch.device(model_runner.device):
             self.input_ids = torch.zeros((self.max_num_token,), dtype=torch.int64)
             self.req_pool_indices = torch.zeros((self.max_bs,), dtype=torch.int32)
             self.out_cache_loc = torch.ones((self.max_num_token,), dtype=torch.int64)
@@ -188,11 +189,28 @@ class EAGLEDraftExtendCudaGraphRunner:
 
         return is_bs_supported
 
+    def _create_graph(self):
+        return torch.cuda.CUDAGraph()
+
+    def _capture_init(self, run_once_fn):
+        for _ in range(2):
+            torch.cuda.synchronize()
+            self.model_runner.tp_group.barrier()
+            run_once_fn()
+
+    def _capture_graph(self, graph, pool, stream, run_once_fn):
+        with torch.cuda.graph(graph, pool=pool, stream=stream):
+            out = run_once_fn()
+        return out
+
+    def _update_and_replay(self, forward_batch: ForwardBatch):
+        self.graphs[self.bs].replay()
+
     def capture(self):
         CudaGraphRunner.capture(self)
 
     def capture_one_batch_size(self, bs: int, forward: Callable):
-        graph = torch.cuda.CUDAGraph()
+        graph = self._create_graph()
         stream = self.stream
         num_tokens = bs * self.num_tokens_per_bs
 
@@ -292,6 +310,7 @@ class EAGLEDraftExtendCudaGraphRunner:
             # Backup two fields, which will be modified in-place in `draft_forward`.
             output_cache_loc_backup = forward_batch.out_cache_loc
             hidden_states_backup = forward_batch.spec_info.hidden_states
+            forward_batch.extend_seq_lens_cpu = torch.full((bs,), self.num_tokens_per_bs)
 
             ret = self.eagle_worker.draft_model_runner.model.forward(
                 forward_batch.input_ids,
@@ -305,16 +324,8 @@ class EAGLEDraftExtendCudaGraphRunner:
             forward_batch.spec_info.hidden_states = hidden_states_backup
             return ret
 
-        for _ in range(2):
-            torch.cuda.synchronize()
-            self.model_runner.tp_group.barrier()
-
-            run_once()
-
-        with torch.cuda.graph(
-            graph, pool=get_global_graph_memory_pool(), stream=stream
-        ):
-            out = run_once()
+        self._capture_init(run_once)
+        out = self._capture_graph(graph, get_global_graph_memory_pool(), stream, run_once)
 
         set_global_graph_memory_pool(graph.pool())
         return graph, out
@@ -380,9 +391,11 @@ class EAGLEDraftExtendCudaGraphRunner:
             spec_info=forward_batch.spec_info,
             seq_lens_cpu=self.seq_lens_cpu,
         )
+        self.raw_bs = raw_bs
+        self.bs = bs
 
         # Replay
-        self.graphs[bs].replay()
+        self._update_and_replay(forward_batch)
         out = self.output_buffers[bs]
         if bs != raw_bs:
             forward_batch.spec_info.accept_length = self.accept_length[:raw_bs]
