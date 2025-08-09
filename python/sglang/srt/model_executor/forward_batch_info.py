@@ -64,9 +64,7 @@ if TYPE_CHECKING:
     from sglang.srt.sampling.sampling_batch_info import SamplingBatchInfo
     from sglang.srt.speculative.eagle_utils import EagleDraftInput, EagleVerifyInput
     from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
-
-import logging
-logger = logging.getLogger(__name__)
+    
 
 _is_npu = is_npu()
 
@@ -442,7 +440,7 @@ class ForwardBatch:
                 )
             if ret.positions is None:
                 ret.positions = positions
-            logger.info(f"positions: {positions}")
+
             ret.extend_prefix_lens_cpu = batch.extend_prefix_lens
             ret.extend_seq_lens_cpu = batch.extend_seq_lens
             ret.extend_logprob_start_lens_cpu = batch.extend_logprob_start_lens
