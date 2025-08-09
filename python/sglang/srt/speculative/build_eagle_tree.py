@@ -13,7 +13,8 @@ if is_cuda() or is_hip():
     from sgl_kernel import (
         build_tree_kernel_efficient as sgl_build_tree_kernel_efficient,
     )
-
+elif is_npu():
+    draft_token_num_range = None
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +33,9 @@ def build_tree_efficient_native(
 ):
     # Generate batch and token index ranges
     bs_range = torch.arange(bs, device=parent_list.device).view(-1, 1)
-    draft_token_num_range = torch.arange(draft_token_num, device=parent_list.device)
+    global draft_token_num_range
+    if draft_token_num_range is None:
+        draft_token_num_range = torch.arange(draft_token_num, device=parent_list.device)
 
     if draft_token_num == 2 and topk == 1 and tree_mask_mode == TreeMaskMode.FULL_MASK:
         positions = verified_seq_len.repeat_interleave(draft_token_num)
