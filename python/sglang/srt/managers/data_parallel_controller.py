@@ -285,14 +285,16 @@ class DataParallelController:
             else:
                 DP_LOAD_BALANCE = os.getenv("DP_LOAD_BALANCE", "0") == "1"
                 if DP_LOAD_BALANCE:
-                    #---------- DP load balancing logic ----------
+                    # ---------- DP load balancing logic ----------
                     self.total_req_num = (
                         1
                         if self.total_req_num == len(self.workers)
                         else self.total_req_num + 1
                     )
                     select_result = (self.total_req_num - 1) % len(self.workers)
-                    self.work_req_num[select_result] = self.work_req_num[select_result] + 1
+                    self.work_req_num[select_result] = (
+                        self.work_req_num[select_result] + 1
+                    )
                     self.workers[select_result].send_pyobj(req)
                 else:
                     self.workers[req.bootstrap_room % len(self.workers)].send_pyobj(req)
