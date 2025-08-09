@@ -1301,11 +1301,11 @@ class DeepseekV2AttentionMLA(nn.Module):
                 q_nope_out, k_nope, k_nope, forward_batch, q_rope=q_pe, k_rope=k_pe
             )
         else:
-            if not _is_npu:
+            if _is_npu and self.q_lora_rank is not None:
+                q, k = q_nope_out, None
+            else:
                 q = torch.cat([q_nope_out, q_pe], dim=-1)
                 k = torch.cat([k_nope, k_pe], dim=-1)
-            else:
-                q, k = q_nope_out, None
             attn_output = self.attn_mqa(
                 q, k, k_nope, forward_batch, save_kv_cache=(not _is_npu)
             )
