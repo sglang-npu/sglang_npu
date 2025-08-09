@@ -951,12 +951,11 @@ def compute_position_torch(
             [
                 torch.cat(
                     [
-                        torch.arrange(cp_rank * (prefix_len + extend_len) // 2, (cp_rank + 1) * (prefix_len + extend_len) //2, device=extend_prefix_len.device)
+                        torch.arrange(cp_rank * (prefix_len + extend_len) // 2, (cp_rank + 1) * (prefix_len + extend_len) //2, device=extend_prefix_len.device),
                         torch.arrange(sec_rank * (prefix_len + extend_len) // 2, (sec_rank + 1) * (prefix_len + extend_len) //2, device=extend_prefix_len.device)
                     ],
                     axis=0,
                 )
-    
                 for prefix_len, extend_len in zip(extend_prefix_lens, extend_seq_lens)
             ],
             axis=0,
