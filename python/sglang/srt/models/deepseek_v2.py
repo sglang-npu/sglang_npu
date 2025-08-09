@@ -1104,8 +1104,10 @@ class DeepseekV2AttentionMLA(nn.Module):
                 positions, hidden_states, forward_batch, zero_allocator
             )
         elif attn_forward_method == AttnForwardMethod.MLA:
-            is_extend = (forward_batch.forward_mode == ForwardMode.EXTEND
-                         or forward_batch.forward_mode == ForwardMode.MIXED)
+            is_extend = (
+                forward_batch.forward_mode == ForwardMode.EXTEND
+                or forward_batch.forward_mode == ForwardMode.MIXED
+            )
             if is_extend or not _use_mlapo:
                 inner_state = self.forward_absorb_prepare(
                     positions, hidden_states, forward_batch, zero_allocator
@@ -1312,7 +1314,7 @@ class DeepseekV2AttentionMLA(nn.Module):
         else:
             is_extend = (
                 forward_batch.forward_mode == ForwardMode.EXTEND
-                    or forward_batch.forward_mode == ForwardMode.MIXED
+                or forward_batch.forward_mode == ForwardMode.MIXED
             )
             if is_extend:
                 q = torch.cat([q_nope_out, q_pe], dim=-1)
@@ -2431,9 +2433,7 @@ class DeepseekV2ForCausalLM(nn.Module):
                 num_nextn_layers = self.config.num_nextn_predict_layers
                 assert num_nextn_layers == 1, "Only 1 nextn layer is supported"
                 # compatible with old design
-                nextn_layer_id = (
-                    61
-                )
+                nextn_layer_id = 61
             else:
                 raise ValueError("num_nextn_predict_layers is not in the config")
 

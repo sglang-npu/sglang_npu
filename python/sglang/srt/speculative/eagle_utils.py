@@ -301,7 +301,7 @@ class EagleVerifyInput:
                 batch.seq_lens,
                 end_offset,
                 batch.out_cache_loc,
-                bs
+                bs,
             )
         else:
             assign_req_to_token_pool[(bs,)](
@@ -450,7 +450,7 @@ class EagleVerifyInput:
                     accept_length,
                     predict,
                     self.spec_steps + 1,
-                    self.topk
+                    self.topk,
                 )
             else:
                 verify_tree_greedy(
@@ -645,7 +645,7 @@ class EagleVerifyInput:
                         batch.seq_lens,
                         batch.seq_lens + accept_length + 1,
                         batch.out_cache_loc,
-                        bs
+                        bs,
                     )
                 else:
                     assign_req_to_token_pool[(bs,)](
@@ -686,7 +686,7 @@ class EagleVerifyInput:
                         batch.seq_lens,
                         batch.seq_lens + accept_length + 1,
                         batch.out_cache_loc[accept_index],
-                        bs
+                        bs,
                     )
                 else:
                     assign_req_to_token_pool[(bs,)](
@@ -821,20 +821,25 @@ def assign_req_to_token_pool(
         save_offset += BLOCK_SIZE
         load_offset += BLOCK_SIZE
 
+
 def assign_req_to_token_pool_native(
     req_pool_indices: torch.Tensor,
     req_to_token: torch.Tensor,
     start_offset: torch.Tensor,
     end_offset: torch.Tensor,
     out_cache_loc: torch.Tensor,
-    bs: int
+    bs: int,
 ):
     out_cache_loc_length = end_offset - start_offset
     token_pool = req_to_token[req_pool_indices]
     out_cache_loc_cumsum_length = torch.cumsum(out_cache_loc_length, dim=0)
-    out_cache_loc_start_idx = torch.cat((torch.tensor([0], device=req_to_token.device), out_cache_loc_cumsum_length))
+    out_cache_loc_start_idx = torch.cat(
+        (torch.tensor([0], device=req_to_token.device), out_cache_loc_cumsum_length)
+    )
     for i in range(bs):
-        token_pool[i][start_offset[i]:end_offset[i]] = out_cache_loc[out_cache_loc_start_idx[i]:out_cache_loc_cumsum_length[i]]
+        token_pool[i][start_offset[i] : end_offset[i]] = out_cache_loc[
+            out_cache_loc_start_idx[i] : out_cache_loc_cumsum_length[i]
+        ]
     req_to_token[req_pool_indices] = token_pool
 
 
@@ -1355,6 +1360,7 @@ def generate_token_bitmask(
     verify_input.grammar = grammar
     return allocate_token_bitmask
 
+
 def verify_tree_greedy_native(
     candidates,
     retrive_index,
@@ -1365,7 +1371,7 @@ def verify_tree_greedy_native(
     accept_token_num,
     predicts,
     num_speculative_tokens,
-    topk
+    topk,
 ):
     batch_size, num_draft_tokens = candidates.shape
 
@@ -1378,13 +1384,15 @@ def verify_tree_greedy_native(
         target_predict[:, 1][_comparison_result] = 0
         predicts = torch.cat((target_predict.view(-1), tensor_one))
 
-        accept_index = torch.arange(0, num_draft_tokens * batch_size, device=candidates.device).reshape(batch_size, num_draft_tokens)
+        accept_index = torch.arange(
+            0, num_draft_tokens * batch_size, device=candidates.device
+        ).reshape(batch_size, num_draft_tokens)
         accept_index[:, 1][_comparison_result] = -1
 
         accept_token_num = comparison_result.to(dtype=torch.int)
         return predicts, accept_index, accept_token_num
 
-    #BFS
+    # BFS
     for bx in range(batch_size):
         cur_candidates = candidates[bx]
         cur_retrive_index = retrive_index[bx]
@@ -1418,5 +1426,7 @@ def verify_tree_greedy_native(
                 break
 
         accept_token_num[bx] = num_accepted
-        predicts[last_accepted_idx] = cur_target[last_accepted_idx - num_draft_tokens * bx]
+        predicts[last_accepted_idx] = cur_target[
+            last_accepted_idx - num_draft_tokens * bx
+        ]
     return predicts, accept_index, accept_token_num

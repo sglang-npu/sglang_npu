@@ -7,6 +7,12 @@ from typing import List, Optional, Tuple
 import torch
 from huggingface_hub import snapshot_download
 
+from python.sglang.srt.speculative.eagle_draft_extend_npu_graph_runner import (
+    EAGLEDraftExtendNpuGraphRunner,
+)
+from python.sglang.srt.speculative.eagle_draft_npu_graph_runner import (
+    EAGLEDraftNpuGraphRunner,
+)
 from sglang.srt.distributed import (
     GroupCoordinator,
     get_tensor_model_parallel_world_size,
@@ -51,8 +57,6 @@ from sglang.srt.utils import (
     is_npu,
     next_power_of_2,
 )
-from python.sglang.srt.speculative.eagle_draft_extend_npu_graph_runner import EAGLEDraftExtendNpuGraphRunner
-from python.sglang.srt.speculative.eagle_draft_npu_graph_runner import EAGLEDraftNpuGraphRunner
 
 if is_cuda():
     from sgl_kernel import segment_packbits
@@ -257,8 +261,9 @@ class EAGLEWorker(TpModelWorker):
         elif self.server_args.attention_backend == "ascend":
             from sglang.srt.layers.attention.ascend_backend import (
                 AscendAttnBackend,
-                AscendAttnMultiStepDraftBackend
+                AscendAttnMultiStepDraftBackend,
             )
+
             self.draft_attn_backend = AscendAttnMultiStepDraftBackend(
                 self.draft_model_runner,
                 self.topk,
@@ -289,7 +294,11 @@ class EAGLEWorker(TpModelWorker):
         logger.info(
             f"Capture draft cuda graph begin. This can take up to several minutes. avail mem={before_mem:.2f} GB"
         )
-        self.cuda_graph_runner = EAGLEDraftCudaGraphRunner(self) if not is_npu() else EAGLEDraftNpuGraphRunner(self)
+        self.cuda_graph_runner = (
+            EAGLEDraftCudaGraphRunner(self)
+            if not is_npu()
+            else EAGLEDraftNpuGraphRunner(self)
+        )
         after_mem = get_available_gpu_memory(self.device, self.gpu_id)
         logger.info(
             f"Capture draft cuda graph end. Time elapsed: {time.perf_counter() - tic:.2f} s. mem usage={(before_mem - after_mem):.2f} GB. avail mem={after_mem:.2f} GB."
@@ -303,7 +312,9 @@ class EAGLEWorker(TpModelWorker):
                 f"Capture draft extend cuda graph begin. This can take up to several minutes. avail mem={before_mem:.2f} GB"
             )
             self.cuda_graph_runner_for_draft_extend = (
-                EAGLEDraftExtendCudaGraphRunner(self) if not is_npu() else EAGLEDraftExtendNpuGraphRunner(self)
+                EAGLEDraftExtendCudaGraphRunner(self)
+                if not is_npu()
+                else EAGLEDraftExtendNpuGraphRunner(self)
             )
             after_mem = get_available_gpu_memory(self.device, self.gpu_id)
             logger.info(
@@ -502,8 +513,8 @@ class EAGLEWorker(TpModelWorker):
         if self.page_size > 1 and self.topk > 1:
             # Remove padded slots
             out_cache_loc = out_cache_loc[
-                            : num_seqs * self.topk * self.speculative_num_steps
-                            ]
+                : num_seqs * self.topk * self.speculative_num_steps
+            ]
 
         batch.out_cache_loc = out_cache_loc
         batch.seq_lens_sum = torch.sum(batch.seq_lens).item()
@@ -979,8 +990,8 @@ def get_last_loc_large_page_size_large_top_k(
     prefix_lens = seq_lens
     last_page_lens = prefix_lens % page_size
     num_new_pages_per_topk = (
-                                 last_page_lens + speculative_num_steps + page_size - 1
-                             ) // page_size
+        last_page_lens + speculative_num_steps + page_size - 1
+    ) // page_size
     seq_lens = prefix_lens // page_size * page_size + num_new_pages_per_topk * (
         page_size * topk
     )

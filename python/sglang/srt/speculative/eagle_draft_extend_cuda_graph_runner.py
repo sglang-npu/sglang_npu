@@ -310,7 +310,9 @@ class EAGLEDraftExtendCudaGraphRunner:
             # Backup two fields, which will be modified in-place in `draft_forward`.
             output_cache_loc_backup = forward_batch.out_cache_loc
             hidden_states_backup = forward_batch.spec_info.hidden_states
-            forward_batch.extend_seq_lens_cpu = torch.full((bs,), self.num_tokens_per_bs)
+            forward_batch.extend_seq_lens_cpu = torch.full(
+                (bs,), self.num_tokens_per_bs
+            )
 
             ret = self.eagle_worker.draft_model_runner.model.forward(
                 forward_batch.input_ids,
@@ -325,7 +327,9 @@ class EAGLEDraftExtendCudaGraphRunner:
             return ret
 
         self._capture_init(run_once)
-        out = self._capture_graph(graph, get_global_graph_memory_pool(), stream, run_once)
+        out = self._capture_graph(
+            graph, get_global_graph_memory_pool(), stream, run_once
+        )
 
         set_global_graph_memory_pool(graph.pool())
         return graph, out

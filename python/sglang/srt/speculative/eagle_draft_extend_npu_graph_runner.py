@@ -20,9 +20,11 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from python.sglang.srt.speculative.eagle_draft_extend_cuda_graph_runner import (
+    EAGLEDraftExtendCudaGraphRunner,
+)
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch, ForwardMode
 
-from python.sglang.srt.speculative.eagle_draft_extend_cuda_graph_runner import EAGLEDraftExtendCudaGraphRunner
 if TYPE_CHECKING:
     from sglang.srt.speculative.eagle_worker import EAGLEWorker
 
@@ -41,7 +43,9 @@ class EAGLEDraftExtendNpuGraphRunner(EAGLEDraftExtendCudaGraphRunner):
             run_once_fn()
 
     def _capture_graph(self, graph, pool, stream, run_once_fn):
-        with torch.npu.graph(graph, pool=pool, stream=stream, auto_dispatch_capture=True):
+        with torch.npu.graph(
+            graph, pool=pool, stream=stream, auto_dispatch_capture=True
+        ):
             out = run_once_fn()
         return out
 
@@ -52,10 +56,7 @@ class EAGLEDraftExtendNpuGraphRunner(EAGLEDraftExtendCudaGraphRunner):
 
     def _update_and_replay(self, forward_batch: ForwardBatch):
         seq_lens = forward_batch.seq_lens.cpu().tolist() + [0] * (self.bs - self.raw_bs)
-        thread = threading.Thread(
-            target=self.replay_update,
-            args=(seq_lens,)
-        )
+        thread = threading.Thread(target=self.replay_update, args=(seq_lens,))
         thread.start()
         self.graphs[self.bs].replay()
         thread.join()

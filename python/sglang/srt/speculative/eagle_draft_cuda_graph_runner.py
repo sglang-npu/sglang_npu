@@ -287,7 +287,9 @@ class EAGLEDraftCudaGraphRunner:
             return ret
 
         self._capture_init(run_once)
-        out = self._capture_graph(graph, get_global_graph_memory_pool(), stream, run_once)
+        out = self._capture_graph(
+            graph, get_global_graph_memory_pool(), stream, run_once
+        )
 
         set_global_graph_memory_pool(graph.pool())
         return graph, out
