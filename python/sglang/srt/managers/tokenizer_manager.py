@@ -528,7 +528,7 @@ class TokenizerManager:
                 input_ids = encoded["input_ids"]
                 input_length = len(input_ids)
                 new_length = ((input_length + max_length - 1) // max_length) * max_length
-                input_ids = [1] * (new_length - input_length) + input_ids
+                input_ids = [100001] * (new_length - input_length) + input_ids
                 encoded["input_ids"] = input_ids
                 
             elif self.server_args.enable_sp:
