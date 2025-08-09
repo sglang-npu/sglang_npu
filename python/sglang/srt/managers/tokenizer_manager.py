@@ -256,7 +256,7 @@ class TokenizerManager:
                 )
                 dummy_text = 'hello'
                 encoded = self.tokenizer(
-                    input_text,
+                    dummy_text,
                     return_token_type_ids=is_cross_encoder_request,
                     padding='max_length',
                     max_length=10,
