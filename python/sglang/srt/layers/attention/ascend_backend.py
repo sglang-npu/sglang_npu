@@ -269,7 +269,7 @@ class AscendAttnBackend(AttentionBackend):
                 )
             
             workspace = (
-                torch_npu.npu_fused_infer_attention_score_get_max_workspace(
+                torch_npu._npu_fused_infer_attention_score_get_max_workspace(
                     q_nope,
                     c_kv_cache,
                     c_kv_cache,
@@ -284,7 +284,7 @@ class AscendAttnBackend(AttentionBackend):
                     block_table=self.forward_metadata.block_tables,
                     block_size=self.page_size,
                     actual_seq_lengths_kv=actual_seq_len_kv,
-                    spase_mode=0,
+                    sparse_mode=0,
                 )
             )
             output = torch.zeros_like(q_nope, dtype=q.dtype, device=q.device)
@@ -294,7 +294,7 @@ class AscendAttnBackend(AttentionBackend):
                 c_kv_cache,
                 c_kv_cache,
                 query_rope=q_rope,
-                ker_rope=k_rope_cache,
+                key_rope=k_rope_cache,
                 num_heads=layer.tp_q_head_num,
                 num_key_value_heads=layer.tp_k_head_num,
                 input_layout="BNSD",
@@ -304,8 +304,8 @@ class AscendAttnBackend(AttentionBackend):
                 block_table=self.forward_metadata.block_tables,
                 block_size=self.page_size,
                 actual_seq_lengths_kv=actual_seq_len_kv,
-                spase_mode=0,
+                sparse_mode=0,
                 workspace=workspace,
                 out=[output, softmax_lse]
             )
-            return output.view(num_tokens, layer.tp_q_head_num * self.kv_lora_rank)
+            return output.view(-1, layer.tp_q_head_num * layer.v_head_dim)
