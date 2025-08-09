@@ -30,7 +30,9 @@ from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.utils import Withable, get_bool_env_var, is_npu
 
-if is_npu():
+_is_npu = is_npu()
+
+if _is_npu:
     torch.cuda.empty_cache = torch.npu.empty_cache
     torch.cuda.is_current_stream_capturing = torch.npu.is_current_stream_capturing
 
@@ -455,6 +457,11 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
         else:
             device = "cuda"
         super().__init__(*args, **kwargs)
+        if _is_npu:
+            device = "npu"
+            enable_global_physical_experts = True
+        else:
+            device = "cuda"
         self._enable_global_physical_experts = enable_global_physical_experts
         self._data = torch.zeros(
             (
@@ -475,11 +482,11 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
     def collect(self) -> Dict:
         if self._enable_global_physical_experts:
             global_physical_count = self._data
-            if is_npu():
-                global_physical_count = torch.diff(
-                    global_physical_count,
+            if _is_npu:
+                diffed = torch.diff(global_physical_count, dim=-1)
+                global_physical_count = torch.cat(
+                    [global_physical_count[..., :1], diffed],
                     dim=-1,
-                    prepend=global_physical_count[..., :1],
                 )
         else:
             # Can optimize if bottleneck
