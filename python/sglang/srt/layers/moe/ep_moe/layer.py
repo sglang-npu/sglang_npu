@@ -123,6 +123,8 @@ class EPMoE(FusedMoE):
     def forward(self, hidden_states: torch.Tensor, topk_output: TopKOutput):
         if deep_gemm_wrapper.ENABLE_JIT_DEEPGEMM and self.use_fp8_w8a8:
             return self.forward_deepgemm(hidden_states, topk_output)
+        elif _is_npu:
+            return self.forward_npu(hidden_states, topk_output)
         else:
             return super().forward(hidden_states, topk_output)
 
@@ -284,6 +286,88 @@ class EPMoE(FusedMoE):
         if self.routed_scaling_factor is not None:
             output *= self.routed_scaling_factor
         return output
+
+    def forward_npu(self, hidden_states: torch.Tensor, topk_output: TopKOutput):
+        topk_weights, topk_ids, _ = topk_output
+        original_shape = hidden_states.shape
+        if len(original_shape) == 3:
+            hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+        num_tokens, hidden_size = hidden_states.shape
+        topk_weights = topk_weights.to(hidden_states.dtype)
+        ep_rank = self.moe_ep_rank
+        ep_size = self.moe_ep_size
+        local_num_experts = self.num_experts // ep_size
+
+        import torch_npu
+
+        hidden_states, pertoken_scale = torch_npu.npu_dynamic_quant(hidden_states)
+        hidden_states, expanded_x_idx, expert_tokens, pertoken_scale = (
+            torch_npu.npu_moe_init_routing_v2(
+                hidden_states,
+                topk_ids,
+                scale=pertoken_scale,
+                offset=None,
+                active_num=num_tokens * self.top_k,
+                expert_num=self.num_experts,
+                expert_tokens_num_type=1,
+                expert_tokens_num_flag=True,
+                active_expert_range=[
+                    ep_rank * local_num_experts,
+                    (ep_rank + 1) * local_num_experts,
+                ],
+                quant_mode=-1,
+                row_idx_type=1,
+            )
+        )
+        group_list_type = 1
+        # sorted_topk_weight = torch.index_select(
+        #     topk_weights.view(-1), 0, expanded_x_idx
+        # )
+        sorted_topk_weight = topk_weights.view(-1)[expanded_x_idx]
+        row_index = expanded_x_idx // topk_ids.shape[-1]
+        row_index = row_index.to(torch.int64)
+        share_input = torch.zeros(
+            (num_tokens, hidden_size), dtype=torch.bfloat16, device=hidden_states.device
+        )
+        # gmm1: gate_up_proj
+        hidden_states = torch_npu.npu_grouped_matmul(
+            x=[hidden_states],
+            weight=[self.w13_weight],
+            split_item=3,
+            group_list_type=group_list_type,
+            group_type=0,
+            group_list=expert_tokens,
+            output_dtype=torch.int32,
+        )[0]
+        # atc_fn: swiglu
+        hidden_states, pertoken_scale = torch_npu.npu_dequant_swiglu_quant(
+            x=hidden_states,
+            weight_scale=self.w13_weight_scale.to(torch.float32),
+            activation_scale=pertoken_scale,
+            bias=None,
+            quant_scale=None,
+            quant_offset=None,
+            group_index=expert_tokens,
+            activate_left=True,
+            quant_mode=1,
+        )
+        # gmm2: down_proj
+        final_hidden_states = torch_npu.npu_grouped_matmul_finalize_routing(
+            hidden_states,
+            self.w2_weight,
+            scale=self.w2_weight_scale.to(torch.float32),
+            bias=None,
+            pertoken_scale=pertoken_scale.view(-1),
+            group_list=expert_tokens,
+            shared_input=share_input,
+            logit=sorted_topk_weight.to(torch.float32),
+            row_index=row_index,
+            output_bs=num_tokens,
+        ).to(torch.bfloat16)
+
+        if len(original_shape) == 3:
+            final_hidden_states = final_hidden_states.view(original_shape)
+        return final_hidden_states
 
 
 class DeepEPMoE(EPMoE):
@@ -706,19 +790,25 @@ class DeepEPMoE(EPMoE):
         hidden_states = torch_npu.npu_grouped_matmul(
             x=[hidden_states],
             weight=[self.w13_weight],
-            scale=[self.w13_weight_scale.to(output_dtype)],
-            per_token_scale=[pertoken_scale],
             split_item=2,
             group_list_type=group_list_type,
             group_type=0,
             group_list=seg_indptr,
-            output_dtype=output_dtype,
+            output_dtype=torch.int32,
         )[0]
 
         # act_fn: swiglu
-        hidden_states = torch_npu.npu_swiglu(hidden_states)
-
-        hidden_states, swiglu_out_scale = torch_npu.npu_dynamic_quant(hidden_states)
+        hidden_states, swiglu_out_scale = torch_npu.npu_dequant_swiglu_quant(
+            x=hidden_states,
+            weight_scale=self.w13_weight_scale.to(torch.float32),
+            activation_scale=pertoken_scale,
+            bias=None,
+            quant_scale=None,
+            quant_offset=None,
+            group_index=seg_indptr,
+            activate_left=True,
+            quant_mode=1,
+        )
 
         # gmm2: down_proj
         hidden_states = torch_npu.npu_grouped_matmul(
