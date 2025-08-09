@@ -257,12 +257,11 @@ class TokenizerManager:
                 dummy_text = 'hello'
                 encoded = self.tokenizer(
                     dummy_text,
-                    return_token_type_ids=is_cross_encoder_request,
                     padding='max_length',
                     max_length=10,
                 )
                 self.padding_token = encoded["input_ids"][0]
-                print(f"{self.padding_token=}")
+                logger.info(f"{self.padding_token=}")
 
         # Initialize the `LoRARegistry` with initial LoRA adapter paths provided in `server_args`.
         # The registry dynamically updates as adapters are loaded / unloaded during runtime. It
