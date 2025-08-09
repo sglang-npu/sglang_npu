@@ -516,7 +516,6 @@ class TokenizerManager:
                     "the engine with skip_tokenizer_init=False."
                 )
             if self.server_args.cp_size > 1 or self.server_args.cp_prefill_size > 1:
-                print("need padding")
                 page_size = self.server_args.page_size if self.server_args.page_size is not None else 1
                 max_length = page_size * max(self.server_args.cp_size, self.server_args.cp_prefill_size) * 2
                 encoded = self.tokenizer(
@@ -528,8 +527,10 @@ class TokenizerManager:
                 input_ids = encoded["input_ids"]
                 input_length = len(input_ids)
                 new_length = ((input_length + max_length - 1) // max_length) * max_length
-                input_ids = [100001] * (new_length - input_length) + input_ids
-                encoded["input_ids"] = input_ids
+                if new_length - input_length > 0:
+                    padding_token = input_ids[0]
+                    input_ids = [padding_token] * (new_length - input_length) + input_ids
+                    encoded["input_ids"] = input_ids
                 
             elif self.server_args.enable_sp:
                 encoded = self.tokenizer(
