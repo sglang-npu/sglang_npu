@@ -21,11 +21,11 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from python.sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.distributed.device_communicators.pynccl_allocator import (
     set_graph_pool_id,
 )
 from sglang.srt.model_executor.cuda_graph_runner import CudaGraphRunner
+from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.utils import is_npu
 
 logger = logging.getLogger(__name__)
