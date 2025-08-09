@@ -43,6 +43,10 @@ from sglang.srt.layers.dp_attention import (
     get_attention_dp_rank,
     get_attention_tp_size,
 )
+from sglang.srt.distributed import (
+    get_context_model_parallel_world_size,
+    get_context_model_parallel_rank,
+)
 from sglang.srt.layers.rotary_embedding import MRotaryEmbedding
 from sglang.srt.utils import (
     flatten_nested_list,
@@ -60,6 +64,9 @@ if TYPE_CHECKING:
     from sglang.srt.sampling.sampling_batch_info import SamplingBatchInfo
     from sglang.srt.speculative.eagle_utils import EagleDraftInput, EagleVerifyInput
     from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
+
+import logging
+logger = logging.getLogger(__name__)
 
 _is_npu = is_npu()
 
@@ -434,6 +441,7 @@ class ForwardBatch:
                 )
             if ret.positions is None:
                 ret.positions = positions
+            logger.info(f"positions: {positions}")
             ret.extend_prefix_lens_cpu = batch.extend_prefix_lens
             ret.extend_seq_lens_cpu = batch.extend_seq_lens
             ret.extend_logprob_start_lens_cpu = batch.extend_logprob_start_lens
@@ -935,7 +943,26 @@ def compute_position_kernel(
 def compute_position_torch(
     extend_prefix_lens: torch.Tensor, extend_seq_lens: torch.Tensor
 ):
-    positions = torch.cat(
+    cp_size = get_context_model_parallel_world_size()
+    if cp_size > 1:
+        cp_rank = get_context_model_parallel_rank()
+        sec_rank = cp_size * 2 - cp_rank - 1
+        positions = torch.cat(
+            [
+                torch.cat(
+                    [
+                        torch.arrange(cp_rank * (prefix_len + extend_len) // 2, (cp_rank + 1) * (prefix_len + extend_len) //2, device=extend_prefix_len.device)
+                        torch.arrange(sec_rank * (prefix_len + extend_len) // 2, (sec_rank + 1) * (prefix_len + extend_len) //2, device=extend_prefix_len.device)
+                    ],
+                    axis=0,
+                )
+    
+                for prefix_len, extend_len in zip(extend_prefix_lens, extend_seq_lens)
+            ],
+            axis=0,
+        )
+    else:
+        positions = torch.cat(
         [
             torch.arange(
                 prefix_len, prefix_len + extend_len, device=extend_prefix_lens.device
