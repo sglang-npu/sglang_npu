@@ -60,6 +60,9 @@ class AscendAttnBackend(AttentionBackend):
             self.kv_lora_rank = model_runner.model_config.kv_lora_rank
             self.qk_rope_head_dim = model_runner.model_config.qk_rope_head_dim
             self.native_attn = TorchNativeAttnBackend(model_runner)
+        self.graph_metadata = {}
+        self.max_context_len = model_runner.model_config.context_len
+        self.req_to_token = model_runner.req_to_token_pool.req_to_token
 
     def init_forward_metadata(self, forward_batch: ForwardBatch):
         """Init the metadata for a forward pass."""
@@ -242,7 +245,7 @@ class AscendAttnBackend(AttentionBackend):
             )
             return output.view(num_tokens, layer.tp_q_head_num * layer.v_head_dim)
         else:
-            kv_cache = forward_batch.token_to_kv_pool.get_kv_buffer(layer.layer_id)
+            kv_cache = forward_batch.token_to_kv_pool.get_key_buffer(layer.layer_id)
             k_rope = kv_cache[:, :, layer.v_head_dim :]
             c_kv = kv_cache[:, :, : layer.v_head_dim]
             k_rope_cache = k_rope.view(
@@ -264,8 +267,29 @@ class AscendAttnBackend(AttentionBackend):
                 actual_seq_len_kv = (
                     self.forward_metadata.seq_lens_cpu_int.cpu().int().tolist()
                 )
-
-            attn_output, _ = torch_npu.npu_fused_infer_attention_score(
+            
+            workspace = (
+                torch_npu.npu_fused_infer_attention_score_get_max_workspace(
+                    q_nope,
+                    c_kv_cache,
+                    c_kv_cache,
+                    query_rope=q_rope,
+                    key_rope=k_rope_cache,
+                    num_heads=layer.tp_q_head_num,
+                    num_key_value_heads=layer.tp_k_head_num,
+                    input_layout="BNSD",
+                    scale=layer.scaling,
+                    antiquant_mode=0,
+                    antiquant_scale=None,
+                    block_table=self.forward_metadata.block_tables,
+                    block_size=self.page_size,
+                    actual_seq_lengths_kv=actual_seq_len_kv,
+                    spase_mode=0,
+                )
+            )
+            output = torch.zeros_like(q_nope, dtype=q.dtype, device=q.device)
+            softmax_lse = torch.empty(1, dtype=q.dtype, device=q.device)
+            torch_npu.npu_fused_infer_attention_score.out(
                 q_nope,
                 c_kv_cache,
                 c_kv_cache,
@@ -281,5 +305,7 @@ class AscendAttnBackend(AttentionBackend):
                 block_size=self.page_size,
                 actual_seq_lengths_kv=actual_seq_len_kv,
                 spase_mode=0,
+                workspace=workspace,
+                out=[output, softmax_lse]
             )
-            return attn_output.view(num_tokens, layer.tp_q_head_num * self.kv_lora_rank)
+            return output.view(num_tokens, layer.tp_q_head_num * self.kv_lora_rank)

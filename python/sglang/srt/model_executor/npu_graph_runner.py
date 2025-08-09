@@ -28,6 +28,7 @@ from sglang.srt.model_executor.cuda_graph_runner import (
     CudaGraphRunner,
     get_global_graph_memory_pool,
     set_global_graph_memory_pool,
+    global_graph_memory_pool,
 )
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.utils import is_npu
@@ -68,7 +69,6 @@ class NPUGraphRunner(CudaGraphRunner):
             set_global_graph_memory_pool(torch.npu.graph_pool_handle())
         # Set graph pool id globally to be able to use symmetric memory
         set_graph_pool_id(get_global_graph_memory_pool())
-        global global_graph_memory_pool
         with torch.npu.graph(
             graph,
             pool=global_graph_memory_pool,
