@@ -1102,7 +1102,7 @@ class DeepseekV2AttentionMLA(nn.Module):
                 positions, hidden_states, forward_batch, zero_allocator
             )
         elif attn_forward_method == AttnForwardMethod.MLA:
-            if _is_npu:
+            if _is_npu and self.q_lora_rank is not None:
                 if self.mla_preprocess is None:
                     self.mla_preprocess = NPU_FusedMLAPreprocess(
                         self.fused_qkv_a_proj_with_mqa,
