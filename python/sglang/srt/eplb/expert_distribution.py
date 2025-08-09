@@ -450,13 +450,11 @@ def _list_sum(a: List, b: List) -> List:
 class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
     def __init__(self, *args, enable_global_physical_experts: bool, **kwargs):
         super().__init__(*args, **kwargs)
-
         if is_npu():
             device = "npu"
             enable_global_physical_experts = True
         else:
             device = "cuda"
-
         self._enable_global_physical_experts = enable_global_physical_experts
         self._data = torch.zeros(
             (
@@ -478,7 +476,14 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
         if self._enable_global_physical_experts:
             global_physical_count = self._data
             if is_npu():
-                global_physical_count = torch.diff(global_physical_count,dim=-1, prepend=global_physical_count[...,:1])
+                diffed = torch.diff(
+                    global_physical_count,
+                    dim=-1
+                )
+                global_physical_count = torch.cat(
+                    [global_physical_count[..., :1], diffed],
+                    dim=-1,
+                )
         else:
             # Can optimize if bottleneck
             global_physical_count = _convert_local_to_global_physical_count(

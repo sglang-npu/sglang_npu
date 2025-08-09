@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING, List
 
 import torch.cuda
 
-from sglang.srt.utils import is_npu
 from sglang.srt.eplb.expert_distribution import get_global_expert_distribution_recorder
 from sglang.srt.eplb.expert_location import ExpertLocationMetadata
+from sglang.srt.utils import is_npu
 
 if TYPE_CHECKING:
     from sglang.srt.model_executor.model_runner import ModelRunner
