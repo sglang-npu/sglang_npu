@@ -254,6 +254,15 @@ class TokenizerManager:
                     trust_remote_code=server_args.trust_remote_code,
                     revision=server_args.revision,
                 )
+                dummy_text = 'hello'
+                encoded = self.tokenizer(
+                    input_text,
+                    return_token_type_ids=is_cross_encoder_request,
+                    padding='max_length',
+                    max_length=10,
+                )
+                self.padding_token = encoded["input_ids"][0]
+                print(f"{self.padding_token=}")
 
         # Initialize the `LoRARegistry` with initial LoRA adapter paths provided in `server_args`.
         # The registry dynamically updates as adapters are loaded / unloaded during runtime. It
@@ -528,8 +537,7 @@ class TokenizerManager:
                 input_length = len(input_ids)
                 new_length = ((input_length + max_length - 1) // max_length) * max_length
                 if new_length - input_length > 0:
-                    padding_token = input_ids[0]
-                    input_ids = [padding_token] * (new_length - input_length) + input_ids
+                    input_ids = [self.padding_token] * (new_length - input_length) + input_ids
                     encoded["input_ids"] = input_ids
                 
             elif self.server_args.enable_sp:
