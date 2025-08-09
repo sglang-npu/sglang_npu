@@ -348,12 +348,13 @@ class AscendAttnBackend(AttentionBackend):
                     back_part = []
 
                     mtx = mtx.reshape(cp_size, -1, num_head, head_dim)
-                    split_tensors = torch.split(mtx, seq_lens, dim=1)
-                    for split_tensor in split_tensors:
-                        seq_len = split_tensor.shape[1]
-                        assert seq_len % 2 == 0 
-                        front_part.append(split_tensor[:, :seq_len // 2, :, :])
-                        back_part.append(split_tensor[:, seq_len // 2:, :, :])
+
+                    last = 0
+                    for seq_len in seq_lens:
+                        assert seq_len % 2 == 0                 
+                        front_part.append(mtx[:, last : last + seq_len // 2, :, :])
+                        back_part.append(mtx[:, last + seq_len // 2 : last + seq_len, :, :])
+                        last += seq_len
 
                     front_tensor = torch.cat(front_part, dim=1).unsqueeze(1)
                     back_tensor = torch.cat(back_part, dim=1).unsqueeze(1)
