@@ -21,15 +21,15 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.distributed.device_communicators.pynccl_allocator import (
     set_graph_pool_id,
 )
 from sglang.srt.model_executor.cuda_graph_runner import (
     CudaGraphRunner,
     get_global_graph_memory_pool,
-    set_global_graph_memory_pool
+    set_global_graph_memory_pool,
 )
+from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.utils import is_npu
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ if _is_npu:
     torch.cuda.stream = torch.npu.stream
     torch.cuda.Stream = torch.npu.Stream
     torch.cuda.current_stream = torch.npu.current_stream
-    
+
 
 class NPUGraphRunner(CudaGraphRunner):
     """A NPUGraphRunner runs the forward pass of a model with npu graph and torch.compile."""

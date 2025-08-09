@@ -49,12 +49,12 @@ from sglang.srt.utils import (
     empty_context,
     get_available_gpu_memory,
     get_device_memory_capacity,
+    is_npu,
     rank0_log,
     require_attn_tp_gather,
     require_gathered_buffer,
     require_mlp_sync,
     require_mlp_tp_gather,
-    is_npu,
 )
 
 _is_npu = is_npu()
