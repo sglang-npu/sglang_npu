@@ -143,7 +143,7 @@ class TpModelWorker:
         assert (
             self.max_req_len > 0 and self.max_req_input_len > 0
         ), "Memory pool size is too small"
-        #TODO
+
         # Sync random seed across TP workers
         self.random_seed = broadcast_pyobj(
             [server_args.random_seed],
