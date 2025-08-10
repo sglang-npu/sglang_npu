@@ -286,11 +286,15 @@ class ModelRunner:
                 )
             )
 
-        self.eplb_manager = (
-            EPLBManager(self)
-            if self.server_args.enable_eplb and (not self.is_draft_worker)
-            else None
-        )
+        if self.server_args.enable_eplb and (not self.is_draft_worker):
+            if self.server_args.enable_async_eplb:
+                import sglang.srt.eplb.async_eplb_manager import AsyncEPLBManager
+                self.eplb_manager = AsyncEPLBManager(self)
+            else:
+                elf.eplb_manager = EPLBManager(self)
+        else:
+            self.eplb_manager = None
+
         self.expert_location_updater = ExpertLocationUpdater()
 
         # Load the model
