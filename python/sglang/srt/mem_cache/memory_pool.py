@@ -917,6 +917,7 @@ class AscendMLAPagedTokenToKVPool(MLATokenToKVPool):
                     layer_num,
                     self.size // self.page_size + 1,
                     self.page_size,
+                    1,
                     self.kv_lora_rank + self.qk_rope_head_dim,
                 ),
                 dtype=self.store_dtype,
@@ -958,7 +959,7 @@ class AscendMLAPagedTokenToKVPool(MLATokenToKVPool):
         torch_npu._npu_reshape_and_cache_siso(
             key=cache_k.view(-1, 1, self.kv_lora_rank + self.qk_rope_head_dim),
             key_cache=self.kv_buffer[layer_id - self.start_layer].view(
-                -1, 1, 1, self.kv_lora_rank + self.qk_rope_head_dim
+                -1, self.page_size, 1, self.kv_lora_rank + self.qk_rope_head_dim
             ),
             slot_indices=loc,
         )
