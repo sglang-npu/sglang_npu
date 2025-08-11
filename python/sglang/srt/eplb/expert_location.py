@@ -138,6 +138,7 @@ class ExpertLocationMetadata:
         logical_to_all_physical_map = _compute_logical_to_all_physical_map(
             physical_to_logical_map,
             num_logical_experts=model_config_for_expert_location.num_logical_experts,
+            server_args=server_args,
         )
 
         return ExpertLocationMetadata._init_raw(
