@@ -401,7 +401,8 @@ class DeepEPMoE(EPMoE):
             hidden_states = self.moe_impl(dispatch_output)
         else:
             if self.rank < self.moe_shared_expert_rank_num:
-                hidden_states = shared_experts(dispatch_output)
+                hidden_states, topk_idx, topk_weights, _, seg_indptr, _ = dispatch_output
+                hidden_states = shared_experts(hidden_states)
             else:
                 hidden_states = self.moe_impl(dispatch_output)
         hidden_states = self.combine(
