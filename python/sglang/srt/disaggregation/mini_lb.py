@@ -60,12 +60,16 @@ class MiniLoadBalancer:
     def next_round_robin_num(self, prefill_server):
         DP_LOAD_BALANCE = os.getenv("DP_LOAD_BALANCE", "0") == "1"
         if DP_LOAD_BALANCE:
-            dp_attention_round_robin_size = self.dp_attention_round_robin_size_dict[prefill_server]
+            dp_attention_round_robin_size = self.dp_attention_round_robin_size_dict[
+                prefill_server
+            ]
             if dp_attention_round_robin_size < 16384:
                 dp_attention_round_robin_size += 1
             else:
                 dp_attention_round_robin_size = 0
-            self.dp_attention_round_robin_size_dict[prefill_server] = dp_attention_round_robin_size
+            self.dp_attention_round_robin_size_dict[prefill_server] = (
+                dp_attention_round_robin_size
+            )
             return dp_attention_round_robin_size
         return random.randint(0, 2**63 - 1)
 
@@ -296,7 +300,8 @@ async def handle_generate_request(request_data: dict):
                 "bootstrap_host": [hostname] * batch_size,
                 "bootstrap_port": [bootstrap_port] * batch_size,
                 "bootstrap_room": [
-                    load_balancer.next_round_robin_num(prefill_server) for _ in range(batch_size)
+                    load_balancer.next_round_robin_num(prefill_server)
+                    for _ in range(batch_size)
                 ],
             }
         )
