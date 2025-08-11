@@ -206,7 +206,6 @@ class ExpertLocationMetadata:
             ),
         )
 
-
     @staticmethod
     def _init_common(server_args: ServerArgs, model_config: ModelConfig):
         model_config_for_expert_location = (

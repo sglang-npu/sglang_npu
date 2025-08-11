@@ -599,7 +599,7 @@ class DeepseekV2MoE(nn.Module):
         if hidden_states.shape[0] > 0:
             # router_logits: (num_tokens, n_experts)
             router_logits = self.gate(hidden_states)
-            self.moe_shared_expert_rank_num == 0:
+            if self.moe_shared_expert_rank_num == 0:
                 shared_output = self._forward_shared_experts(hidden_states)
             else:
                 shared_output = None
