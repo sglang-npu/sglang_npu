@@ -129,7 +129,7 @@ class EplbProcess:
     def do_algorithm(self):
         logical_count = self.shared_dict["moe_load"]
         return ExpertLocationMetadata.init_by_eplb(
-                self._server_args, self._model_config, logical_count
+                self._server_args, self._model_config, logical_count, self.rank
         )
 
     def worker_process(self, planner_q, block_q):
