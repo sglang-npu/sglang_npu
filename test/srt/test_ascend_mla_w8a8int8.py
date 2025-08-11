@@ -32,6 +32,9 @@ class TestAscendMlaW8A8Int8(CustomTestCase):
         cls.common_args = [
             "--trust-remote-code",
             "--disable-cuda-graph",
+            "--disable-radix-cache",
+            "--chunked-prefill-size",
+            32768,
             "--mem-fraction-static",
             0.8,
             "--attention-backend",
