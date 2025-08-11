@@ -323,8 +323,10 @@ class SchedulerDisaggregationPrefillMixin:
                 batch = self.prepare_mlp_sync_batch(batch)
             self.cur_batch = batch
             if batch:
+                logger.info(f"run_batch before {len(recv_reqs)=} {len(batch.batch_size)=}")
                 result = self.run_batch(batch)
                 self.result_queue.append((batch.copy(), result))
+                logger.info(f"run_batch after {len(recv_reqs)=} {len(batch.batch_size)=}")
 
                 if self.last_batch is None:
                     # Create a dummy first batch to start the pipeline for overlap schedule.
@@ -610,7 +612,7 @@ class SchedulerDisaggregationPrefillMixin:
         req.start_send_idx = end_idx
         if last_chunk:
             self.disagg_metadata_buffers.set_buf(req)
-            logger.info(f"prefill set first token {req.output_ids[0]}")
+            logger.info(f"prefill set and send first token {req.output_ids[0]} {req.bootstrap_room=}")
         page_indices = kv_to_page_indices(kv_indices, page_size)
         if len(page_indices) == 0:
             # Sending empty pages is used to synchronize the status. Empty pages will appear in very short sequences.

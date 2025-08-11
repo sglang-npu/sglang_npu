@@ -1312,7 +1312,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
                 sp_rank = idx
                 start_page, end_page = get_sp_page_range(sp_size, sp_rank, len(kv_indices_origin))
                 kv_indices = kv_indices_origin[start_page : end_page + 1]
-                logger.info(f"decode index send to prefill(SP): {kv_indices=} {sp_rank=} {kv_indices_origin=}")
+                logger.info(f"decode index send to prefill(SP): {kv_indices=} {sp_rank=} {kv_indices_origin=} {self.bootstrap_room=}")
 
             # cp_rank in decode notifies the kvcache in prefill to transfer 1/cp for each cp_rank
             # sp-rank  |  cp_rank:0  |  cp_rank:1  |
@@ -1324,7 +1324,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
             if self.prefill_cp_size > 1 and self.prefill_sp_size == 1:
                 cp_rank = idx
                 kv_indices = get_cp_kvindices(self.prefill_cp_size, cp_rank, kv_indices_origin)
-                logger.info(f"decode index send to prefill(CP): {kv_indices=} {self.prefill_cp_size=} {cp_rank=} {kv_indices_origin=}")
+                logger.info(f"decode index send to prefill(CP): {kv_indices=} {self.prefill_cp_size=} {cp_rank=} {kv_indices_origin=} {self.bootstrap_room=}")
 
             # sp and cp, split sp based on cp.
             if self.prefill_cp_size > 1 and self.prefill_sp_size > 1:
