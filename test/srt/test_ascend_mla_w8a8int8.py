@@ -32,6 +32,9 @@ class TestAscendMlaW8A8Int8(CustomTestCase):
         cls.common_args = [
             "--trust-remote-code",
             "--disable-cuda-graph",
+            "--disable-radix-cache",
+            "--chunked-prefill-size",
+            -1,
             "--mem-fraction-static",
             0.8,
             "--attention-backend",
@@ -39,7 +42,7 @@ class TestAscendMlaW8A8Int8(CustomTestCase):
             "--quantization",
             "w8a8_int8",
             "--tp-size",
-            4,
+            2,
         ]
 
     def test_a_gsm8k(self):

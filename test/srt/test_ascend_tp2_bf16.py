@@ -32,6 +32,9 @@ class TestAscendTp2Bf16(CustomTestCase):
         cls.common_args = [
             "--trust-remote-code",
             "--disable-cuda-graph",
+            "--disable-radix-cache",
+            "--chunked-prefill-size",
+            -1,
             "--mem-fraction-static",
             0.8,
             "--attention-backend",
