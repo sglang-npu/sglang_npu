@@ -465,22 +465,26 @@ class AscendAttnBackend(AttentionBackend):
                     causal=causal,
                 )
             else:
-                self.native_attn._run_sdpa_forward_extend(
-                    q_,
-                    o_,
-                    k_cache.view(
-                        -1, layer.tp_k_head_num, (self.kv_lora_rank + self.qk_rope_head_dim)
-                    ),
-                    v_cache.view(-1, layer.tp_v_head_num, self.kv_lora_rank),
-                    forward_batch.req_to_token_pool.req_to_token,
-                    forward_batch.req_pool_indices,
-                    forward_batch.seq_lens,
-                    forward_batch.extend_prefix_lens,
-                    forward_batch.extend_seq_lens,
-                    scaling=layer.scaling,
-                    enable_gqa=use_gqa,
-                    causal=causal,
+                attn_output = torch.empty(
+                    (q.shape[0], layer.tp_q_head_num, layer.v_head_dim),
+                    device=q.device,
+                    dtype=q.dtype,
                 )
+                max_s = max(self.forward_metadata.seq_lens_cpu_int)
+                mask = self.attn_mask_builder.get_attn_mask(max_s, q.dtype, q.device)
+                torch_npu._npu_flash_attention(
+                    query=q,
+                    key=k,
+                    value=v,
+                    mask=mask,
+                    seq_len=self.forward_metadata.seq_lens_cpu_int,
+                    scale_value=layer.scaling,
+                    num_heads=layer.tp_q_head_num,
+                    num_kv_heads=layer.tp_k_head_num,
+                    out=attn_output,
+                )
+                attn_output = attn_output.reshape(-1, layer.tp_q_head_num, layer.v_head_dim)
+                return attn_output
             return o
 
     def forward_decode(
