@@ -30,16 +30,15 @@ class AsyncEPLBManager(EPLBManager):
         else:
             self.rank = 0
 
-        # async process 
         self.planner_q = Queue()
-        self.block_q = Queue()
+        self.block_q = Queue(maxsize=1)
 
         self.num_wait_worker_iterations = 40
 
         self.manager = Manager()
         self.shared_dict = self.manager.dict(
             {
-            "moe_load": None,
+                "moe_load": None,
             }
         )
 
