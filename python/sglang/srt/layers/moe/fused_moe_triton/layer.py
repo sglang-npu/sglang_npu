@@ -163,6 +163,7 @@ class FusedMoE(torch.nn.Module):
 
         # assert num_experts % (self.moe_ep_size - moe_shared_expert_rank_num) == 0
         # self.num_local_experts = num_experts // (self.moe_ep_size - moe_shared_expert_rank_num)
+        self.num_local_experts = num_experts // self.moe_ep_size
         if self.moe_ep_size > 1:
             # TODO(ch-wan): support shared experts fusion
             # Create a tensor of size num_experts filled with -1
