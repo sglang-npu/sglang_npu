@@ -720,13 +720,13 @@ def _launch_subprocesses(
             pp_size_per_node * (server_args.node_rank // nnodes_per_tp_group + 1),
         )
 
-        for cp_rank in server_args.cp_size:
+        for cp_rank in range(server_args.cp_size):
             for pp_rank in pp_rank_range:
                 for tp_rank in tp_rank_range:
                     reader, writer = mp.Pipe(duplex=False)
                     gpu_id = (
                         server_args.base_gpu_id
-                        + (server_args.tp_size * server_args.gpu_id_step)
+                        + (cp_rank * server_args.tp_size * server_args.gpu_id_step)
                         + ((pp_rank % pp_size_per_node) * tp_size_per_node)
                         + (tp_rank % tp_size_per_node) * server_args.gpu_id_step
                     )

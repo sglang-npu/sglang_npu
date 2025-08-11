@@ -1005,7 +1005,7 @@ class Scheduler(
     def recv_requests(self) -> List[Req]:
         """Receive results at tp_rank = 0 and broadcast it to all other TP ranks."""
         if self.pp_rank == 0:
-            if self.attn_tp_rank == 0:
+            if self.attn_tp_rank == 0 and self.cp_rank == 0:
                 recv_reqs = []
 
                 while True:
