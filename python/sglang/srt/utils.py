@@ -1003,11 +1003,14 @@ def configure_logger(server_args, prefix: str = ""):
         return
     format = f"[%(asctime)s{prefix}] %(message)s"
     # format = f"[%(asctime)s.%(msecs)03d{prefix}] %(message)s"
+    filename=os.getenv("SGLANG_LOGGING_PATH")
+    if not filename:
+        filename="sglang.log"
     logging.basicConfig(
         level=getattr(logging, server_args.log_level.upper()),
         format=format,
         datefmt="%Y-%m-%d %H:%M:%S",
-        filename="sglang.log",
+        filename=filename,
         force=True,
     )
 

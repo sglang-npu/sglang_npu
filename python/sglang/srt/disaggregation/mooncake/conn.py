@@ -612,7 +612,7 @@ class MooncakeKVManager(BaseKVManager):
                             )
 
                             # Only sync status when all the dst ranks have received the kvcache
-                            logger.debug(f"prefill sync_status_to_decode_endpoint {len(polls)=} {req.required_dst_info_num=}")
+                            logger.debug(f"prefill sync_status_to_decode_endpoint {len(polls)=} {req.required_dst_info_num=} {req.room=}")
                             if len(polls) == req.required_dst_info_num:
                                 status = KVPoll.Success if all(polls) else KVPoll.Failed
                                 self.update_status(req.room, status)
@@ -705,7 +705,7 @@ class MooncakeKVManager(BaseKVManager):
                         )
                         # MlA in sp_prefill, need 'arrived_response_num == expected_response_num',
                         # because kvcache comes from multiple prefill sp_ranks
-                        logger.debug(f"decode recv sync_status_to_decode_endpoint {arrived_response_num=} {expected_response_num=} {prefill_rank=}")
+                        logger.debug(f"decode recv sync_status_to_decode_endpoint {arrived_response_num=} {expected_response_num=} {prefill_rank=} {bootstrap_room=}")
                         if (
                             (self.is_mla_backend and not global_server_args_dict["enable_sp_prefill"])
                             or arrived_response_num == expected_response_num
@@ -1331,7 +1331,7 @@ class MooncakeKVReceiver(BaseKVReceiver):
                 cp_rank = idx // self.prefill_cp_size
                 sp_rank = idx % self.prefill_sp_size
                 kv_indices = get_scp_kvindices(self.prefill_cp_size, cp_rank, self.prefill_sp_size, sp_rank, kv_indices_origin)
-                logger.info(f"decode index send to prefill(SCP): {kv_indices=} {cp_rank=} {sp_rank=} {kv_indices_origin=}")
+                logger.info(f"decode index send to prefill(SCP): {kv_indices=} {cp_rank=} {sp_rank=} {kv_indices_origin=} {self.bootstrap_room=}")
 
             sock, lock = self._connect_to_bootstrap_server(bootstrap_info)
             is_dummy = bootstrap_info["is_dummy"]  
