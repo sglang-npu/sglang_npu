@@ -1091,7 +1091,7 @@ class Scheduler(
             )
         return recv_reqs
 
-    def cp_split_request(recv_reqs: List[Req]) -> List[Req]:
+    def cp_split_request(self, recv_reqs: List[Req]) -> List[Req]:
         for req in recv_reqs:
             num_chunks = self.cp_size * 2
             input_length = len(req.input_ids)
