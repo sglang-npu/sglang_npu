@@ -701,10 +701,10 @@ def alloc_extend_native(
             )
             new_pages_first_token_idx = page_size * free_pages[:estimated_num_new_pages]
             new_page_idx_1_positions = torch.searchsorted(
-                (sorted_need_new_page_idx, need_new_page_idx_1)
+                sorted_need_new_page_idx, need_new_page_idx_1
             )
             new_page_idx_2_positions = torch.searchsorted(
-                (sorted_need_new_page_idx, need_new_page_idx_2)
+                sorted_need_new_page_idx, need_new_page_idx_2
             )
             out_indices[need_new_page_idx_1, 1] = new_pages_first_token_idx[
                 new_page_idx_1_positions
