@@ -1,7 +1,7 @@
 import logging
 import time
 from typing import TYPE_CHECKING, List
-from multiprocessing import Queue, Manager
+from multiprocessing import Queue, Manager, Process
 
 import torch.cuda
 
