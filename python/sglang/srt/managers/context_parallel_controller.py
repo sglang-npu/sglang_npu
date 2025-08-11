@@ -208,38 +208,41 @@ class ContextParallelController:
         self.max_req_input_len = scheduler_info[0]["max_req_input_len"]
 
     def cp_scheduler(self, req: Req):
-        cp_size = self.server_args.cp_size
-        # padding req
-        # input_ids = self.tokenizer(
-        #   req.input_ids,
-        #   padding='max_length',
-        #   max_length=cp_size
-        #)
+        self.workers[0].send_pyobj(req)
 
-        print("before split")
-        print(req.__dict__)
 
-        input_ids = req.input_ids
+        # cp_size = self.server_args.cp_size
+        # # padding req
+        # # input_ids = self.tokenizer(
+        # #   req.input_ids,
+        # #   padding='max_length',
+        # #   max_length=cp_size
+        # #)
 
-        #split cp
-        num_chunks = cp_size * 2
-        input_length = len(input_ids)
-        chunk_length = input_length // num_chunks
-        for cp_rank in range(cp_size):
-            former_rank = cp_rank
-            former_st_idx = chunk_length * former_rank
-            former_end_idx = former_st_idx +  chunk_length
+        # print("before split")
+        # print(req.__dict__)
 
-            latter_rank = num_chunks - cp_rank - 1
-            latter_st_idx = chunk_length * latter_rank
-            latter_end_idx = latter_st_idx + chunk_length
+        # input_ids = req.input_ids
 
-            req_now = req
-            req_now.input_ids = input_ids[former_st_idx:former_end_idx] + input_ids[latter_st_idx:latter_end_idx]
-            print("after split: cp rank=", cp_rank)
-            print(req_now.__dict__)
-            print("len:", len(req_now.input_ids))
-            self.workers[cp_rank].send_pyobj(req_now)
+        # #split cp
+        # num_chunks = cp_size * 2
+        # input_length = len(input_ids)
+        # chunk_length = input_length // num_chunks
+        # for cp_rank in range(cp_size):
+        #     former_rank = cp_rank
+        #     former_st_idx = chunk_length * former_rank
+        #     former_end_idx = former_st_idx +  chunk_length
+
+        #     latter_rank = num_chunks - cp_rank - 1
+        #     latter_st_idx = chunk_length * latter_rank
+        #     latter_end_idx = latter_st_idx + chunk_length
+
+        #     req_now = req
+        #     req_now.input_ids = input_ids[former_st_idx:former_end_idx] + input_ids[latter_st_idx:latter_end_idx]
+        #     print("after split: cp rank=", cp_rank)
+        #     print(req_now.__dict__)
+        #     print("len:", len(req_now.input_ids))
+        #     self.workers[cp_rank].send_pyobj(req_now)
 
 
     def event_loop(self):
