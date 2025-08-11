@@ -421,7 +421,7 @@ class FusedMoE(torch.nn.Module):
     def _map_global_expert_id_to_local_expert_id(self, expert_id: int) -> int:
         if self.expert_map_cpu is None:
             return expert_id
-            expert_id -= 256
+        expert_id -= 256
         return self.expert_map_cpu[expert_id].item()
 
     def weight_loader(
