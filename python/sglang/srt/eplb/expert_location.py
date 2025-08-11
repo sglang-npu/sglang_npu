@@ -132,7 +132,7 @@ class ExpertLocationMetadata:
 
     @staticmethod
     def init_by_eplb(
-        server_args: ServerArgs, model_config: ModelConfig, logical_count: torch.Tensor
+        server_args: ServerArgs, model_config: ModelConfig, logical_count: torch.Tensor, rank=None,
     ):
         if not isinstance(logical_count, torch.Tensor):
             logical_count = torch.tensor(logical_count)
@@ -172,6 +172,7 @@ class ExpertLocationMetadata:
             logical_to_all_physical_map=logical_to_all_physical_map.to(
                 server_args.device
             ),
+            rank=rank,
         )
 
     @staticmethod
@@ -204,6 +205,7 @@ class ExpertLocationMetadata:
         ep_size: int,
         physical_to_logical_map: torch.Tensor,
         logical_to_all_physical_map: torch.Tensor,
+        rank = None,
     ):
         _, num_physical_experts = physical_to_logical_map.shape
 
@@ -217,6 +219,9 @@ class ExpertLocationMetadata:
             logical_to_all_physical_map != -1, dim=-1
         )
 
+        if rank is None:
+            rank = torch.distributed.get_rank()
+
         return ExpertLocationMetadata(
             physical_to_logical_map=physical_to_logical_map,
             physical_to_logical_map_cpu=physical_to_logical_map.cpu(),
@@ -228,7 +233,7 @@ class ExpertLocationMetadata:
                     num_gpus=ep_size,
                     num_physical_experts=num_physical_experts,
                     # TODO improve when we have real EP rank
-                    ep_rank=torch.distributed.get_rank() % ep_size,
+                    ep_rank=rank % ep_size,
                 )
                 if server_args.ep_dispatch_algorithm == "static"
                 else None
