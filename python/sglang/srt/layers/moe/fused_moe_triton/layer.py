@@ -153,15 +153,15 @@ class FusedMoE(torch.nn.Module):
             enable_flashinfer_cutlass_moe = False
 
         self.enable_flashinfer_cutlass_moe = enable_flashinfer_cutlass_moe
-        self.moe_ep_size = get_moe_expert_parallel_world_size()
+        self.moe_ep_size = get_moe_expert_parallel_world_size() - moe_shared_expert_rank_num
         self.moe_ep_rank = get_moe_expert_parallel_rank()
         self.moe_tp_size = get_moe_tensor_parallel_world_size()
         self.moe_tp_rank = get_moe_tensor_parallel_rank()
-        moe_shared_expert_rank_num = global_server_args_dict[
+        self.moe_shared_expert_rank_num = global_server_args_dict[
             "moe_shared_expert_rank_num"
         ]
-        assert num_experts % (self.ep_size - moe_shared_expert_rank_num) == 0
-        self.num_local_experts = num_experts // self.moe_ep_size
+        # assert num_experts % (self.moe_ep_size - moe_shared_expert_rank_num) == 0
+        # self.num_local_experts = num_experts // (self.moe_ep_size - moe_shared_expert_rank_num)
         if self.moe_ep_size > 1:
             # TODO(ch-wan): support shared experts fusion
             # Create a tensor of size num_experts filled with -1
