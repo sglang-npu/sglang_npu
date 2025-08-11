@@ -157,7 +157,8 @@ class FusedMoE(torch.nn.Module):
         self.moe_ep_rank = get_moe_expert_parallel_rank()
         self.moe_tp_size = get_moe_tensor_parallel_world_size()
         self.moe_tp_rank = get_moe_tensor_parallel_rank()
-        assert num_experts % self.moe_ep_size == 0
+        moe_shared_expert_rank_num = global_server_args_dict["moe_shared_expert_rank_num"]
+        assert num_experts % (self.ep_size-moe_shared_expert_rank_num) == 0
         self.num_local_experts = num_experts // self.moe_ep_size
         if self.moe_ep_size > 1:
             # TODO(ch-wan): support shared experts fusion

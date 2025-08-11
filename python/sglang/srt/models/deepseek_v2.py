@@ -209,8 +209,13 @@ class DeepseekV2MLP(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x, forward_batch=None, can_fuse_mlp_allreduce=False):
-        if (self.tp_size == 1) and x.shape[0] == 0:
-            return x
+
+        if isinstance(x,tuple):
+            if (self.tp_size == 1) and x[0].shape[0] == 0:
+                return x[0]
+        else:
+            if (self.tp_size == 1) and x.shape[0] == 0:
+                return x
 
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
@@ -356,6 +361,13 @@ class DeepseekV2MoE(nn.Module):
         self.shared_experts_is_int8 = False
         self.shared_experts_is_fp8 = False
         self.shared_experts_weight_block_size = None
+
+        self.rank = torch.distributed.get_rank()
+        self.moe_shared_expert_rank_num = global_server_args_dict["moe_shared_expert_rank_num"]
+        self.num_experts = config.n_routed_experts + self.num_fused_shared_experts + global_server_args_dict["ep_num_redundant_experts"]
+        num_local_experts = self.num_experts  // (self.tp_size - self.moe_shared_expert_rank_num)
+        self.external_phys = self.moe_shared_expert_rank_num * num_local_experts
+
         if config.n_shared_experts is not None and self.num_fused_shared_experts == 0:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
             # disable tp for shared experts when enable deepep moe
@@ -587,7 +599,10 @@ class DeepseekV2MoE(nn.Module):
         if hidden_states.shape[0] > 0:
             # router_logits: (num_tokens, n_experts)
             router_logits = self.gate(hidden_states)
-            shared_output = self._forward_shared_experts(hidden_states)
+            self.moe_shared_expert_rank_num == 0:
+                shared_output = self._forward_shared_experts(hidden_states)
+            else:
+                shared_output = None
             topk_weights, topk_idx, _ = self.topk(
                 hidden_states,
                 router_logits,
@@ -603,13 +618,21 @@ class DeepseekV2MoE(nn.Module):
             topk_weights = torch.empty(
                 (0, self.top_k), dtype=torch.float32, device=hidden_states.device
             )
-
-        final_hidden_states = self.experts(
-            hidden_states=hidden_states,
-            topk_idx=topk_idx,
-            topk_weights=topk_weights,
-            forward_batch=forward_batch,
-        )
+        if self.moe_shared_expert_rank_num == 0:
+            final_hidden_states = self.experts(
+                hidden_states=hidden_states,
+                topk_idx=topk_idx,
+                topk_weights=topk_weights,
+                forward_batch=forward_batch,
+            )
+        else:
+            final_hidden_states = self.experts(
+                hidden_states=hidden_states,
+                topk_idx=topk_idx,
+                topk_weights=topk_weights,
+                forward_batch=forward_batch,
+                shared_experts=self._forward_shared_experts
+            )
 
         if shared_output is not None:
             x = shared_output

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Callable
 
 import torch
 
@@ -99,6 +99,7 @@ class EPMoE(FusedMoE):
             routed_scaling_factor=routed_scaling_factor,
         )
 
+        
         self.start_expert_id = self.moe_ep_rank * self.num_local_experts
         self.end_expert_id = self.start_expert_id + self.num_local_experts - 1
 
@@ -325,6 +326,10 @@ class DeepEPMoE(EPMoE):
         )
         self.deepep_mode = deepep_mode
 
+        self.rank = torch.distributed.get_rank()
+        self.moe_shared_expert_rank_num = global_server_args_dict["moe_shared_expert_rank_num"]
+        self.num_local_experts = self.num_experts // (self.tp_size - self.moe_shared_expert_rank_num)
+        
         # TODO: move to the beginning of the file
         from sglang.srt.distributed.parallel_state import get_tp_group
         from sglang.srt.two_batch_overlap import MaybeTboDeepEPDispatcher
@@ -384,11 +389,18 @@ class DeepEPMoE(EPMoE):
         topk_idx: torch.Tensor,
         topk_weights: torch.Tensor,
         forward_batch: ForwardBatch,
+        shared_experts: Optional[Callable] = None,
     ):
         dispatch_output = self.dispatch(
             hidden_states, topk_idx, topk_weights, forward_batch
         )
-        hidden_states = self.moe_impl(dispatch_output)
+        if self.moe_shared_expert_rank_num == 0:
+            hidden_states = self.moe_impl(dispatch_output)
+        else:
+            if self.rank < self.moe_shared_expert_rank_num:
+                hidden_states = shared_experts(dispatch_output)
+            else:
+                hidden_states = self.moe_impl(dispatch_output)
         hidden_states = self.combine(
             hidden_states,
             dispatch_output.topk_idx,
