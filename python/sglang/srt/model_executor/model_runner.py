@@ -276,6 +276,7 @@ class ModelRunner:
         if self.server_args.enable_eplb and (not self.is_draft_worker):
             if self.server_args.enable_async_eplb:
                 from sglang.srt.eplb.async_eplb_manager import AsyncEPLBManager
+                
                 self.eplb_manager = AsyncEPLBManager(self)
             else:
                 self.eplb_manager = EPLBManager(self)

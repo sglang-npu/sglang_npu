@@ -132,7 +132,10 @@ class ExpertLocationMetadata:
 
     @staticmethod
     def init_by_eplb(
-        server_args: ServerArgs, model_config: ModelConfig, logical_count: torch.Tensor, rank=None,
+        server_args: ServerArgs,
+        model_config: ModelConfig,
+        logical_count: torch.Tensor,
+        rank=None,
     ):
         if not isinstance(logical_count, torch.Tensor):
             logical_count = torch.tensor(logical_count)
@@ -205,7 +208,7 @@ class ExpertLocationMetadata:
         ep_size: int,
         physical_to_logical_map: torch.Tensor,
         logical_to_all_physical_map: torch.Tensor,
-        rank = None,
+        rank=None,
     ):
         _, num_physical_experts = physical_to_logical_map.shape
 

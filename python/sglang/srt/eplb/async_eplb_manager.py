@@ -1,14 +1,13 @@
 import logging
 import time
-from typing import TYPE_CHECKING, List
 from multiprocessing import Queue, Manager, Process
+from typing import TYPE_CHECKING, List
 
 import torch.cuda
 
-from sglang.srt.eplb.expert_distribution import get_global_expert_distribution_recorder
 from sglang.srt.eplb.eplb_manager import EPLBManager
+from sglang.srt.eplb.expert_distribution import get_global_expert_distribution_recorder
 from sglang.srt.eplb.expert_location import ExpertLocationMetadata
-
 from sglang.srt.utils import is_npu
 
 if TYPE_CHECKING:
@@ -38,22 +37,26 @@ class AsyncEPLBManager(EPLBManager):
         self.num_wait_worker_iterations = 40
 
         self.manager = Manager()
-        self.shared_dict = self.manager.dict({
+        self.shared_dict = self.manager.dict(
+            {
             "moe_load": None,
-        })
+            }
+        )
 
         self.eplb = EplbProcess(
-            shared_dict = self.shared_dict,
-            planner_q = self.planner_q,
-            block_q = self.block_q,
-            server_args = self._server_args,
-            model_config = self._model_runner.model_config,
+            shared_dict=self.shared_dict,
+            planner_q=self.planner_q,
+            block_q=self.block_q,
+            server_args=self._server_args,
+            model_config=self._model_runner.model_config,
             rank=self.rank,
         )
 
         self.eplb_process = self.eplb.launch_process()
 
-        logger.info(f"[ModelRunner] Launched EPLB process (pid={self.eplb_process.pid})")
+        logger.info(
+            f"[ModelRunner] Launched EPLB process (pid={self.eplb_process.pid})"
+        )
 
     def _entrypoint(self):
         while True:
@@ -82,9 +85,9 @@ class AsyncEPLBManager(EPLBManager):
                 yield
 
         self._model_runner.update_expert_location(
-                expert_location_metadata,
-                update_layer_ids=update_layer_ids,
-            )
+            expert_location_metadata,
+            update_layer_ids=update_layer_ids,
+        )
 
     def to_device(self, metadata):
         fields = (
@@ -107,14 +110,15 @@ class AsyncEPLBManager(EPLBManager):
     def wakeup_eplb_worker(self):
         self.planner_q.put(1)
 
+
 class EplbProcess:
     def __init__(
-        self, 
-        shared_dict, 
-        planner_q, 
-        block_q, 
-        server_args, 
-        model_config, 
+        self,
+        shared_dict,
+        planner_q,
+        block_q,
+        server_args,
+        model_config,
         rank,
     ):
         self.shared_dict = shared_dict
@@ -129,7 +133,7 @@ class EplbProcess:
     def do_algorithm(self):
         logical_count = self.shared_dict["moe_load"]
         return ExpertLocationMetadata.init_by_eplb(
-                self._server_args, self._model_config, logical_count, self.rank
+            self._server_args, self._model_config, logical_count, self.rank
         )
 
     def worker_process(self, planner_q, block_q):
@@ -145,14 +149,14 @@ class EplbProcess:
                     break
 
             except Exception as e:
-                logger.warning(f"[EPLB process] Exiting due to error:{e}", exc_info=True)
+                logger.warning(
+                    f"[EPLB process] Exiting due to error:{e}", exc_info=True
+                )
                 break
 
     def launch_process(self):
         proc = Process(
-            target=self.worker_process,
-            args=(self.planner_q, self.block_q),
-            daemon=True
+            target=self.worker_process, args=(self.planner_q, self.block_q), daemon=True
         )
         proc.start()
         return proc
