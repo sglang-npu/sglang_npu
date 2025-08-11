@@ -278,7 +278,7 @@ class ModelRunner:
                 from sglang.srt.eplb.async_eplb_manager import AsyncEPLBManager
                 self.eplb_manager = AsyncEPLBManager(self)
             else:
-                elf.eplb_manager = EPLBManager(self)
+                self.eplb_manager = EPLBManager(self)
         else:
             self.eplb_manager = None
         self.expert_location_updater = ExpertLocationUpdater()
