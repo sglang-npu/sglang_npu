@@ -158,7 +158,8 @@ suites = {
         TestFile("test_ascend_tp1_bf16.py", 400),
     ],
     "per-commit-2-ascend-npu": [
-        TestFile("test_ascend_tp2_bf16.py", 400),    ],
+        TestFile("test_ascend_tp2_bf16.py", 400),
+    ],
     "per-commit-4-ascend-npu": [
         TestFile("test_ascend_mla_w8a8int8.py", 400),
     ],
