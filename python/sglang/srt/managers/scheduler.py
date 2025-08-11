@@ -1076,29 +1076,12 @@ class Scheduler(
             recv_reqs = work_reqs + control_reqs
         elif self.cp_size != 1:
             recv_reqs = broadcast_pyobj(
-                recv_reqs = broadcast_pyobj(
-                    recv_reqs,
-                    self.world_group.rank,
-                    self.world_group.cpu_group,
-                    src=self.world_group.ranks[0]
-                )
+                recv_reqs,
+                self.world_group.rank,
+                self.world_group.cpu_group,
+                src=self.world_group.ranks[0]
             )
-            for req in recv_reqs:
-                num_chunks = self.cp_size * 2
-                input_length = len(req.input_ids)
-                chunk_length = input_length // num_chunks
-                
-                former_rank = self.cp_rank
-                former_st_idx = chunk_length * former_rank
-                former_end_idx = former_st_idx + chunk_length
-
-                latter_rank = num_chunks - self.cp_rank - 1
-                latter_st_idx = chunk_length * latter_rank
-                latter_end_idx = latter_st_idx + chunk_length
-
-                req.input_ids = req.input_ids[former_st_idx:former_end_idx] + req.input_ids[latter_st_idx:latter_end_idx]
-                logger.info(req.__dict__)
-
+            recv_reqs = self.cp_split_request(recv_reqs)
         elif self.tp_size != 1:
             recv_reqs = broadcast_pyobj(
                 recv_reqs,
@@ -1106,6 +1089,24 @@ class Scheduler(
                 self.tp_cpu_group,
                 src=self.tp_group.ranks[0],
             )
+        return recv_reqs
+
+    def cp_split_request(recv_reqs: List[Req]) -> List[Req]:
+        for req in recv_reqs:
+            num_chunks = self.cp_size * 2
+            input_length = len(req.input_ids)
+            chunk_length = input_length // num_chunks
+            
+            former_rank = self.cp_rank
+            former_st_idx = chunk_length * former_rank
+            former_end_idx = former_st_idx + chunk_length
+
+            latter_rank = num_chunks - self.cp_rank - 1
+            latter_st_idx = chunk_length * latter_rank
+            latter_end_idx = latter_st_idx + chunk_length
+
+            req.input_ids = req.input_ids[former_st_idx:former_end_idx] + req.input_ids[latter_st_idx:latter_end_idx]
+            logger.info(req.__dict__)
         return recv_reqs
 
     def process_input_requests(self, recv_reqs: List):
