@@ -97,7 +97,7 @@ class AsyncEPLBManager(EPLBManager):
             t = getattr(metadata, name, None)
             if t is None:
                 continue
-            if hasatter(t, "device") and t.device != self.device:
+            if hasattr(t, "device") and t.device != self.device:
                 setattr(metadata, name, t.to(self.device, non_blocking=True))
         return metadata
 
