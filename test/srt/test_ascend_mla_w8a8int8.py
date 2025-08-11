@@ -42,7 +42,7 @@ class TestAscendMlaW8A8Int8(CustomTestCase):
             "--quantization",
             "w8a8_int8",
             "--tp-size",
-            2,
+            4,
         ]
 
     def test_a_gsm8k(self):
