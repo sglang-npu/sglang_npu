@@ -1007,7 +1007,7 @@ def configure_logger(server_args, prefix: str = ""):
         level=getattr(logging, server_args.log_level.upper()),
         format=format,
         datefmt="%Y-%m-%d %H:%M:%S",
-        filename="sglang.log"
+        filename="sglang.log",
         force=True,
     )
 
