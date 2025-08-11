@@ -243,6 +243,7 @@ class TpModelWorker:
                 next_token_ids = self.model_runner.sample(
                     logits_output, model_worker_batch
                 )
+                logger.info(f"{next_token_ids=} {forward_batch.batch_size()=}")
 
             return logits_output, next_token_ids, can_run_cuda_graph
         else:
