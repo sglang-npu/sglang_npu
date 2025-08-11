@@ -210,7 +210,7 @@ class DeepseekV2MLP(nn.Module):
 
     def forward(self, x, forward_batch=None, can_fuse_mlp_allreduce=False):
 
-        if isinstance(x,tuple):
+        if isinstance(x, tuple):
             if (self.tp_size == 1) and x[0].shape[0] == 0:
                 return x[0]
         else:
@@ -363,9 +363,17 @@ class DeepseekV2MoE(nn.Module):
         self.shared_experts_weight_block_size = None
 
         self.rank = torch.distributed.get_rank()
-        self.moe_shared_expert_rank_num = global_server_args_dict["moe_shared_expert_rank_num"]
-        self.num_experts = config.n_routed_experts + self.num_fused_shared_experts + global_server_args_dict["ep_num_redundant_experts"]
-        num_local_experts = self.num_experts  // (self.tp_size - self.moe_shared_expert_rank_num)
+        self.moe_shared_expert_rank_num = global_server_args_dict[
+            "moe_shared_expert_rank_num"
+        ]
+        self.num_experts = (
+            config.n_routed_experts 
+            + self.num_fused_shared_experts 
+            + global_server_args_dict["ep_num_redundant_experts"]
+        )
+        num_local_experts = self.num_experts  // (
+            self.tp_size - self.moe_shared_expert_rank_num
+        )
         self.external_phys = self.moe_shared_expert_rank_num * num_local_experts
 
         if config.n_shared_experts is not None and self.num_fused_shared_experts == 0:
@@ -631,7 +639,7 @@ class DeepseekV2MoE(nn.Module):
                 topk_idx=topk_idx,
                 topk_weights=topk_weights,
                 forward_batch=forward_batch,
-                shared_experts=self._forward_shared_experts
+                shared_experts=self._forward_shared_experts,
             )
 
         if shared_output is not None:

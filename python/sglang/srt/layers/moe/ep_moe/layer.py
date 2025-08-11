@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional, Callable
+from typing import TYPE_CHECKING, Callable, Optional
 
 import torch
 
@@ -99,7 +99,6 @@ class EPMoE(FusedMoE):
             routed_scaling_factor=routed_scaling_factor,
         )
 
-        
         self.start_expert_id = self.moe_ep_rank * self.num_local_experts
         self.end_expert_id = self.start_expert_id + self.num_local_experts - 1
 
@@ -327,8 +326,12 @@ class DeepEPMoE(EPMoE):
         self.deepep_mode = deepep_mode
 
         self.rank = torch.distributed.get_rank()
-        self.moe_shared_expert_rank_num = global_server_args_dict["moe_shared_expert_rank_num"]
-        self.num_local_experts = self.num_experts // (self.tp_size - self.moe_shared_expert_rank_num)
+        self.moe_shared_expert_rank_num = global_server_args_dict[
+            "moe_shared_expert_rank_num"
+        ]
+        self.num_local_experts = self.num_experts // (
+            self.tp_size - self.moe_shared_expert_rank_num
+        )
         
         # TODO: move to the beginning of the file
         from sglang.srt.distributed.parallel_state import get_tp_group

@@ -193,7 +193,7 @@ class ServerArgs:
     deepep_config: Optional[str] = None
     moe_dense_tp_size: Optional[int] = None
 
-    # 
+    # Moe external shared expert
     moe_shared_expert_rank_num: int = 0
     # Hierarchical cache
     enable_hierarchical_cache: bool = False

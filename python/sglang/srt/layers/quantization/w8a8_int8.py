@@ -789,7 +789,7 @@ class NPU_W8A8DynamicLinearMethodImpl:
         tp_rank: Optional[int] = 0,
     ) -> torch.Tensor:
 
-        if isinstance(x,tuple):
+        if isinstance(x, tuple):
             quant_out, dynamic_scale = x[0], x[1]
             original_dtype = torch.bfloat16
         else:

@@ -94,11 +94,11 @@ class ExpertLocationMetadata:
             external_phys = moe_shared_expert_rank_num * num_local_experts
 
             front = torch.full(
-                (external_phys,), 
+                (external_phys,),
                 -1,
             )
             physical_to_logical_map_layer = (
-                torch.arange(0, num_physical_experts - external_phys) 
+                torch.arange(0, num_physical_experts - external_phys)
                 % num_logical_experts
             )
             physical_to_logical_map_layer = torch.cat(
@@ -183,13 +183,13 @@ class ExpertLocationMetadata:
 
         num_layers, _ = physical_to_logical_map.shape
         tensor_front = torch.full(
-            (num_layers,external_phys),
+            (num_layers, external_phys),
             -1,
-            dtype= physical_to_logical_map.dtype,
-            device = physical_to_logical_map.device,
-            )
+            dtype=physical_to_logical_map.dtype,
+            device=physical_to_logical_map.device,
+        )
         physical_to_logical_map = torch.cat(
-            [tensor_front,physical_to_logical_map], dim=1
+            [tensor_front, physical_to_logical_map], dim=1
         )
         logical_to_all_physical_map = _compute_logical_to_all_physical_map(
             physical_to_logical_map,
@@ -218,12 +218,12 @@ class ExpertLocationMetadata:
         ep_size = server_args.ep_size
 
         assert (
-            num_physical_experts % (ep_size - server_args.moe_shared_expert_rank_num) 
+            num_physical_experts % (ep_size - server_args.moe_shared_expert_rank_num)
             == 0
-        ) 
+        )
         num_local_physical_experts = num_physical_experts // (
             ep_size - server_args.moe_shared_expert_rank_num
-            )
+        )
         num_physical_experts = num_local_physical_experts * ep_size
 
         return dict(
@@ -328,8 +328,8 @@ def set_global_expert_location_metadata(value):
 
 
 def _compute_logical_to_all_physical_map(
-    physical_to_logical_map: torch.Tensor, 
-    num_logical_experts: int, 
+    physical_to_logical_map: torch.Tensor,
+    num_logical_experts: int,
     server_args: ServerArgs,
 ):
     # This is rarely called, so we use for loops for maximum clarity

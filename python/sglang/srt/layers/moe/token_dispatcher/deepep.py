@@ -161,7 +161,7 @@ class DeepEPBuffer:
                 "moe_shared_expert_rank_num"
             ]
             assert (
-                num_experts is not None 
+                num_experts is not None
                 and num_experts % (group.size() - moe_shared_expert_rank_num) == 0
             )
             num_rdma_bytes = max(
