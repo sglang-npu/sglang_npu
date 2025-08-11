@@ -265,6 +265,7 @@ class TopK(CustomOp):
             get_global_expert_distribution_recorder().on_select_experts(
                 topk_ids=topk_ids
             )
+            topk_ids -= 256
             return topk_weights, topk_ids, _
         else:
             torch_native = True
