@@ -34,7 +34,7 @@ class TestAscendTp2Bf16(CustomTestCase):
             "--disable-cuda-graph",
             "--disable-radix-cache",
             "--chunked-prefill-size",
-            -1,
+            32768,
             "--mem-fraction-static",
             0.8,
             "--attention-backend",
