@@ -462,7 +462,7 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
             "moe_shared_expert_rank_num"
         ]
         self.external_phys = (
-            moe_shared_expert_rank_num 
+            moe_shared_expert_rank_num
             * self._expert_location_metadata.num_local_physical_experts
         )
         self._data = torch.zeros(

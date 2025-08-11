@@ -102,7 +102,7 @@ class ExpertLocationMetadata:
                 % num_logical_experts
             )
             physical_to_logical_map_layer = torch.cat(
-                [front,physical_to_logical_map_layer], dim=0
+                [front, physical_to_logical_map_layer], dim=0
             )
             physical_to_logical_map = physical_to_logical_map_layer.unsqueeze(0).expand(
                 num_layers, -1

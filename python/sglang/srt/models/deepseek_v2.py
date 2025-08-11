@@ -367,11 +367,11 @@ class DeepseekV2MoE(nn.Module):
             "moe_shared_expert_rank_num"
         ]
         self.num_experts = (
-            config.n_routed_experts 
-            + self.num_fused_shared_experts 
+            config.n_routed_experts
+            + self.num_fused_shared_experts
             + global_server_args_dict["ep_num_redundant_experts"]
         )
-        num_local_experts = self.num_experts  // (
+        num_local_experts = self.num_experts // (
             self.tp_size - self.moe_shared_expert_rank_num
         )
         self.external_phys = self.moe_shared_expert_rank_num * num_local_experts

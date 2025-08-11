@@ -332,7 +332,7 @@ class DeepEPMoE(EPMoE):
         self.num_local_experts = self.num_experts // (
             self.tp_size - self.moe_shared_expert_rank_num
         )
-        
+
         # TODO: move to the beginning of the file
         from sglang.srt.distributed.parallel_state import get_tp_group
         from sglang.srt.two_batch_overlap import MaybeTboDeepEPDispatcher
