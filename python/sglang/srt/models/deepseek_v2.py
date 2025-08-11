@@ -1010,6 +1010,12 @@ class DeepseekV2AttentionMLA(nn.Module):
                     return AttnForwardMethod.MLA
 
         if self.attention_backend == "ascend":
+            # if (
+            #     forward_batch.forward_mode.is_extend()
+            #     and not forward_batch.forward_mode.is_target_verify()                
+            #     and not forward_batch.forward_mode.is_draft_extend()
+            # ):
+            #     return AttnForwardMethod.MHA
             return AttnForwardMethod.MLA
         elif self.attention_backend == "flashinfer":
             # Flashinfer MLA: Do not absorb when enabling ragged prefill
