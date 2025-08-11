@@ -88,7 +88,7 @@ class AsyncEPLBManager(EPLBManager):
 
     def to_device(self, metadata):
         fields = (
-            "phphysical_to_logical_map",
+            "physical_to_logical_map",
             "logical_to_all_physical_map",
             "logical_to_all_physical_map_num_valid",
             "logical_to_rank_dispatch_physical_map",
