@@ -244,7 +244,7 @@ class Scheduler(
         self.tp_rank = tp_rank
         self.pp_rank = pp_rank
         self.dp_rank = dp_rank
-        self.cp_rank = cp_rank
+        self.cp_rank = cp_rank if cp_rank is not None else 0
         self.tp_size = server_args.tp_size
         self.pp_size = server_args.pp_size
         self.dp_size = server_args.dp_size
@@ -281,26 +281,23 @@ class Scheduler(
         context = zmq.Context(2)
         self.idle_sleeper = None
 
-        if self.pp_rank == 0 and self.attn_tp_rank == 0:
+        if self.pp_rank == 0 and self.attn_tp_rank == 0 and self.cp_rank == 0:
             self.recv_from_tokenizer = get_zmq_socket(
                 context, zmq.PULL, port_args.scheduler_input_ipc_name, False
             )
             self.send_to_tokenizer = get_zmq_socket(
                 context, zmq.PUSH, port_args.tokenizer_ipc_name, False
             )
-            if self.cp_rank is None or self.cp_rank == 0:
-                if server_args.skip_tokenizer_init:
-                    # Directly send to the TokenizerManager
-                    self.send_to_detokenizer = get_zmq_socket(
-                        context, zmq.PUSH, port_args.tokenizer_ipc_name, False
-                    )
-                else:
-                    # Send to the DetokenizerManager
-                    self.send_to_detokenizer = get_zmq_socket(
-                        context, zmq.PUSH, port_args.detokenizer_ipc_name, False
-                    )
+            if server_args.skip_tokenizer_init:
+                # Directly send to the TokenizerManager
+                self.send_to_detokenizer = get_zmq_socket(
+                    context, zmq.PUSH, port_args.tokenizer_ipc_name, False
+                )
             else:
-                self.send_to_detokenizer = SimpleNamespace(send_pyobj=lambda x: None)
+                # Send to the DetokenizerManager
+                self.send_to_detokenizer = get_zmq_socket(
+                    context, zmq.PUSH, port_args.detokenizer_ipc_name, False
+                )
 
             self.recv_from_rpc = get_zmq_socket(
                 context, zmq.DEALER, port_args.rpc_ipc_name, False
