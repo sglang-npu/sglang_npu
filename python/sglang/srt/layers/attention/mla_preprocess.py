@@ -84,7 +84,9 @@ class NPU_FusedMLAPreprocess(nn.Module):
             device=hidden_states.device,
         )
         self.quantScale0 = self.fused_qkv_a_proj_with_mqa.input_scale
-        self.quantOffset0 = self.fused_qkv_a_proj_with_mqa.input_offset
+        self.quantOffset0 = self.fused_qkv_a_proj_with_mqa.input_offset.to(
+            dtype=torch.int8
+        )
 
         # matmul_0 weight [7168, 2112]
         fused_qkv_a_proj_with_mqa_weight_q = self.fused_qkv_a_proj_with_mqa.weight.data[
@@ -180,7 +182,7 @@ class NPU_FusedMLAPreprocess(nn.Module):
         self.gamma1 = self.q_a_layernorm.weight
         self.beta1 = self.q_a_layernorm.bias
         self.quantScale1 = self.q_b_proj.input_scale
-        self.quantOffset1 = self.q_b_proj.input_offset
+        self.quantOffset1 = self.q_b_proj.input_offset.to(dtype=torch.int8)
 
         # matmul_1 weight [1536, num_head * 192]
         q_b_proj_weight = self.q_b_proj.weight.data.clone()
