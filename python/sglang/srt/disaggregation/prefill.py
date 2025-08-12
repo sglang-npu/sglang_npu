@@ -46,6 +46,7 @@ from sglang.srt.managers.schedule_batch import FINISH_LENGTH, Req, ScheduleBatch
 from sglang.srt.model_executor.forward_batch_info import ForwardMode
 from sglang.srt.utils import require_mlp_sync, get_sp_token_num, get_sp_page_range
 from sglang.srt.managers.schedule_batch import global_server_args_dict
+from sglang.srt.distributed import get_world_group
 
 if TYPE_CHECKING:
     from torch.distributed import ProcessGroup
@@ -95,6 +96,7 @@ class PrefillBootstrapQueue:
         self.bootstrap_port = bootstrap_port
         self.queue: List[Req] = []
         self.gloo_group = gloo_group
+        self.world_group = get_world_group()
         self.max_total_num_tokens = max_total_num_tokens
         self.scheduler = scheduler
         self.transfer_backend = transfer_backend
@@ -204,9 +206,14 @@ class PrefillBootstrapQueue:
             else:
                 return [], []
 
-        polls = poll_and_all_reduce(
-            [req.disagg_kv_sender for req in self.queue], self.gloo_group
-        )
+        if self.scheduler.server_args.cp_size > 1:
+            polls = poll_and_all_reduce(
+                [req.disagg_kv_sender for req in self.queue], self.world_group.cpu_group # todofix: world_group
+            )
+        else:
+            polls = poll_and_all_reduce(
+                [req.disagg_kv_sender for req in self.queue], self.gloo_group
+            )
         for i, (req, poll) in enumerate(zip(self.queue, polls)):
 
             if rids_to_check is not None:
@@ -323,10 +330,8 @@ class SchedulerDisaggregationPrefillMixin:
                 batch = self.prepare_mlp_sync_batch(batch)
             self.cur_batch = batch
             if batch:
-                logger.info(f"run_batch before {len(recv_reqs)=} {len(batch.reqs)=}")
                 result = self.run_batch(batch)
                 self.result_queue.append((batch.copy(), result))
-                logger.info(f"run_batch after {len(recv_reqs)=} {len(batch.reqs)=}")
 
                 if self.last_batch is None:
                     # Create a dummy first batch to start the pipeline for overlap schedule.
@@ -400,7 +405,6 @@ class SchedulerDisaggregationPrefillMixin:
                     )
 
         hidden_state_offset = 0
-        logger.info(f"process_batch_result_disagg_prefill {len(batch.reqs)=} {next_token_ids=}")
         for i, (req, next_token_id) in enumerate(
             zip(batch.reqs, next_token_ids, strict=True)
         ):
