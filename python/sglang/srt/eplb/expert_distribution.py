@@ -470,7 +470,7 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
             (
                 self._expert_location_metadata.num_layers,
                 (
-                    self._expert_location_metadata.num_physical_experts 
+                    num_physical_experts
                     if enable_global_physical_experts
                     else self._expert_location_metadata.num_local_physical_experts
                 ),
@@ -556,7 +556,8 @@ class _DeepepLowLatencySinglePassGatherer(_LayerBasedGpuSinglePassGatherer):
         self, layer_idx: int, local_physical_count_of_layer: torch.Tensor
     ):
         # Most naive implementation, can optimize later
-        self._data[layer_idx, :] += local_physical_count_of_layer
+        if self._data[layer_idx, :].shape == local_physical_count_of_layer.shape:
+            self._data[layer_idx, :] += local_physical_count_of_layer
 
 
 def _convert_local_to_global_physical_count(
