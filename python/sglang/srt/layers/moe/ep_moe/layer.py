@@ -391,16 +391,16 @@ class DeepEPMoE(EPMoE):
         dispatch_output = self.dispatch(
             hidden_states, topk_idx, topk_weights, forward_batch
         )
-        # if self.moe_shared_expert_rank_num == 0:
-        hidden_states = self.moe_impl(dispatch_output)
-        # else:
-        #     if self.rank < self.moe_shared_expert_rank_num:
-        #         hidden_states, topk_idx, topk_weights, _, seg_indptr, _ = (
-        #             dispatch_output
-        #         )
-        #         hidden_states = shared_experts(hidden_states)
-        #     else:
-        #         hidden_states = self.moe_impl(dispatch_output)
+        if self.moe_shared_expert_rank_num == 0:
+            hidden_states = self.moe_impl(dispatch_output)
+        else:
+            if self.rank < self.moe_shared_expert_rank_num:
+                hidden_states, topk_idx, topk_weights, _, seg_indptr, _ = (
+                    dispatch_output
+                )
+                hidden_states = shared_experts(hidden_states)
+            else:
+                hidden_states = self.moe_impl(dispatch_output)
         hidden_states = self.combine(
             hidden_states,
             dispatch_output.topk_idx,

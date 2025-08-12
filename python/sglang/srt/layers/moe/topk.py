@@ -242,7 +242,13 @@ class TopK(CustomOp):
         expert_location_dispatch_info: Optional[ExpertLocationDispatchInfo] = None,
     ) -> TopKOutput:
         global_num_experts = router_logits.shape[-1]
-
+        router_logits, correction_bias = (
+            expert_location_dispatch.transform_select_experts_inputs(
+                router_logits=router_logits,
+                correction_bias=correction_bias,
+                info=expert_location_dispatch_info,
+            )
+        )
         # NOTE: now npu_moe_gating_top_k can only support `group_count=256` pattern
         if global_num_experts == 256:
             router_logits = router_logits.to(torch.float32)
