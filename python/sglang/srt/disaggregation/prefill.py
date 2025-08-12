@@ -323,10 +323,10 @@ class SchedulerDisaggregationPrefillMixin:
                 batch = self.prepare_mlp_sync_batch(batch)
             self.cur_batch = batch
             if batch:
-                logger.info(f"run_batch before {len(recv_reqs)=} {len(batch.batch_size)=}")
+                logger.info(f"run_batch before {len(recv_reqs)=} {len(batch.reqs)=}")
                 result = self.run_batch(batch)
                 self.result_queue.append((batch.copy(), result))
-                logger.info(f"run_batch after {len(recv_reqs)=} {len(batch.batch_size)=}")
+                logger.info(f"run_batch after {len(recv_reqs)=} {len(batch.reqs)=}")
 
                 if self.last_batch is None:
                     # Create a dummy first batch to start the pipeline for overlap schedule.
@@ -400,6 +400,7 @@ class SchedulerDisaggregationPrefillMixin:
                     )
 
         hidden_state_offset = 0
+        logger.info(f"process_batch_result_disagg_prefill {len(batch.reqs)=} {next_token_ids=}")
         for i, (req, next_token_id) in enumerate(
             zip(batch.reqs, next_token_ids, strict=True)
         ):
