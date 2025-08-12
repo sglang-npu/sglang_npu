@@ -156,7 +156,7 @@ def _update_expert_weights_raw(
             old_physical_to_logical_map=[-1]*external_phys+old_expert_location_metadata.physical_to_logical_map_cpu[
                 layer_id
             ].tolist(),
-            new_physical_to_logical_map=[-1]*external_physnew_expert_location_metadata.physical_to_logical_map_cpu[
+            new_physical_to_logical_map=[-1]*external_phys+new_expert_location_metadata.physical_to_logical_map_cpu[
                 layer_id
             ].tolist(),
             num_local_physical_experts=num_local_physical_experts,
@@ -382,7 +382,7 @@ def update_expert_weights_single_layer(
             output_logs.append(
                 f"create_isend_ops_of_logical_expert_id {logical_expert_id=} {src_expert_location=} {same_node_dst_ranks=} {cross_node_dst_ranks=}"
             )
-            
+
         p2p_op_infos.append(
             (
                 logical_expert_id,
