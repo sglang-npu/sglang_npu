@@ -458,11 +458,19 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
         else:
             device = "cuda"
         self._enable_global_physical_experts = enable_global_physical_experts
+        moe_shared_expert_rank_num = global_server_args_dict[
+            "moe_shared_expert_rank_num"
+        ]
+        self.external_phys = (
+            moe_shared_expert_rank_num
+            * self._expert_location_metadata.num_local_physical_experts
+        )
+        num_physical_experts = self._expert_location_metadata.num_physical_experts +  self.external_phys
         self._data = torch.zeros(
             (
                 self._expert_location_metadata.num_layers,
                 (
-                    self._expert_location_metadata.num_physical_experts
+                    self._expert_location_metadata.num_physical_experts 
                     if enable_global_physical_experts
                     else self._expert_location_metadata.num_local_physical_experts
                 ),
@@ -506,7 +514,6 @@ class _SelectExpertsSinglePassGatherer(_LayerBasedGpuSinglePassGatherer):
         self._data[layer_idx, :].scatter_add_(
             dim=0, index=topk_ids.masked_fill(~mask, 0).long(), src=mask.int()
         )
-
 
 class _DeepepNormalSinglePassGatherer(_LayerBasedCpuSinglePassGatherer):
     def __init__(self, *args, **kwargs):
