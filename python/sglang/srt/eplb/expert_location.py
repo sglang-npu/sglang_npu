@@ -25,6 +25,7 @@ import torch.nn.functional as F
 from sglang.srt.configs.model_config import ModelConfig
 from sglang.srt.eplb import eplb_algorithms
 from sglang.srt.model_loader import get_model_architecture
+from sglang.srt.managers.schedule_batch import global_server_args_dict
 from sglang.srt.server_args import ServerArgs
 
 logger = logging.getLogger(__name__)
@@ -61,8 +62,10 @@ class ExpertLocationMetadata:
 
     @property
     def ep_size(self):
-        # TODO change when EP size != world size
-        return torch.distributed.get_world_size()
+        moe_shared_expert_rank_num = global_server_args_dict[
+            "moe_shared_expert_rank_num"
+        ]
+        return torch.distributed.get_world_size() - moe_shared_expert_rank_num
 
     def __post_init__(self):
         num_layers_0, num_physical_experts_0 = self.physical_to_logical_map.shape

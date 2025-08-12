@@ -57,8 +57,7 @@ class ExpertLocationUpdater:
         moe_shared_expert_rank_num = global_server_args_dict[
             "moe_shared_expert_rank_num"
         ]
-        rank -= moe_shared_expert_rank_num
-        if rank >= 0:
+        if rank >= moe_shared_expert_rank_num:
             _update_expert_weights(
                 routed_experts_weights_of_layer=routed_experts_weights_of_layer,
                 old_expert_location_metadata=old_expert_location_metadata,
