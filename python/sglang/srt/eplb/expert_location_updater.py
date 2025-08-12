@@ -150,11 +150,11 @@ def _update_expert_weights_raw(
         update_expert_weights_single_layer(
             routed_experts_weights=routed_experts_weights_of_layer[layer_id],
             temp_buffers=temp_buffers,
-            old_physical_to_logical_map=[-1]*external_phys
+            old_physical_to_logical_map=[-1] * external_phys
             + old_expert_location_metadata.physical_to_logical_map_cpu[
                 layer_id
             ].tolist(),
-            new_physical_to_logical_map=[-1]*external_phys
+            new_physical_to_logical_map=[-1] * external_phys
             + new_expert_location_metadata.physical_to_logical_map_cpu[
                 layer_id
             ].tolist(),
