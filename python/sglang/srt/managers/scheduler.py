@@ -1090,6 +1090,8 @@ class Scheduler(
 
     def cp_split_request(self, recv_reqs: List[Req]) -> List[Req]:
         for req in recv_reqs:
+            if not hasattr(req, 'input_ids'):
+                continue
             num_chunks = self.cp_size * 2
             input_length = len(req.input_ids)
             chunk_length = input_length // num_chunks
