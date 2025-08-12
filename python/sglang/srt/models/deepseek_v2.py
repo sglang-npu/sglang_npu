@@ -618,6 +618,7 @@ class DeepseekV2MoE(nn.Module):
                 expert_location_dispatch_info=ExpertLocationDispatchInfo.init_new(
                     layer_id=self.layer_id,
                 ),
+            topk_idx -= self.external_phys
             )
         else:
             topk_idx = torch.full(
