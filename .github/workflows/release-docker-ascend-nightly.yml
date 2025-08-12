@@ -67,4 +67,4 @@ jobs:
           # TODO: need add x86 platforms support when memfabric ready
           platforms: linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/sglang:deepep_perf_a3
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/sglang:b013
