@@ -559,39 +559,40 @@ class AscendAttnBackend(AttentionBackend):
 
             if global_server_args_dict["enable_sp"] and attn_sp_size > 1:
                 query = tensor_model_parallel_all_gather(query, dim=1)
-                # go_output = torch.empty(
-                #     [num_tokens, layer.tp_q_head_num, layer.tp_v_head_num],
-                #     dtype=q.dtype,
-                #     device=q.device,
-                # )
-                # lse_output = torch.empty(
-                #     [num_tokens, layer.tp_q_head_num, 1],
-                #     dtype=q.dtype,
-                #     device=q.device,
-                # )
-                # lse_output=torch_npu.atb.npu_multi_head_latent_attention_with_lse(
-                #     query[:, :, :self.kv_lora_rank],
-                #     query[:, :, self.kv_lora_rank:],
-                #     kv_c_and_k_pe_cache[:, :, :, :self.kv_lora_rank],
-                #     kv_c_and_k_pe_cache[:, :, :, self.kv_lora_rank:],
-                #     self.forward_metadata.block_tables,
-                #     self.forward_metadata.seq_lens_cpu_int,
-                #     layer.tp_q_head_num * attn_tp_size,
-                #     layer.scaling,
-                #     layer.tp_k_head_num,
-                #     calc_type="calc_type_ring",
-                #     output=go_output,
-                # )
-                go_output, lse_output = paged_attention_mla(
-                    query=query,
-                    key_cache=kv_c_and_k_pe_cache,
-                    num_kv_heads=layer.tp_k_head_num,
-                    num_heads=layer.tp_q_head_num * attn_tp_size,
-                    scale_value=layer.scaling,
-                    block_table=self.forward_metadata.block_tables,
-                    context_lens=self.forward_metadata.seq_lens_cpu_int,
-                    mla_vheadsize=self.kv_lora_rank,
+                go_output = torch.empty(
+                    [num_tokens, layer.tp_q_head_num * attn_tp_size, self.kv_lora_rank],
+                    dtype=q.dtype,
+                    device=q.device,
                 )
+                lse_output = torch.empty(
+                    [num_tokens, layer.tp_q_head_num * attn_tp_size, 1],
+                    dtype=q.dtype,
+                    device=q.device,
+                )
+                lse_output=torch_npu.atb.npu_multi_head_latent_attention_with_lse(
+                    query[:, :, :self.kv_lora_rank],
+                    query[:, :, self.kv_lora_rank:],
+                    kv_c_and_k_pe_cache[:, :, :, :self.kv_lora_rank],
+                    kv_c_and_k_pe_cache[:, :, :, self.kv_lora_rank:],
+                    self.forward_metadata.block_tables,
+                    self.forward_metadata.seq_lens_cpu_int,
+                    layer.tp_q_head_num * attn_tp_size,
+                    layer.scaling,
+                    layer.tp_k_head_num,
+                    calc_type="calc_type_ring",
+                    output=go_output,
+                    lse=lse_output
+                )
+                # go_output, lse_output = paged_attention_mla(
+                #     query=query,
+                #     key_cache=kv_c_and_k_pe_cache,
+                #     num_kv_heads=layer.tp_k_head_num,
+                #     num_heads=layer.tp_q_head_num * attn_tp_size,
+                #     scale_value=layer.scaling,
+                #     block_table=self.forward_metadata.block_tables,
+                #     context_lens=self.forward_metadata.seq_lens_cpu_int,
+                #     mla_vheadsize=self.kv_lora_rank,
+                # )
 
                 # [S, head, head_dim + 1]
                 go_lse_output = torch.cat([go_output, lse_output], dim=-1)
@@ -608,15 +609,23 @@ class AscendAttnBackend(AttentionBackend):
                 lse_output = torch.chunk(lse_output, chunks=attn_tp_size, dim=2)[attn_tp_rank]
                 lse_output = lse_output.reshape(attn_sp_size, -1)
 
-                # attn_output = torch.zeros(
-                #     (num_tokens * layer.tp_q_head_num, self.kv_lora_rank, 1),
-                #     dtype=q.dtype,
-                #     device=q.device
-                # )
+                original_dtype=go_output.dtype
+                if original_dtype != torch.float32:
+                    go_output = go_output.to(torch.float32)
+                    lse_output = lse_output.to(torch.float32)
 
-                # torch_npu.atb._npu_fa_update(lse_output, go_output, 0, attn_sp_size, attn_output)
+                attn_output = torch.zeros(
+                    (num_tokens * layer.tp_q_head_num, self.kv_lora_rank, 1),
+                    dtype=q.dtype,
+                    device=q.device
+                )
 
-                attn_output = fa_update(lse_output, go_output)
+                torch_npu.atb._npu_fa_update(lse_output, go_output, 0, attn_sp_size, attn_output)
+
+                # attn_output = fa_update(lse_output, go_output)
+
+                if original_dtype != torch.float32:
+                    attn_output = attn_output.to(original_dtype)
 
                 return attn_output.reshape(num_tokens, layer.tp_q_head_num * self.kv_lora_rank)
             else:
