@@ -54,15 +54,19 @@ class ExpertLocationUpdater:
 
         old_expert_location_metadata = get_global_expert_location_metadata()
         assert old_expert_location_metadata is not None
-
-        _update_expert_weights(
-            routed_experts_weights_of_layer=routed_experts_weights_of_layer,
-            old_expert_location_metadata=old_expert_location_metadata,
-            new_expert_location_metadata=new_expert_location_metadata,
-            update_layer_ids=update_layer_ids,
-            nnodes=nnodes,
-            rank=rank,
-        )
+        moe_shared_expert_rank_num = global_server_args_dict[
+            "moe_shared_expert_rank_num"
+        ]
+        rank -= moe_shared_expert_rank_num
+        if rank >= 0:
+            _update_expert_weights(
+                routed_experts_weights_of_layer=routed_experts_weights_of_layer,
+                old_expert_location_metadata=old_expert_location_metadata,
+                new_expert_location_metadata=new_expert_location_metadata,
+                update_layer_ids=update_layer_ids,
+                nnodes=nnodes,
+                rank=rank,
+            )
         old_expert_location_metadata.update(
             new_expert_location_metadata,
             update_layer_ids=update_layer_ids,
@@ -328,6 +332,9 @@ def update_expert_weights_single_layer(
         src_rank: int,
         dst_expert_location: int,
     ):
+        moe_shared_expert_rank_num = global_server_args_dict[
+            "moe_shared_expert_rank_num"
+        ]
         p2p_op_infos.append(
             (
                 logical_expert_id,
@@ -335,7 +342,7 @@ def update_expert_weights_single_layer(
                     P2POp(
                         op=torch.distributed.irecv,
                         tensor=_get_tensor(temp_buffers, i, dst_expert_location),
-                        peer=src_rank,
+                        peer=src_rank+moe_shared_expert_rank_num,
                     )
                     for i in range(num_tensors)
                 ],
@@ -376,6 +383,10 @@ def update_expert_weights_single_layer(
                 f"create_isend_ops_of_logical_expert_id {logical_expert_id=} {src_expert_location=} {same_node_dst_ranks=} {cross_node_dst_ranks=}"
             )
 
+        moe_shared_expert_rank_num = global_server_args_dict[
+            "moe_shared_expert_rank_num"
+        ]
+
         p2p_op_infos.append(
             (
                 logical_expert_id,
@@ -385,7 +396,7 @@ def update_expert_weights_single_layer(
                         tensor=_get_tensor(
                             routed_experts_weights, i, src_expert_location
                         ),
-                        peer=dst_rank,
+                        peer=dst_rank+moe_shared_expert_rank_num,
                     )
                     for dst_rank in all_dst_ranks
                     for i in range(num_tensors)

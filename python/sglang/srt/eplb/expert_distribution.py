@@ -465,7 +465,7 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
             moe_shared_expert_rank_num
             * self._expert_location_metadata.num_local_physical_experts
         )
-        num_physical_experts = self._expert_location_metadata.num_physical_experts +  self.external_phys
+        self.num_physical_experts = self._expert_location_metadata.num_physical_experts +  self.external_phys
         self._data = torch.zeros(
             (
                 self._expert_location_metadata.num_layers,
@@ -491,7 +491,7 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
                     [global_physical_count[..., :1], diffed],
                     dim=-1,
                 )
-                global_physical_count = [..., :255:]
+                global_physical_count = global_physical_count [..., self.external_phys:]
         else:
             # Can optimize if bottleneck
             global_physical_count = _convert_local_to_global_physical_count(
