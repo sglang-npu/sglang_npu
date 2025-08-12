@@ -156,12 +156,16 @@ class FusedMoE(torch.nn.Module):
             "moe_shared_expert_rank_num"
         ]
         self.enable_flashinfer_cutlass_moe = enable_flashinfer_cutlass_moe
-        self.moe_ep_size = get_moe_expert_parallel_world_size() - self.moe_shared_expert_rank_num
-        self.moe_ep_rank = get_moe_expert_parallel_rank() - self.moe_shared_expert_rank_num
+        self.moe_ep_size = (
+            get_moe_expert_parallel_world_size() - self.moe_shared_expert_rank_num
+        )
+        self.moe_ep_rank = (
+            get_moe_expert_parallel_rank() - self.moe_shared_expert_rank_num
+        )
         self.moe_tp_size = get_moe_tensor_parallel_world_size()
         self.moe_tp_rank = get_moe_tensor_parallel_rank()
 
-        assert num_experts % self.moe_ep_size  == 0
+        assert num_experts % self.moe_ep_size == 0
         self.num_local_experts = num_experts // self.moe_ep_size
         if self.moe_ep_size > 1:
             # TODO(ch-wan): support shared experts fusion
@@ -175,7 +179,9 @@ class FusedMoE(torch.nn.Module):
                     self.moe_ep_rank
                     * self.num_local_experts : (self.moe_ep_rank + 1)
                     * self.num_local_experts
-                ] = torch.arange(0, self.num_local_experts, dtype=torch.int32, device="cpu")
+                ] = torch.arange(
+                    0, self.num_local_experts, dtype=torch.int32, device="cpu"
+                )
 
         self.routed_scaling_factor = routed_scaling_factor
         assert intermediate_size % self.moe_tp_size == 0

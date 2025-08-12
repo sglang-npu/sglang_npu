@@ -515,7 +515,7 @@ class ServerArgs:
             )
 
         if self.enable_deepep_moe and self.moe_shared_expert_rank_num > 0:
-            logger.info("Moe shared expert externalization is enabled.") 
+            logger.info("Moe shared expert externalization is enabled.")
 
         if self.enable_eplb:
             assert self.ep_size > 1 or self.moe_a2a_backend is not None

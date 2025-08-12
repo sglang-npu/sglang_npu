@@ -144,18 +144,18 @@ def _update_expert_weights_raw(
     world_size = torch.distributed.get_world_size()
     num_local_physical_experts = old_expert_location_metadata.num_local_physical_experts
     num_gpu_per_node = world_size // nnodes
-    moe_shared_expert_rank_num = global_server_args_dict[
-        "moe_shared_expert_rank_num"
-    ]
+    moe_shared_expert_rank_num = global_server_args_dict["moe_shared_expert_rank_num"]
     external_phys = moe_shared_expert_rank_num * num_local_physical_experts
     for layer_id in update_layer_ids:
         update_expert_weights_single_layer(
             routed_experts_weights=routed_experts_weights_of_layer[layer_id],
             temp_buffers=temp_buffers,
-            old_physical_to_logical_map=[-1]*external_phys+old_expert_location_metadata.physical_to_logical_map_cpu[
+            old_physical_to_logical_map=[-1]*external_phys
+            + old_expert_location_metadata.physical_to_logical_map_cpu[
                 layer_id
             ].tolist(),
-            new_physical_to_logical_map=[-1]*external_phys+new_expert_location_metadata.physical_to_logical_map_cpu[
+            new_physical_to_logical_map=[-1]*external_phys
+            + new_expert_location_metadata.physical_to_logical_map_cpu[
                 layer_id
             ].tolist(),
             num_local_physical_experts=num_local_physical_experts,
