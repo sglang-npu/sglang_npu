@@ -470,7 +470,7 @@ class _LayerBasedGpuSinglePassGatherer(_SinglePassGatherer):
             (
                 self._expert_location_metadata.num_layers,
                 (
-                    num_physical_experts
+                    self.num_physical_experts
                     if enable_global_physical_experts
                     else self._expert_location_metadata.num_local_physical_experts
                 ),
