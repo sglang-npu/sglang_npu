@@ -161,9 +161,9 @@ class FusedMoE(torch.nn.Module):
         self.moe_tp_size = get_moe_tensor_parallel_world_size()
         self.moe_tp_rank = get_moe_tensor_parallel_rank()
 
-        # assert num_experts % (self.moe_ep_size - moe_shared_expert_rank_num) == 0
-        # self.num_local_experts = num_experts // (self.moe_ep_size - moe_shared_expert_rank_num)
+        assert num_experts % self.moe_ep_size == 0
         self.num_local_experts = num_experts // self.moe_ep_size
+        self.external_phys = self.moe_shared_expert_rank_num
         if self.moe_ep_size > 1:
             # TODO(ch-wan): support shared experts fusion
             # Create a tensor of size num_experts filled with -1
@@ -421,7 +421,7 @@ class FusedMoE(torch.nn.Module):
     def _map_global_expert_id_to_local_expert_id(self, expert_id: int) -> int:
         if self.expert_map_cpu is None:
             return expert_id
-        expert_id -= 256
+        expert_id -= self.external_phys
         return self.expert_map_cpu[expert_id].item()
 
     def weight_loader(
