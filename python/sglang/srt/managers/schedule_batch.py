@@ -109,6 +109,7 @@ GLOBAL_SERVER_ARGS_KEYS = [
     "enable_multimodal",
     "enable_symm_mem",
     "quantization",
+    "moe_shared_expert_rank_num",
 ]
 
 # Put some global args for easy access

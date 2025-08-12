@@ -179,17 +179,20 @@ class ExpertLocationMetadata:
         model_config_for_expert_location = (
             ModelConfigForExpertLocation.from_model_config(model_config)
         )
-
-        if model_config_for_expert_location is None:
-            return None
-
         num_physical_experts = (
             model_config_for_expert_location.num_logical_experts
             + server_args.ep_num_redundant_experts
         )
         ep_size = server_args.ep_size
-        assert num_physical_experts % ep_size == 0
-        num_local_physical_experts = num_physical_experts // ep_size
+
+        assert (
+            num_physical_experts % (ep_size - server_args.moe_shared_expert_rank_num)
+            == 0
+        )
+        num_local_physical_experts = num_physical_experts // (
+            ep_size - server_args.moe_shared_expert_rank_num
+        )
+        num_physical_experts = num_local_physical_experts * ep_size
 
         return dict(
             model_config_for_expert_location=model_config_for_expert_location,

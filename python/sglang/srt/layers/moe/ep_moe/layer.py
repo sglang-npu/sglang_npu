@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 import torch
 
@@ -325,6 +325,8 @@ class DeepEPMoE(EPMoE):
         )
         self.deepep_mode = deepep_mode
 
+        self.rank = torch.distributed.get_rank()
+
         # TODO: move to the beginning of the file
         from sglang.srt.distributed.parallel_state import get_tp_group
         from sglang.srt.two_batch_overlap import MaybeTboDeepEPDispatcher
@@ -384,11 +386,19 @@ class DeepEPMoE(EPMoE):
         topk_idx: torch.Tensor,
         topk_weights: torch.Tensor,
         forward_batch: ForwardBatch,
+        shared_experts: Optional[Callable] = None,
     ):
         dispatch_output = self.dispatch(
             hidden_states, topk_idx, topk_weights, forward_batch
         )
-        hidden_states = self.moe_impl(dispatch_output)
+        if self.moe_shared_expert_rank_num == 0:
+            hidden_states = self.moe_impl(dispatch_output)
+        else:
+            if self.rank < self.moe_shared_expert_rank_num:
+                hidden_states, topk_idx, topk_weights, _, seg_indptr, _ = dispatch_output
+                hidden_states = shared_experts(hidden_states)
+            else:
+                hidden_states = self.moe_impl(dispatch_output)
         hidden_states = self.combine(
             hidden_states,
             dispatch_output.topk_idx,
