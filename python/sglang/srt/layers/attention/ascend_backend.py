@@ -322,7 +322,9 @@ class AscendAttnBackend(AttentionBackend):
             return output.view(num_tokens, layer.tp_q_head_num * layer.v_head_dim)
         else:
             if self.graph_mode:
-                kv_cache = forward_batch.token_to_kv_pool.get_key_buffer(layer.layer_id)
+                kv_cache = forward_batch.token_to_kv_pool.get_key_buffer(
+                    layer.layer_id
+                ).view(-1, self.page_size, layer.head_dim)
                 k_rope = kv_cache[:, :, layer.v_head_dim :]
                 c_kv = kv_cache[:, :, : layer.v_head_dim]
                 k_rope_cache = k_rope.view(
