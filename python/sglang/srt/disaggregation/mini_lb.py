@@ -5,6 +5,7 @@ Minimal HTTP load balancer for prefill and decode servers for testing.
 import asyncio
 import dataclasses
 import logging
+import os
 import random
 import urllib
 from itertools import chain
@@ -54,6 +55,23 @@ class MiniLoadBalancer:
         self.prefill_configs = prefill_configs
         self.prefill_servers = [p.url for p in prefill_configs]
         self.decode_servers = decode_servers
+        self.dp_attention_round_robin_size_dict = dict.fromkeys(self.prefill_servers, 0)
+
+    def next_round_robin_num(self, prefill_server):
+        DP_LOAD_BALANCE = os.getenv("DP_LOAD_BALANCE", "0") == "1"
+        if DP_LOAD_BALANCE:
+            dp_attention_round_robin_size = self.dp_attention_round_robin_size_dict[
+                prefill_server
+            ]
+            if dp_attention_round_robin_size < 16384:
+                dp_attention_round_robin_size += 1
+            else:
+                dp_attention_round_robin_size = 0
+            self.dp_attention_round_robin_size_dict[prefill_server] = (
+                dp_attention_round_robin_size
+            )
+            return dp_attention_round_robin_size
+        return random.randint(0, 2**63 - 1)
 
     def add_prefill_server(self, new_prefill_config: PrefillConfig):
         self.prefill_configs.append(new_prefill_config)
@@ -282,7 +300,8 @@ async def handle_generate_request(request_data: dict):
                 "bootstrap_host": [hostname] * batch_size,
                 "bootstrap_port": [bootstrap_port] * batch_size,
                 "bootstrap_room": [
-                    _generate_bootstrap_room() for _ in range(batch_size)
+                    load_balancer.next_round_robin_num(prefill_server)
+                    for _ in range(batch_size)
                 ],
             }
         )
@@ -291,7 +310,7 @@ async def handle_generate_request(request_data: dict):
             {
                 "bootstrap_host": hostname,
                 "bootstrap_port": bootstrap_port,
-                "bootstrap_room": _generate_bootstrap_room(),
+                "bootstrap_room": load_balancer.next_round_robin_num(prefill_server),
             }
         )
 
@@ -316,7 +335,7 @@ async def _forward_to_backend(request_data: dict, endpoint_name: str):
         {
             "bootstrap_host": hostname,
             "bootstrap_port": bootstrap_port,
-            "bootstrap_room": _generate_bootstrap_room(),
+            "bootstrap_room": load_balancer.next_round_robin_num(prefill_server),
         }
     )
 
@@ -344,10 +363,6 @@ async def handle_chat_completion_request(request_data: dict):
 @app.post("/v1/completions")
 async def handle_completion_request(request_data: dict):
     return await _forward_to_backend(request_data, "v1/completions")
-
-
-def _generate_bootstrap_room():
-    return random.randint(0, 2**63 - 1)
 
 
 # We may utilize `GenerateReqInput`'s logic later
