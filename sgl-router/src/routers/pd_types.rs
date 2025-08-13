@@ -213,10 +213,13 @@ impl Bootstrap for GenerateReqInput {
     }
     fn next_room_id(&self, hostname: &String) -> u64 {
         let counter = ROOM_COUNTERS
-            .entry(hostname.clone())
-            .or_insert_with(|| AtomicU64::new(0));
+            .entry(hostname.to_string())
+            .or_insert_with(|| {
+                info!("Created new counter for hostname: {}", hostname);
+                AtomicU64::new(0)
+            });
         let room_id = counter.fetch_add(1, Ordering::Relaxed) % 16385;
-        info!("room_id: {}", room_id);
+        info!("Generated room_id: {} for hostname: {}", room_id, hostname);
         room_id
     }
 }
