@@ -28,7 +28,7 @@ kv_cache = torch.randn (
 ).npu()
 
 block_tables = torch.tensor([[0, 1]], dtype=torch.int32).npu()
-seq_lens_cpu_int = [256]
+seq_lens_cpu_int = torch.tensor([256], dtype=torch.int32)
 
 
 
@@ -144,3 +144,40 @@ def main():
     print("tp1_golden:",tp1_golden.shape, tp1_golden.sum())
     print("tp0_sp:", tp0_sp.shape, tp0_sp.sum())
     print("tp1_sp:", tp1_sp.shape, tp1_sp.sum())
+
+
+def main2():
+    std = golden(query_0, kv_cache)
+
+    go0, lse0 = sp_calc(query_0, kv, torch.tensor([[0]], dtype=torch.int32).npu(), [128])
+    go1, lse1 = sp_calc(query_0, kv, torch.tensor([[1]], dtype=torch.int32).npu(), [128])
+
+    go_lse_output0 = torch.cat([go0, lse0], dim=-1)
+    go_lse_output1 = torch.cat([go1, lse1], dim=-1)
+
+    go_lse_output = torch.cat([go_lse_output0, go_lse_output1], dim = 0)
+
+     original_dtype=go_output.dtype
+    if original_dtype != torch.float32:
+        go_output = go_output.to(torch.float32)
+        lse_output = lse_output.to(torch.float32)
+
+    attn_output = torch.zeros(
+        (num_tokens * tp_q_head_num, kv_lora_rank, 1),
+        dtype=torch.float32,
+        device=query_0.device
+    )
+
+    torch_npu.atb._npu_fa_update(lse_output, go_output, 0, attn_sp_size, attn_output)
+
+    if original_dtype != torch.float32:
+        attn_output = attn_output.to(original_dtype)
+    
+    print(torch.allclose(std, attn_output, rtol=1e-6, atol=1e-6))
+
+    print("std:". std.shape, std.sum())
+    print("attn:", attn_output.shape, attn_output.sum())
+
+if __name__=='__main__':
+    #main()
+    main2()
