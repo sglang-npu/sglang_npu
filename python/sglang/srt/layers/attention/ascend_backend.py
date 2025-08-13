@@ -645,4 +645,30 @@ class AscendAttnBackend(AttentionBackend):
                     mla_vheadsize=self.kv_lora_rank,
                     out=attn_output,
                 )
+                '''
+                go_output = torch.empty(
+                    [num_tokens, layer.tp_q_head_num, self.kv_lora_rank],
+                    dtype=q.dtype,
+                    device=q.device,
+                )
+                lse_output = torch.empty(
+                    [num_tokens, layer.tp_q_head_num , 1],
+                    dtype=q.dtype,
+                    device=q.device,
+                )
+                torch_npu.atb.npu_multi_head_latent_attention_with_lse(
+                    query[:, :, :self.kv_lora_rank],
+                    query[:, :, self.kv_lora_rank:],
+                    kv_c_and_k_pe_cache[:, :, :, :self.kv_lora_rank],
+                    kv_c_and_k_pe_cache[:, :, :, self.kv_lora_rank:],
+                    self.forward_metadata.block_tables,
+                    self.forward_metadata.seq_lens_cpu_int,
+                    layer.tp_q_head_num,
+                    layer.scaling,
+                    layer.tp_k_head_num,
+                    calc_type="calc_type_ring",
+                    output=go_output,
+                    lse=lse_output
+                )
+                '''
                 return attn_output.view(num_tokens, layer.tp_q_head_num * self.kv_lora_rank)
