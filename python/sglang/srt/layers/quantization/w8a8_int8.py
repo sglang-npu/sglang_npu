@@ -256,17 +256,23 @@ class W8A8Int8Config(QuantizationConfig):
 
         if _is_npu:
             if isinstance(layer, LinearBase):
+                key = "model"
+                if "vision_model" in prefix:
+                    key = "vision_model"
+                elif "visual" in prefix:
+                    key = "visual"
+                packed_modules_mapping_subset = self.packed_modules_mapping.get(key, {})
                 prefix_in_quant_config = prefix
                 proj_name = prefix.split(".")[-1]
-                if proj_name in self.packed_modules_mapping:
+                if proj_name in packed_modules_mapping_subset:
                     prefix_in_quant_config = prefix.replace(
-                        proj_name, self.packed_modules_mapping[proj_name][0]
+                        proj_name, packed_modules_mapping_subset[proj_name][0]
                     )
                 self.is_dynamic = (
                     self.quant_description[prefix_in_quant_config + ".weight"]
                     == "W8A8_DYNAMIC"
                 )
-                if self.is_layer_skipped(prefix, self.packed_modules_mapping):
+                if self.is_layer_skipped(prefix, packed_modules_mapping_subset):
                     return UnquantizedLinearMethod()
                 return (
                     NPU_W8A8DynamicLinearMethod(self)
@@ -578,6 +584,9 @@ class NPU_W8A8LinearMethodImpl:
         x: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        # To prevent import loops
+        from sglang.srt.layers.linear import RowParallelLinear
+
         original_dtype = x.dtype
         if original_dtype != torch.int8:
             x = torch_npu.npu_quantize(
@@ -665,6 +674,9 @@ class NPU_W8A8LinearMethodMTImpl:
         x: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        # To prevent import loops
+        from sglang.srt.layers.linear import RowParallelLinear
+
         original_dtype = x.dtype
         if original_dtype != torch.int8:
             x = quant_per_tensor(x, layer.input_scale, layer.input_offset)
