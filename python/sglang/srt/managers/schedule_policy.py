@@ -507,16 +507,17 @@ class PrefillAdder:
         real_input_tokens = self.ceil_paged_tokens(real_input_tokens)
         prefix_len = len(req.prefix_indices)
 
-        if total_tokens >= self.rem_total_tokens:
-            return AddReqResult.NO_TOKEN
+        # todofix
+        #if total_tokens >= self.rem_total_tokens:
+        #    return AddReqResult.NO_TOKEN
 
         if real_input_tokens >= self.rem_input_tokens and len(self.can_run_list) != 0:
             return AddReqResult.OTHER
 
         with self._lock_node(req.last_node):
             # self.rem_total_tokens may decrease after the lock acquisition
-            if total_tokens >= self.rem_total_tokens:
-                return AddReqResult.NO_TOKEN
+            #if total_tokens >= self.rem_total_tokens:
+            #    return AddReqResult.NO_TOKEN
 
             if req.host_hit_length > 0:
                 new_indices, req.last_node = self.tree_cache.init_load_back(

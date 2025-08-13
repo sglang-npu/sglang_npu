@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 def validate_input_length(
     req: Req, max_req_input_len: int, allow_auto_truncate: bool
 ) -> Optional[str]:
+    # todofix
+    return None
     """Validate and potentially truncate input length.
 
     Args:
