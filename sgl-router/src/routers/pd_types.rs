@@ -215,7 +215,9 @@ impl Bootstrap for GenerateReqInput {
         let counter = ROOM_COUNTERS
             .entry(hostname.clone())
             .or_insert_with(|| AtomicU64::new(0));
-        counter.fetch_add(1, Ordering::Relaxed) % 16385
+        let room_id = counter.fetch_add(1, Ordering::Relaxed) % 16385;
+        info!("room_id: {}", room_id);
+        room_id
     }
 }
 
@@ -263,7 +265,9 @@ impl Bootstrap for ChatReqInput {
         let counter = ROOM_COUNTERS
             .entry(hostname.clone())
             .or_insert_with(|| AtomicU64::new(0));
-        counter.fetch_add(1, Ordering::Relaxed) % 16385
+        let room_id = counter.fetch_add(1, Ordering::Relaxed) % 16385;
+        info!("room_id: {}", room_id);
+        room_id
     }
 }
 
