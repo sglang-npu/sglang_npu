@@ -44,6 +44,10 @@ from sglang.srt.layers.dp_attention import (
     get_attention_dp_rank,
     get_attention_tp_size,
 )
+from sglang.srt.distributed import (
+    get_context_model_parallel_world_size,
+    get_context_model_parallel_rank,
+)
 from sglang.srt.layers.rotary_embedding import MRotaryEmbedding
 from sglang.srt.utils import (
     flatten_nested_list,
@@ -61,6 +65,7 @@ if TYPE_CHECKING:
     from sglang.srt.sampling.sampling_batch_info import SamplingBatchInfo
     from sglang.srt.speculative.eagle_utils import EagleDraftInput, EagleVerifyInput
     from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
+    
 
 _is_npu = is_npu()
 
@@ -179,6 +184,9 @@ class ForwardBatch:
 
     # The sum of all sequence lengths
     seq_lens_sum: int
+
+    # Optional sp_seq_lens
+    sp_seq_lens: Optional[torch.Tensor] = None
 
     # Optional seq_lens on cpu
     seq_lens_cpu: Optional[torch.Tensor] = None
@@ -320,6 +328,7 @@ class ForwardBatch:
             encoder_lens_cpu=batch.encoder_lens_cpu,
             encoder_out_cache_loc=batch.encoder_out_cache_loc,
             seq_lens_sum=batch.seq_lens_sum,
+            sp_seq_lens=batch.sp_seq_lens,
             seq_lens_cpu=batch.seq_lens_cpu,
             return_logprob=batch.return_logprob,
             top_logprobs_nums=batch.top_logprobs_nums,
@@ -420,6 +429,7 @@ class ForwardBatch:
                 batch.extend_prefix_lens, dtype=torch.int32
             ).to(device, non_blocking=True)
             ret.extend_num_tokens = batch.extend_num_tokens
+            # triton position not support context parallel now
             if support_triton(model_runner.server_args.attention_backend):
                 positions, ret.extend_start_loc = compute_position_triton(
                     ret.extend_prefix_lens,
@@ -432,6 +442,7 @@ class ForwardBatch:
                 )
             if ret.positions is None:
                 ret.positions = positions
+
             ret.extend_prefix_lens_cpu = batch.extend_prefix_lens
             ret.extend_seq_lens_cpu = batch.extend_seq_lens
             ret.extend_logprob_start_lens_cpu = batch.extend_logprob_start_lens
@@ -941,7 +952,25 @@ def compute_position_kernel(
 def compute_position_torch(
     extend_prefix_lens: torch.Tensor, extend_seq_lens: torch.Tensor
 ):
-    positions = torch.cat(
+    cp_size = get_context_model_parallel_world_size()
+    if cp_size > 1:
+        cp_rank = get_context_model_parallel_rank()
+        sec_rank = cp_size * 2 - cp_rank - 1
+        positions = torch.cat(
+            [
+                torch.cat(
+                    [
+                        torch.arange(cp_rank * (prefix_len + extend_len) // 2, (cp_rank + 1) * (prefix_len + extend_len) //2, device=extend_prefix_lens.device),
+                        torch.arange(sec_rank * (prefix_len + extend_len) // 2, (sec_rank + 1) * (prefix_len + extend_len) //2, device=extend_prefix_lens.device)
+                    ],
+                    axis=0,
+                )
+                for prefix_len, extend_len in zip(extend_prefix_lens, extend_seq_lens)
+            ],
+            axis=0,
+        )
+    else:
+        positions = torch.cat(
         [
             torch.arange(
                 prefix_len, prefix_len + extend_len, device=extend_prefix_lens.device

@@ -41,6 +41,9 @@ from sglang.srt.entrypoints.EngineBase import EngineBase
 from sglang.srt.managers.data_parallel_controller import (
     run_data_parallel_controller_process,
 )
+from sglang.srt.managers.context_parallel_controller import (
+    run_context_parallel_controller_process,
+)
 from sglang.srt.managers.detokenizer_manager import run_detokenizer_process
 from sglang.srt.managers.io_struct import (
     EmbeddingReqInput,
@@ -712,34 +715,37 @@ def _launch_subprocesses(
             pp_size_per_node * (server_args.node_rank // nnodes_per_tp_group + 1),
         )
 
-        for pp_rank in pp_rank_range:
-            for tp_rank in tp_rank_range:
-                reader, writer = mp.Pipe(duplex=False)
-                gpu_id = (
-                    server_args.base_gpu_id
-                    + ((pp_rank % pp_size_per_node) * tp_size_per_node)
-                    + (tp_rank % tp_size_per_node) * server_args.gpu_id_step
-                )
-                moe_ep_rank = tp_rank // (server_args.tp_size // server_args.ep_size)
-                proc = mp.Process(
-                    target=run_scheduler_process,
-                    args=(
-                        server_args,
-                        port_args,
-                        gpu_id,
-                        tp_rank,
-                        moe_ep_rank,
-                        pp_rank,
-                        None,
-                        writer,
-                        None,
-                    ),
-                )
+        for cp_rank in range(server_args.cp_size):
+            for pp_rank in pp_rank_range:
+                for tp_rank in tp_rank_range:
+                    reader, writer = mp.Pipe(duplex=False)
+                    gpu_id = (
+                        server_args.base_gpu_id
+                        + (cp_rank * server_args.tp_size * server_args.gpu_id_step)
+                        + ((pp_rank % pp_size_per_node) * tp_size_per_node)
+                        + (tp_rank % tp_size_per_node) * server_args.gpu_id_step
+                    )
+                    moe_ep_rank = tp_rank // (server_args.tp_size // server_args.ep_size)
+                    proc = mp.Process(
+                        target=run_scheduler_process,
+                        args=(
+                            server_args,
+                            port_args,
+                            gpu_id,
+                            tp_rank,
+                            moe_ep_rank,
+                            pp_rank,
+                            None,
+                            cp_rank,
+                            writer,
+                            None,
+                        ),
+                    )
 
-                with memory_saver_adapter.configure_subprocess():
-                    proc.start()
-                scheduler_procs.append(proc)
-                scheduler_pipe_readers.append(reader)
+                    with memory_saver_adapter.configure_subprocess():
+                        proc.start()
+                    scheduler_procs.append(proc)
+                    scheduler_pipe_readers.append(reader)
     else:
         # Launch the data parallel controller
         reader, writer = mp.Pipe(duplex=False)

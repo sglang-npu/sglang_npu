@@ -169,6 +169,8 @@ class ModelRunner:
         moe_ep_size: int,
         pp_rank: int,
         pp_size: int,
+        cp_rank: int,
+        cp_size: int,
         nccl_port: int,
         server_args: ServerArgs,
         is_draft_worker: bool = False,
@@ -190,6 +192,8 @@ class ModelRunner:
         self.dp_size = server_args.dp_size
         self.pp_rank = pp_rank
         self.pp_size = pp_size
+        self.cp_rank = cp_rank
+        self.cp_size = cp_size
         self.model_config = model_config
         self.dist_port = nccl_port
         self.server_args = server_args
@@ -558,20 +562,24 @@ class ModelRunner:
                     )
 
             # Only initialize the distributed environment on the target model worker.
+            logger.info(f"init torch ditributed with {backend} backend. {self.tp_size} {self.pp_size} {self.cp_size} {self.tp_size * self.pp_size * self. cp_size} {self.tp_size * self.pp_size * self.cp_rank + self.tp_size * self.pp_rank + self.tp_rank}")
             init_distributed_environment(
                 backend=backend,
-                world_size=self.tp_size * self.pp_size,
-                rank=self.tp_size * self.pp_rank + self.tp_rank,
+                world_size=self.tp_size * self.pp_size * self.cp_size,
+                rank=self.tp_size * self.pp_size * self.cp_rank + self.tp_size * self.pp_rank + self.tp_rank,
                 local_rank=self.gpu_id,
                 distributed_init_method=dist_init_method,
                 timeout=self.server_args.dist_timeout,
             )
+            logger.info(f"initialize model parallel begin")
             initialize_model_parallel(
                 tensor_model_parallel_size=self.tp_size,
                 pipeline_model_parallel_size=self.pp_size,
                 expert_model_parallel_size=self.moe_ep_size,
+                context_model_parallel_size=self.cp_size,
                 duplicate_tp_group=self.server_args.enable_pdmux,
             )
+            logger.info(f"init dp attention begin")
             initialize_dp_attention(
                 enable_dp_attention=self.server_args.enable_dp_attention,
                 tp_rank=self.tp_rank,
@@ -579,6 +587,7 @@ class ModelRunner:
                 dp_size=self.server_args.dp_size,
                 moe_dense_tp_size=self.server_args.moe_dense_tp_size,
                 pp_size=self.server_args.pp_size,
+                cp_size=self.cp_size
             )
 
         min_per_gpu_memory = get_available_gpu_memory(

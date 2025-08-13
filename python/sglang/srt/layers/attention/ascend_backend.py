@@ -5,17 +5,204 @@ from typing import TYPE_CHECKING, List, Optional
 
 import torch
 import torch_npu
-from torch.nn.functional import scaled_dot_product_attention
+from torch.nn.functional import scaled_dot_product_attention, softmax
 
 from sglang.srt.configs.model_config import AttentionArch
 from sglang.srt.layers.attention.base_attn_backend import AttentionBackend
 from sglang.srt.layers.attention.torch_native_backend import TorchNativeAttnBackend
 from sglang.srt.layers.radix_attention import AttentionType
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
+from sglang.srt.managers.schedule_batch import global_server_args_dict
+from sglang.srt.distributed import (
+    tensor_model_parallel_all_gather,
+    get_context_model_parallel_world_size,
+    get_context_model_parallel_rank,
+    context_model_parallel_all_gather,
+)
+from sglang.srt.layers.dp_attention import (
+    get_attention_tp_rank,
+    get_attention_tp_size,
+)
+
+import logging
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from sglang.srt.layers.radix_attention import RadixAttention
     from sglang.srt.model_executor.model_runner import ModelRunner
+
+def fa_update(all_lse, all_out):
+    """
+    all_lse: (sp, b*s*hc)
+    all_out: (sp, b*s*hc, hDim)
+    out: (b*s*hc, hd, 1)
+    """
+
+    sp = all_out.shape[0]
+    hd = all_out.shape[-1]
+
+    all_lse = all_lse.transpose(0, 1)
+
+    all_out = all_out.permute(1, 2, 0).reshape(-1, sp * hd)
+
+    all_max_lse = torch.max(all_lse, dim=1)[0]
+    all_max_lse = all_max_lse.unsqueeze(1)
+    all_lse -= all_max_lse
+
+    #(b * s * hc, sp)
+    lse_exp = torch.exp(all_lse)
+    #(b * s * hc 1)
+    sum_lse_exp = torch.sum(lse_exp, dim=-1, keepdim=True)
+
+    #(b * s * hc, sp)
+    sum_lse_exp = sum_lse_exp.repeat(1, sp)
+    lse_exp = lse_exp / sum_lse_exp
+
+    # oi = lse_exp*oi (b * s * hc, hd, sp) * (b * s * hc, hd, sp)
+    lse_exp = lse_exp.unsqueeze(1)
+    lse_exp = lse_exp.repeat(1, hd, 1)
+    all_out = all_out.reshape(-1, hd, sp)
+    all_out = all_out * lse_exp
+
+    # o = sum(oi) (b * s * hc, hd, 1)
+    out = torch.sum(all_out, dim=-1, keepdim=True)
+
+    return out
+
+def paged_attention_mla(
+    query, #[s, head, 576]
+    key_cache, #[-1, 128, 1, 576]
+    num_kv_heads, #1
+    num_heads, #head
+    scale_value,
+    block_table, #[[], []]
+    context_lens, #[s1, s2]
+    mla_vheadsize,
+):
+    out = []
+    lse = []
+    last = 0
+    for i in range(len(context_lens)):
+        kv = []
+        seq_len = context_lens[i]
+        for page in block_table[i]:
+            idx = min(seq_len, 128)
+            kv.append(key_cache[page][:idx])
+            if seq_len <= 128:
+                break
+            seq_len -= 128
+        kv = torch.cat(kv, dim=0)
+        kv = kv.repeat(1, num_heads, 1)
+        kv = kv.transpose(0, 1) #[head, S, 576]
+        k = kv.transpose(1, 2) #[head, 576, S]
+        v = kv[:, :, 0:mla_vheadsize] #[head, S, 512]
+
+        q = query[last:last + context_lens[i]]
+        last += context_lens[i]
+        q = q.transpose(0, 1) #[head, S, 576]
+
+        qk = torch.bmm(q, k) * scale_value
+
+        l = torch.logsumexp(qk, dim=-1, keepdim=True)
+        lse.append(l.transpose(0, 1))
+
+        sm = softmax(qk, dim=-1) #[head S, S]
+
+        o = torch.bmm(sm, v) #[head, S, 512]
+        out.append(o.transpose(0, 1))
+
+    out = torch.cat(out, dim=0)
+    lse = torch.cat(lse, dim=0)
+
+    return out, lse
+
+def calc_attention(
+    query, #[S, head, 576]
+    key, #[S, 1, 576]
+    value, #[S, 1, 512]
+    scale,
+):
+    q_head = query.shape[1]
+    key = key.repeat(1, q_head, 1)
+    key = key.permute(1, 2, 0)
+    value = value.repeat(1, q_head, 1)
+    value = value.transpose(0, 1)
+    query = query.transpose(0, 1)
+    qk = torch.bmm(query, key) 
+    qk = qk * scale
+    l = torch.logsumexp(qk, dim=-1, keepdim=True).transpose(0, 1)
+    sm = softmax(qk, dim=-1)
+    o = torch.bmm(sm, value).transpose(0, 1)
+    return o, l
+
+def ring_mla(
+    q_nope, #bs head dim
+    q_rope, #bs head dim
+    k_nope, #bs head dim
+    k_rope, #bs head dim
+    value,  #bs head dim
+    mask,   #not use in mock
+    seq_lens,
+    head_num, #tp_q_head_num
+    kv_head_num, #kv_head_num
+    pre_out,
+    prev_lse,
+    qk_scale,
+    mask_type, # mask_type_triu or no_mask
+    calc_type, # 'calc_type_first_ring' if prev_out is None else 'calc_type_default',
+):
+    query = torch.cat([q_nope, q_rope], dim=-1)
+    key = torch.cat([k_nope, k_rope], dim=-1)
+
+    out = []
+    lse = []
+    last = 0
+    for i in range(len(seq_lens)):
+        seq_len = seq_lens[i]
+        q = query[last:last + seq_len]
+        k = key[last:last + seq_len]
+        v = value[last:last + seq_len]
+        last += seq_len
+
+        if mask_type == 'no_mask':
+            o, l = calc_attention(q, k, v, qk_scale)
+        else:
+            out_ = []
+            lse_ = []
+            for idx in range(q.shape[0]):
+                q_ = q[idx:idx + 1]
+                k_ = k[:idx + 1]
+                v_ = v[:idx + 1]
+                o_, l_ = calc_attention(q_, k_, v_, qk_scale)
+                out_.append(o_)
+                lse_.append(l_)
+            o = torch.cat(out_, dim=0)
+            l = torch.cat(lse_, dim=0)
+        
+        lse.append(l) # s, head, 1
+        out.append(o) # s, head, dim
+    
+    out = torch.cat(out, dim=0) # s, head, dim
+    lse = torch.cat(lse, dim=0) # s, head, 1
+
+    if calc_type == 'calc_type_first_ring':
+        return out, lse
+    else:
+        max_lse = torch.maximum(lse, prev_lse)
+        lse = lse - max_lse
+        prev_lse = prev_lse - max_lse
+        lse_exp = torch.exp(lse)
+        prev_exp = torch.exp(prev_lse)
+        sum_exp = lse_exp + prev_exp
+
+        new_lse = torch.log(sum_exp) + max_lse
+
+        lse_exp = lse_exp / sum_exp
+        prev_exp = prev_exp / sum_exp
+
+        out = out * lse_exp + pre_out * prev_exp
+        
+        return out, new_lse
 
 
 @dataclass
@@ -93,10 +280,16 @@ class AscendAttnBackend(AttentionBackend):
     def init_forward_metadata(self, forward_batch: ForwardBatch):
         """Init the metadata for a forward pass."""
         self.forward_metadata = ForwardMetadata()
+        if global_server_args_dict["enable_sp"]:
+            seq_lens_max = forward_batch.sp_seq_lens.max()
+            self.forward_metadata.seq_lens_cpu_int = forward_batch.sp_seq_lens.cpu().int()
+        else:
+            seq_lens_max = forward_batch.seq_lens.max()
+            self.forward_metadata.seq_lens_cpu_int = forward_batch.seq_lens_cpu.int()
 
         self.forward_metadata.block_tables = (
             forward_batch.req_to_token_pool.req_to_token[
-                forward_batch.req_pool_indices, : forward_batch.seq_lens.max()
+                forward_batch.req_pool_indices, : seq_lens_max
             ][:, :: self.page_size]
             // self.page_size
         )
@@ -104,7 +297,6 @@ class AscendAttnBackend(AttentionBackend):
             self.forward_metadata.extend_seq_lens_cpu_int = (
                 forward_batch.extend_seq_lens.cpu().int()
             )
-        self.forward_metadata.seq_lens_cpu_int = forward_batch.seq_lens_cpu.int()
 
         self.graph_mode = False
 

@@ -50,7 +50,8 @@ from sglang.srt.mem_cache.base_prefix_cache import BasePrefixCache
 from sglang.srt.mem_cache.memory_pool import KVCache, ReqToTokenPool
 from sglang.srt.model_executor.forward_batch_info import ForwardMode
 from sglang.srt.torch_memory_saver_adapter import TorchMemorySaverAdapter
-from sglang.srt.utils import require_mlp_sync
+from sglang.srt.utils import require_mlp_sync, get_sp_token_num
+from sglang.srt.managers.schedule_batch import global_server_args_dict
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +205,7 @@ class DecodePreallocQueue:
         kv_args.kv_data_ptrs = kv_data_ptrs
         kv_args.kv_data_lens = kv_data_lens
         kv_args.kv_item_lens = kv_item_lens
+        kv_args.page_size = self.token_to_kv_pool.page_size
 
         kv_args.aux_data_ptrs, kv_args.aux_data_lens, kv_args.aux_item_lens = (
             self.metadata_buffers.get_buf_infos()
@@ -242,6 +244,7 @@ class DecodePreallocQueue:
                 bootstrap_addr=f"{req.bootstrap_host}:{req.bootstrap_port}",
                 bootstrap_room=req.bootstrap_room,
                 data_parallel_rank=req.data_parallel_rank,
+                input_len=len(req.origin_input_ids)
             )
 
             self.queue.append(
@@ -389,7 +392,7 @@ class DecodePreallocQueue:
                 break
 
             allocatable_tokens -= required_tokens_for_request
-            self._pre_alloc(decode_req.req)
+            kv_loc = self._pre_alloc(decode_req.req)
 
             kv_indices = (
                 self.req_to_token_pool.req_to_token[decode_req.req.req_pool_idx][
@@ -398,6 +401,9 @@ class DecodePreallocQueue:
                 .cpu()
                 .numpy()
             )
+
+            if global_server_args_dict["enable_sp"]:
+                kv_indices = kv_loc.cpu().numpy()
 
             decode_req.metadata_buffer_index = (
                 self.req_to_metadata_buffer_idx_allocator.alloc()
@@ -496,6 +502,11 @@ class DecodePreallocQueue:
             )
         else:
             num_tokens = len(req.origin_input_ids) + max(len(req.output_ids) - 1, 0)
+
+            if global_server_args_dict["enable_sp"]:
+                num_tokens = get_sp_token_num(self.tp_size, self.tp_rank, num_tokens)
+                req.sp_all_token_len = num_tokens
+
             kv_loc = self.token_to_kv_pool_allocator.alloc_extend(
                 prefix_lens=torch.tensor(
                     [0],
@@ -855,6 +866,8 @@ class SchedulerDisaggregationDecodeMixin:
             self.enable_overlap,
             self.spec_algorithm,
             self.server_args.enable_custom_logit_processor,
+            sp_size=self.tp_size,
+            sp_rank=self.tp_rank,
         )
 
         # construct fake completed prefill

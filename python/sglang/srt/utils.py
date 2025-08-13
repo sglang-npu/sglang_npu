@@ -1003,10 +1003,14 @@ def configure_logger(server_args, prefix: str = ""):
         return
     format = f"[%(asctime)s{prefix}] %(message)s"
     # format = f"[%(asctime)s.%(msecs)03d{prefix}] %(message)s"
+    filename=os.getenv("SGLANG_LOGGING_PATH")
+    if not filename:
+        filename="sglang.log"
     logging.basicConfig(
         level=getattr(logging, server_args.log_level.upper()),
         format=format,
         datefmt="%Y-%m-%d %H:%M:%S",
+        filename=filename,
         force=True,
     )
 
@@ -2831,6 +2835,60 @@ def parse_module_path(module_path, function_name, create_dummy):
 
     return final_module, None
 
+# Calculate the number of tokens alloced to sp_rank
+def get_sp_token_num(sp_size, sp_rank, total_len):
+    base = total_len // sp_size
+    extra = total_len % sp_size
+    sp_len = base + (1 if sp_rank < extra else 0)
+    return sp_len
+
+# Calculate the page range alloced to sp_rank
+def get_sp_page_range(sp_size, sp_rank, total_page_num):
+    base_page = total_page_num // sp_size
+    extra = total_page_num % sp_size
+
+    if sp_rank < extra:
+        sp_page_num = base_page + 1
+        start_page = sp_rank * (base_page + 1)
+    else:
+        sp_page_num = base_page
+        start_page = extra *(base_page + 1) + (sp_rank - extra) * base_page
+    end_page = start_page + sp_page_num - 1
+    return start_page, end_page
+
+# [pd diss] Calculate the number of prefill ranks are required to form the seq for decode
+def get_prefill_device_nums(seq_len, page_size, scp_size):
+    total_page_num = (seq_len + page_size) // page_size
+    base_page = total_page_num // scp_size
+    extra = total_page_num % scp_size
+    if base_page >= 1:
+        return scp_size
+    else:
+        return extra
+
+def get_cp_kvindices(cp_size, cp_rank, indices):
+    n = len(indices)
+    chunk_total = n // cp_size
+    block_size = chunk_total // 2
+
+    if chunk_total % 2 != 0:
+        raise ValueError("chunk_total must be even number")
+
+    head_start = cp_rank * block_size
+    head_end = head_start + block_size
+
+    tail_start = n - (cp_rank + 1) * block_size
+    tail_end = tail_start + block_size
+
+    head_block = indices[head_start:head_end]
+    tail_block = indices[tail_start:tail_end]
+
+    return np.concatenate([head_block, tail_block])
+
+def get_scp_kvindices(cp_size, cp_rank, sp_size, sp_rank, indices):
+    cp_kvindices = get_cp_kvindices(cp_size, cp_rank, indices)
+    start, end = get_sp_page_range(sp_size, sp_rank, len(cp_kvindices))
+    return cp_kvindices[start : end + 1]
 
 # LoRA-related constants and utilities
 SUPPORTED_LORA_TARGET_MODULES = [

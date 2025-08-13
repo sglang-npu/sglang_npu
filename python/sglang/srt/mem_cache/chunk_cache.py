@@ -44,6 +44,12 @@ class ChunkCache(BasePrefixCache):
             # For decode server: if req.output_ids is empty, we want to free all req.origin_input_ids
             : len(req.origin_input_ids) + max(len(req.output_ids) - 1, 0),
         ]
+        from sglang.srt.managers.schedule_batch import global_server_args_dict
+        mode = global_server_args_dict["disaggregation_mode"]
+        if global_server_args_dict["enable_sp"] or (global_server_args_dict["enable_sp_prefill"] and mode == "prefill"):
+            kv_indices = self.req_to_token_pool.req_to_token[
+                req.req_pool_idx, : req.sp_all_token_len
+            ]
         self.req_to_token_pool.free(req.req_pool_idx)
         self.token_to_kv_pool_allocator.free(kv_indices)
 
@@ -51,6 +57,11 @@ class ChunkCache(BasePrefixCache):
         kv_indices = self.req_to_token_pool.req_to_token[
             req.req_pool_idx, : len(req.fill_ids)
         ]
+        from sglang.srt.managers.schedule_batch import global_server_args_dict
+        if global_server_args_dict["enable_sp"] or global_server_args_dict["enable_sp_prefill"]:
+            kv_indices = self.req_to_token_pool.req_to_token[
+                req.req_pool_idx, : req.sp_all_token_len
+            ]
 
         # `req.prefix_indices` will be used in `PrefillAdder::add_chunked_req` later
         req.prefix_indices = kv_indices

@@ -203,6 +203,7 @@ class Scheduler(
         moe_ep_rank: int,
         pp_rank: int,
         dp_rank: Optional[int],
+        cp_rank: Optional[int],
         dp_balance_meta: Optional[DPBalanceMeta] = None,
     ):
         # Parse args
@@ -211,10 +212,12 @@ class Scheduler(
         self.moe_ep_rank = moe_ep_rank
         self.pp_rank = pp_rank
         self.dp_rank = dp_rank
+        self.cp_rank = cp_rank if cp_rank is not None else 0
         self.tp_size = server_args.tp_size
         self.moe_ep_size = server_args.ep_size
         self.pp_size = server_args.pp_size
         self.dp_size = server_args.dp_size
+        self.cp_size = server_args.cp_size
         self.schedule_policy = server_args.schedule_policy
         self.enable_lora = server_args.enable_lora
         self.max_loras_per_batch = server_args.max_loras_per_batch
@@ -247,7 +250,7 @@ class Scheduler(
         context = zmq.Context(2)
         self.idle_sleeper = None
 
-        if self.pp_rank == 0 and self.attn_tp_rank == 0:
+        if self.pp_rank == 0 and self.attn_tp_rank == 0 and self.cp_rank == 0:
             self.recv_from_tokenizer = get_zmq_socket(
                 context, zmq.PULL, port_args.scheduler_input_ipc_name, False
             )
@@ -317,6 +320,7 @@ class Scheduler(
             moe_ep_rank=moe_ep_rank,
             pp_rank=pp_rank,
             dp_rank=dp_rank,
+            cp_rank=cp_rank,
             nccl_port=port_args.nccl_port,
         )
 
@@ -947,7 +951,7 @@ class Scheduler(
     def recv_requests(self) -> List[Req]:
         """Receive results at tp_rank = 0 and broadcast it to all other TP ranks."""
         if self.pp_rank == 0:
-            if self.attn_tp_rank == 0:
+            if self.attn_tp_rank == 0 and self.cp_rank == 0:
                 recv_reqs = []
 
                 while True:
@@ -1016,6 +1020,14 @@ class Scheduler(
                     src=self.tp_group.ranks[0],
                 )
             recv_reqs = work_reqs + control_reqs
+        elif self.cp_size != 1:
+            recv_reqs = broadcast_pyobj(
+                recv_reqs,
+                self.world_group.rank,
+                self.world_group.cpu_group,
+                src=self.world_group.ranks[0]
+            )
+            recv_reqs = self.cp_split_request(recv_reqs)
         elif self.tp_size != 1:
             recv_reqs = broadcast_pyobj(
                 recv_reqs,
@@ -1023,6 +1035,26 @@ class Scheduler(
                 self.tp_cpu_group,
                 src=self.tp_group.ranks[0],
             )
+        return recv_reqs
+
+    def cp_split_request(self, recv_reqs: List[Req]) -> List[Req]:
+        for req in recv_reqs:
+            if not hasattr(req, 'input_ids'):
+                continue
+            num_chunks = self.cp_size * 2
+            input_length = len(req.input_ids)
+            chunk_length = input_length // num_chunks
+            
+            former_rank = self.cp_rank
+            former_st_idx = chunk_length * former_rank
+            former_end_idx = former_st_idx + chunk_length
+
+            latter_rank = num_chunks - self.cp_rank - 1
+            latter_st_idx = chunk_length * latter_rank
+            latter_end_idx = latter_st_idx + chunk_length
+
+            req.input_ids = req.input_ids[former_st_idx:former_end_idx] + req.input_ids[latter_st_idx:latter_end_idx]
+            logger.info(req.__dict__)
         return recv_reqs
 
     def process_input_requests(self, recv_reqs: List):
@@ -1613,6 +1645,8 @@ class Scheduler(
             self.enable_overlap,
             self.spec_algorithm,
             self.server_args.enable_custom_logit_processor,
+            sp_size=self.tp_size,
+            sp_rank=self.tp_rank,
             chunked_req=self.chunked_req,
         )
         if self.enable_hierarchical_cache:
@@ -2497,6 +2531,7 @@ def run_scheduler_process(
     moe_ep_rank: int,
     pp_rank: int,
     dp_rank: Optional[int],
+    cp_rank: Optional[int],
     pipe_writer,
     balance_meta: Optional[DPBalanceMeta] = None,
 ):
@@ -2504,6 +2539,8 @@ def run_scheduler_process(
     prefix = ""
     if dp_rank is not None:
         prefix += f" DP{dp_rank}"
+    if cp_rank is not None:
+        prefix += f" CP{cp_rank}"
     if server_args.tp_size > 1:
         prefix += f" TP{tp_rank}"
     if server_args.ep_size > 1:
@@ -2539,6 +2576,7 @@ def run_scheduler_process(
             moe_ep_rank,
             pp_rank,
             dp_rank,
+            cp_rank,
             dp_balance_meta=balance_meta,
         )
         pipe_writer.send(

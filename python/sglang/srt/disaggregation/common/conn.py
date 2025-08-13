@@ -126,6 +126,7 @@ class CommonKVReceiver(BaseKVReceiver):
         bootstrap_addr: str,
         bootstrap_room: Optional[int] = None,
         data_parallel_rank: Optional[int] = None,
+        input_len: Optional[int] = None,
     ):
         self.bootstrap_room = bootstrap_room
         self.bootstrap_addr = bootstrap_addr

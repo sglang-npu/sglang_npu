@@ -948,6 +948,12 @@ class AscendMLAPagedTokenToKVPool(MLATokenToKVPool):
         cache_v: torch.Tensor,
     ):
         layer_id = layer.layer_id
+        if layer_id == 0:
+            sums = self.kv_buffer[0].sum(dim=(1,2))
+            nonzero_nums=sums[sums!=0]
+            nonzero_indices=torch.nonzero(sums).flatten()
+            logger.info(f"set_kv_buffer before {self.kv_buffer[0].sum()=} {nonzero_nums=} {nonzero_indices=}")
+
         if cache_k.dtype != self.dtype:
             cache_k = cache_k.to(self.dtype)
 
@@ -963,6 +969,11 @@ class AscendMLAPagedTokenToKVPool(MLATokenToKVPool):
             ),
             slot_indices=loc,
         )
+        if layer_id == 0:
+            sums = self.kv_buffer[0].sum(dim=(1,2))
+            nonzero_nums=sums[sums!=0]
+            nonzero_indices=torch.nonzero(sums).flatten()
+            logger.info(f"set_kv_buffer after {self.kv_buffer[0].sum()=} {nonzero_nums=} {nonzero_indices=}")
 
 
 class DoubleSparseTokenToKVPool(KVCache):

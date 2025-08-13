@@ -59,6 +59,7 @@ class TpModelWorker:
         moe_ep_rank: int,
         pp_rank: int,
         dp_rank: Optional[int],
+        cp_rank: Optional[int],
         nccl_port: int,
         is_draft_worker: bool = False,
         req_to_token_pool: Optional[ReqToTokenPool] = None,
@@ -66,9 +67,11 @@ class TpModelWorker:
     ):
         # Parse args
         self.tp_size = server_args.tp_size
+        self.pp_size = server_args.pp_size
         self.tp_rank = tp_rank
         self.moe_ep_rank = moe_ep_rank
         self.pp_rank = pp_rank
+        self.cp_rank = cp_rank if cp_rank is not None else 0
 
         # Init model and tokenizer
         self.model_config = ModelConfig.from_server_args(
@@ -91,6 +94,8 @@ class TpModelWorker:
             moe_ep_size=server_args.ep_size,
             pp_rank=pp_rank,
             pp_size=server_args.pp_size,
+            cp_rank=cp_rank if cp_rank is not None else 0,
+            cp_size=server_args.cp_size,
             nccl_port=nccl_port,
             server_args=server_args,
             is_draft_worker=is_draft_worker,
@@ -150,7 +155,7 @@ class TpModelWorker:
         # Sync random seed across TP workers
         self.random_seed = broadcast_pyobj(
             [server_args.random_seed],
-            self.tp_size * self.pp_rank + tp_rank,
+            self.tp_size * self. pp_size * self.cp_rank + self.tp_size * self.pp_rank + tp_rank,
             self.world_group.cpu_group,
             src=self.world_group.ranks[0],
         )[0]
@@ -247,6 +252,7 @@ class TpModelWorker:
                 next_token_ids = self.model_runner.sample(
                     logits_output, model_worker_batch
                 )
+                logger.info(f"{next_token_ids=} {forward_batch.batch_size=}")
 
             return logits_output, next_token_ids, can_run_cuda_graph
         else:

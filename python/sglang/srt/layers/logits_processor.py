@@ -25,6 +25,7 @@ from torch import nn
 from sglang.srt.distributed import (
     get_tensor_model_parallel_world_size,
     tensor_model_parallel_all_gather,
+    context_model_parallel_broadcast,
 )
 from sglang.srt.layers.dp_attention import (
     DPPaddingMode,
@@ -517,6 +518,8 @@ class LogitsProcessor(nn.Module):
             logits = logits_buffer
         else:
             logits = logits[:, : self.config.vocab_size].float()
+        logits = context_model_parallel_broadcast(logits)
+        logits = logits[:, : self.config.vocab_size].float()
 
         if self.final_logit_softcapping:
             fused_softcap(logits, self.final_logit_softcapping)

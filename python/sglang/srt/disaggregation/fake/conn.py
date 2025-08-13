@@ -25,9 +25,10 @@ class FakeKVSender(BaseKVSender):
         pp_rank: int,
     ):
         self.has_sent = False
+        self.has_send_empty = False
 
     def poll(self) -> KVPoll:
-        if self.has_sent is False:
+        if self.has_sent is False and self.has_send_empty is False:
             # Assume handshake completed instantly
             return KVPoll.WaitingForInput
         else:
@@ -52,6 +53,9 @@ class FakeKVSender(BaseKVSender):
         self.has_sent = True
         logger.debug(f"FakeKVSender send with kv_indices: {kv_indices}")
 
+    def send_empty(self):
+        self.has_send_empty = True
+
     def failure_exception(self):
         raise Exception("Fake KVSender Exception")
 
@@ -63,6 +67,7 @@ class FakeKVReceiver(BaseKVReceiver):
         bootstrap_addr: str,
         bootstrap_room: Optional[int] = None,
         data_parallel_rank: Optional[int] = None,
+        input_len: Optional[int] = None,
     ):
         self.has_init = False
 

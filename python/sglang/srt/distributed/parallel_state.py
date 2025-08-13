@@ -232,14 +232,17 @@ class GroupCoordinator:
         self.device_group = None
         self.cpu_group = None
         self.local_size = get_int_env_var("LOCAL_SIZE", 0)
-
+        logger.info(f"GroupCoordinator init: self.rank: {self.rank}, local_rank: {local_rank}")
         for ranks in group_ranks:
+            logger.info(f"device_group:{ranks}, {torch_distributed_backend}")
             device_group = torch.distributed.new_group(
                 ranks, backend=torch_distributed_backend
             )
+            logger.info(f"device_group: {device_group}")
             # a group with `gloo` backend, to allow direct coordination between
             # processes through the CPU.
             cpu_group = torch.distributed.new_group(ranks, backend="gloo")
+            logger.info(f"cpu_group: {cpu_group}")
             if self.rank in ranks:
                 self.ranks = ranks
                 self.world_size = len(ranks)
@@ -1191,6 +1194,14 @@ def get_pp_group() -> GroupCoordinator:
 # kept for backward compatibility
 get_pipeline_model_parallel_group = get_pp_group
 
+_CP: Optional[GroupCoordinator] = None
+
+def get_cp_group() -> GroupCoordinator:
+    assert _CP is not None, "context model parallel group is not initialized"
+    return _CP
+
+# kept for backward compatibility
+get_context_model_parallel_group = get_cp_group
 
 @contextmanager
 def graph_capture():
@@ -1255,6 +1266,7 @@ def init_distributed_environment(
             assert timeout > 0, "timeout must be positive"
             timeout = timedelta(seconds=timeout)
 
+        logger.info(f"backend:{backend} init_method:{distributed_init_method} world_size:{world_size} rank: {rank}, timeout:{timeout}")
         # this backend is used for WORLD
         torch.distributed.init_process_group(
             backend=backend,
@@ -1277,7 +1289,9 @@ def init_distributed_environment(
     global _WORLD
     if _WORLD is None:
         ranks = list(range(torch.distributed.get_world_size()))
+        logger.info(f"world ranks: {ranks}, {local_rank}, {backend}")
         _WORLD = init_world_group(ranks, local_rank, backend)
+        logger.info(f"init world group end")
     else:
         assert (
             _WORLD.world_size == torch.distributed.get_world_size()
@@ -1288,6 +1302,7 @@ def initialize_model_parallel(
     tensor_model_parallel_size: int = 1,
     expert_model_parallel_size: int = 1,
     pipeline_model_parallel_size: int = 1,
+    context_model_parallel_size: int = 1,
     backend: Optional[str] = None,
     duplicate_tp_group: bool = False,
 ) -> None:
@@ -1318,7 +1333,7 @@ def initialize_model_parallel(
     world_size: int = torch.distributed.get_world_size()
     backend = backend or torch.distributed.get_backend(get_world_group().device_group)
 
-    if world_size != tensor_model_parallel_size * pipeline_model_parallel_size:
+    if world_size != tensor_model_parallel_size * pipeline_model_parallel_size * context_model_parallel_size:
         raise RuntimeError(
             f"world_size ({world_size}) is not equal to "
             f"tensor_model_parallel_size ({tensor_model_parallel_size}) x "
@@ -1336,6 +1351,7 @@ def initialize_model_parallel(
         )
         group_ranks.append(ranks)
 
+    logger.info(f"tp: {group_ranks}, {get_world_group().local_rank}")
     # message queue broadcaster is only used in tensor model parallel group
     _TP = init_model_parallel_group(
         group_ranks,
@@ -1404,13 +1420,18 @@ def initialize_model_parallel(
     )
 
     # Build the pipeline model-parallel groups.
-    num_pipeline_model_parallel_groups: int = world_size // pipeline_model_parallel_size
+    num_pipeline_model_parallel_groups: int = world_size // pipeline_model_parallel_size // context_model_parallel_size
     global _PP
     assert _PP is None, "pipeline model parallel group is already initialized"
     group_ranks = []
-    for i in range(num_pipeline_model_parallel_groups):
-        ranks = list(range(i, world_size, num_pipeline_model_parallel_groups))
-        group_ranks.append(ranks)
+    for cp_rank in range(context_model_parallel_size):
+        base_i = world_size // context_model_parallel_size * cp_rank
+        end_i = world_size // context_model_parallel_size * (cp_rank + 1)
+        for i in range(num_pipeline_model_parallel_groups):
+            ranks = list(range(base_i + i, end_i, num_pipeline_model_parallel_groups))
+            group_ranks.append(ranks)
+
+    logger.info(f"pp: {group_ranks}, {get_world_group().local_rank}")
     # pipeline parallel does not need custom allreduce
     _PP = init_model_parallel_group(
         group_ranks,
@@ -1418,6 +1439,24 @@ def initialize_model_parallel(
         backend,
         use_custom_allreduce=False,
         group_name="pp",
+    )
+
+    num_context_model_parallel_groups: int = world_size // context_model_parallel_size
+    global _CP
+    assert _CP is None, "context model parallel group is already initialized"
+    group_ranks = []
+
+    for i in range(num_context_model_parallel_groups):
+        ranks = list(range(i, world_size, num_context_model_parallel_groups))
+        group_ranks.append(ranks)
+
+    logger.info(f"cp: {group_ranks}, {get_world_group().local_rank}")
+    _CP = init_model_parallel_group(
+        group_ranks,
+        get_world_group().local_rank,
+        backend,
+        use_custom_allreduce=False,
+        group_name="cp",
     )
 
 
@@ -1456,7 +1495,7 @@ def ensure_model_parallel_initialized(
 
 def model_parallel_is_initialized():
     """Check if tensor and pipeline parallel groups are initialized."""
-    return _TP is not None and _PP is not None
+    return _TP is not None and _PP is not None and _CP is not None
 
 
 _TP_STATE_PATCHED = False
@@ -1517,6 +1556,16 @@ def get_moe_tensor_parallel_rank():
     return get_moe_tp_group().rank_in_group
 
 
+def get_context_model_parallel_world_size():
+     """Return world size for the context model parallel group."""
+     return get_cp_group().world_size
+
+
+def get_context_model_parallel_rank():
+    """Return my rank for the context model parallel group."""
+    return get_cp_group().rank_in_group
+
+
 def destroy_model_parallel():
     """Set the groups to none and destroy them."""
     global _TP
@@ -1528,6 +1577,11 @@ def destroy_model_parallel():
     if _PP:
         _PP.destroy()
     _PP = None
+
+    global _CP
+    if _CP:
+        _CP.destroy()
+    _CP = None
 
 
 def destroy_distributed_environment():

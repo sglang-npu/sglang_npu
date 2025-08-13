@@ -253,6 +253,14 @@ class TokenizerManager:
                     trust_remote_code=server_args.trust_remote_code,
                     revision=server_args.revision,
                 )
+                dummy_text = 'hello'
+                encoded = self.tokenizer(
+                    dummy_text,
+                    padding='max_length',
+                    max_length=10,
+                )
+                self.padding_token = encoded["input_ids"][0]
+                logger.info(f"{self.padding_token=}")
 
         # Init inter-process communication
         context = zmq.asyncio.Context(2)
@@ -527,9 +535,33 @@ class TokenizerManager:
                     "accept text prompts. Please provide input_ids or re-initialize "
                     "the engine with skip_tokenizer_init=False."
                 )
-            encoded = self.tokenizer(
-                input_text, return_token_type_ids=is_cross_encoder_request
-            )
+            if self.server_args.cp_size > 1 or self.server_args.cp_prefill_size > 1:
+                page_size = self.server_args.page_size if self.server_args.page_size is not None else 1
+                max_length = page_size * max(self.server_args.cp_size, self.server_args.cp_prefill_size) * 2
+                encoded = self.tokenizer(
+                    input_text,
+                    return_token_type_ids=is_cross_encoder_request,
+                    padding='max_length',
+                    max_length=max_length,
+                )
+                input_ids = encoded["input_ids"]
+                input_length = len(input_ids)
+                new_length = ((input_length + max_length - 1) // max_length) * max_length
+                if new_length - input_length > 0:
+                    input_ids = [self.padding_token] * (new_length - input_length) + input_ids
+                    encoded["input_ids"] = input_ids
+                
+            elif self.server_args.enable_sp:
+                encoded = self.tokenizer(
+                    input_text,
+                    return_token_type_ids=is_cross_encoder_request,
+                    padding='max_length',
+                    max_length=self.server_args.tp_size
+                )
+            else:
+                encoded = self.tokenizer(
+                    input_text, return_token_type_ids=is_cross_encoder_request
+                )
 
             input_ids = encoded["input_ids"]
             if is_cross_encoder_request:

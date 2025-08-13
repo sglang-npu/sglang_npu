@@ -101,6 +101,7 @@ class BaseKVReceiver(ABC):
         mgr: BaseKVManager,
         bootstrap_addr: str,
         bootstrap_room: Optional[int] = None,
+        input_len: Optional[int] = None,
     ): ...
 
     @abstractmethod

@@ -135,6 +135,10 @@ class ServerArgs:
     dp_size: int = 1
     load_balance_method: str = "round_robin"
 
+    # Context parallelism
+    cp_size: int = 1
+    cp_prefill_size: int = 1
+
     # Multi-node distributed serving
     dist_init_addr: Optional[str] = None
     nnodes: int = 1
@@ -247,6 +251,8 @@ class ServerArgs:
     disable_fast_image_processor: bool = False
     enable_return_hidden_states: bool = False
     enable_triton_kernel_moe: bool = False
+    enable_sp: bool = False
+    enable_sp_prefill: bool = False
 
     # Debug tensor dumps
     debug_tensor_dump_output_folder: Optional[str] = None
@@ -599,6 +605,13 @@ class ServerArgs:
             self.load_format = "remote"
         if self.custom_weight_loader is None:
             self.custom_weight_loader = []
+
+        if self.tp_size == 1 and self.enable_sp:
+            logger.warning("enable_sp is adjusted to False when tp_size == 1")
+            self.enable_sp = False
+        if self.tp_size == 1 and self.enable_sp_prefill:
+            logger.warning("enable_sp_prefill is adjusted to False when tp_size == 1")
+            self.enable_sp_prefill = False
 
         # PD disaggregation
         if self.disaggregation_mode == "decode":
@@ -1182,6 +1195,21 @@ class ServerArgs:
             ],
         )
 
+        # Context parallelism
+        parser.add_argument(
+            "--context-parallel-size",
+            "--cp-size",
+            type=int,
+            default=ServerArgs.cp_size,
+            help="The context parallelism size.",
+        )
+        parser.add_argument(
+            "--cp-prefill-size",
+            type=int,
+            default=ServerArgs.cp_prefill_size,
+            help="The context parallelism size.",
+        )
+
         # Multi-node distributed serving
         parser.add_argument(
             "--dist-init-addr",
@@ -1762,6 +1790,16 @@ class ServerArgs:
             action="store_true",
             help="Use triton moe grouped gemm kernel.",
         )
+        parser.add_argument(
+            "--enable-sp",
+            action="store_true",
+            help="Use sp with set --disable-radix-cache and --attention-backend ascend and MLA, sp_size equal tp_size",
+        )
+        parser.add_argument(
+            "--enable-sp-prefill",
+            action="store_true",
+            help="Use sp in pd-disaggregation(only prefill sp) with set --disable-radix-cache and --attention-backend ascend and MLA, sp_size equal tp_size",
+        )
 
         # Debug tensor dumps
         parser.add_argument(
@@ -1892,6 +1930,7 @@ class ServerArgs:
         args.tp_size = args.tensor_parallel_size
         args.pp_size = args.pipeline_parallel_size
         args.dp_size = args.data_parallel_size
+        args.cp_size = args.context_parallel_size
         args.ep_size = args.expert_parallel_size
         attrs = [attr.name for attr in dataclasses.fields(cls)]
         return cls(**{attr: getattr(args, attr) for attr in attrs})
@@ -1929,6 +1968,10 @@ class ServerArgs:
         assert not (
             self.dp_size > 1 and self.nnodes != 1 and not self.enable_dp_attention
         ), "multi-node data parallel is not supported unless dp attention!"
+
+        assert not (
+            self.dp_size > 1 and self.cp_size > 1
+        ), "only one of data parallel or context parallel can be enabled!"
 
         assert self.base_gpu_id >= 0, "base_gpu_id must be non-negative"
         assert self.gpu_id_step >= 1, "gpu_id_step must be positive"
