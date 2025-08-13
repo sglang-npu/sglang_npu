@@ -1,9 +1,14 @@
 // Essential PDLB types extracted for PD routing
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use dashmap::DashMap;
 use crate::core::{Worker, WorkerType};
 use crate::openai_api_types::{CompletionRequest, StringOrArray};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+lazy_static::lazy_static! {
+    static ref ROOM_COUNTERS: DashMap<String, AtomicU64> = DashMap::new();
+}
 
 // Custom error type for PD router operations
 #[derive(Debug, thiserror::Error)]
@@ -85,6 +90,7 @@ pub type BootstrapRoom = SingleOrBatch<u64>;
 pub trait Bootstrap: Send + Sync {
     fn is_stream(&self) -> bool;
     fn get_batch_size(&self) -> Result<Option<usize>, String>;
+    fn next_room_id(&self, hostname: &String) -> u64;
     fn set_bootstrap_info(
         &mut self,
         bootstrap_host: BootstrapHost,
@@ -102,6 +108,7 @@ pub trait Bootstrap: Send + Sync {
         };
 
         let hostname = get_hostname(prefill_worker.url());
+        let hostname_ = get_hostname(prefill_worker.url());
 
         if let Some(batch_size) = batch_size {
             self.set_bootstrap_info(
@@ -111,10 +118,11 @@ pub trait Bootstrap: Send + Sync {
                 BootstrapRoom::Batch(
                     (0..batch_size)
                         .map(|_| {
-                            // Combine multiple sources of randomness for better distribution
-                            let r1 = rand::random::<u64>();
-                            let r2 = rand::random::<u64>();
-                            r1.wrapping_add(r2.rotate_left(32))
+                            // // Combine multiple sources of randomness for better distribution
+                            // let r1 = rand::random::<u64>();
+                            // let r2 = rand::random::<u64>();
+                            // r1.wrapping_add(r2.rotate_left(32))
+                            self.next_room_id(&hostname_)
                         })
                         .collect(),
                 ),
@@ -125,9 +133,10 @@ pub trait Bootstrap: Send + Sync {
                 BootstrapPort::Single(bootstrap_port),
                 BootstrapRoom::Single({
                     // Use high-quality random number for single requests too
-                    let r1 = rand::random::<u64>();
-                    let r2 = rand::random::<u64>();
-                    r1.wrapping_add(r2.rotate_left(32))
+                    // let r1 = rand::random::<u64>();
+                    // let r2 = rand::random::<u64>();
+                    // r1.wrapping_add(r2.rotate_left(32))
+                    self.next_room_id(&hostname_)
                 }),
             );
         }
@@ -201,6 +210,12 @@ impl Bootstrap for GenerateReqInput {
         self.bootstrap_port = Some(bootstrap_port);
         self.bootstrap_room = Some(bootstrap_room);
     }
+    fn next_room_id(&self, hostname: &String) -> u64 {
+        let counter = ROOM_COUNTERS
+            .entry(hostname.clone())
+            .or_insert_with(|| AtomicU64::new(0));
+        counter.fetch_add(1, Ordering::Relaxed) % 16385
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -243,6 +258,12 @@ impl Bootstrap for ChatReqInput {
         self.bootstrap_port = Some(bootstrap_port);
         self.bootstrap_room = Some(bootstrap_room);
     }
+    fn next_room_id(&self, hostname: &String) -> u64 {
+        let counter = ROOM_COUNTERS
+            .entry(hostname.clone())
+            .or_insert_with(|| AtomicU64::new(0));
+        counter.fetch_add(1, Ordering::Relaxed) % 16385
+    }
 }
 
 // Bootstrap implementation for CompletionRequest to preserve OpenAI format
@@ -283,6 +304,12 @@ impl Bootstrap for CompletionRequest {
         if let Ok(room_value) = serde_json::to_value(&bootstrap_room) {
             self.other.insert("bootstrap_room".to_string(), room_value);
         }
+    }
+    fn next_room_id(&self, hostname: &String) -> u64 {
+        let counter = ROOM_COUNTERS
+            .entry(hostname.clone())
+            .or_insert_with(|| AtomicU64::new(0));
+        counter.fetch_add(1, Ordering::Relaxed) % 16385
     }
 }
 
