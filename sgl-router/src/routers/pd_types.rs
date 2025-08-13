@@ -2,6 +2,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use dashmap::DashMap;
+use tracing::info;
 use crate::core::{Worker, WorkerType};
 use crate::openai_api_types::{CompletionRequest, StringOrArray};
 use serde::{Deserialize, Serialize};
@@ -309,7 +310,9 @@ impl Bootstrap for CompletionRequest {
         let counter = ROOM_COUNTERS
             .entry(hostname.clone())
             .or_insert_with(|| AtomicU64::new(0));
-        counter.fetch_add(1, Ordering::Relaxed) % 16385
+        let room_id = counter.fetch_add(1, Ordering::Relaxed) % 16385;
+        info!("room_id: {}", room_id);
+        room_id
     }
 }
 
