@@ -569,7 +569,7 @@ class AscendAttnBackend(AttentionBackend):
                     dtype=q.dtype,
                     device=q.device,
                 )
-                lse_output=torch_npu.atb.npu_multi_head_latent_attention_with_lse(
+                torch_npu.atb.npu_multi_head_latent_attention_with_lse(
                     query[:, :, :self.kv_lora_rank],
                     query[:, :, self.kv_lora_rank:],
                     kv_c_and_k_pe_cache[:, :, :, :self.kv_lora_rank],
@@ -616,7 +616,7 @@ class AscendAttnBackend(AttentionBackend):
 
                 attn_output = torch.zeros(
                     (num_tokens * layer.tp_q_head_num, self.kv_lora_rank, 1),
-                    dtype=q.dtype,
+                    dtype=torch.float32,
                     device=q.device
                 )
 
