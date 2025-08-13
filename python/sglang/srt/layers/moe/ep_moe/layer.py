@@ -387,6 +387,7 @@ class DeepEPMoE(EPMoE):
         topk_weights: torch.Tensor,
         forward_batch: ForwardBatch,
         shared_experts: Optional[Callable] = None,
+        alpha: Optional[float] = 1,
     ):
         dispatch_output = self.dispatch(
             hidden_states, topk_idx, topk_weights, forward_batch
@@ -398,7 +399,8 @@ class DeepEPMoE(EPMoE):
                 hidden_states, topk_idx, topk_weights, _, seg_indptr, _ = (
                     dispatch_output
                 )
-                hidden_states = shared_experts(hidden_states)
+                hidden_states = shared_experts(hidden_states) / alpha
+
             else:
                 hidden_states = self.moe_impl(dispatch_output)
         hidden_states = self.combine(
