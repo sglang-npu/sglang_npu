@@ -681,7 +681,7 @@ def run_unittest_files(files: List[TestFile], timeout_per_file: float):
             ret_code = run_with_timeout(
                 run_one_file, args=(filename,), timeout=timeout_per_file
             )
-            print(f"=====lplp {ret_code=} run_with_timeout, flush=True)
+            print(f"=====lplp {ret_code=} run_with_timeout", flush=True)
             assert (
                 ret_code == 0
             ), f"expected return code 0, but {filename} returned {ret_code}"
