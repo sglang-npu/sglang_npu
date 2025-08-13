@@ -631,9 +631,11 @@ def run_with_timeout(
     t.start()
     t.join(timeout=timeout)
     if t.is_alive():
+        print(f"=====lplp {t.is_alive()=} timeout error", flush=True)
         raise TimeoutError()
 
     if not ret_value:
+        print(f"=====lplp {ret_value=} runtime error", flush=True)
         raise RuntimeError()
 
     return ret_value[0]
@@ -679,6 +681,7 @@ def run_unittest_files(files: List[TestFile], timeout_per_file: float):
             ret_code = run_with_timeout(
                 run_one_file, args=(filename,), timeout=timeout_per_file
             )
+            print(f"=====lplp {ret_code=} run_with_timeout, flush=True)
             assert (
                 ret_code == 0
             ), f"expected return code 0, but {filename} returned {ret_code}"
