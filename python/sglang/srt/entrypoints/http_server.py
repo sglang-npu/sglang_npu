@@ -1002,7 +1002,6 @@ def _execute_server_warmup(
             server_args.debug_tensor_dump_input_file
         ).tolist()
         json_data["sampling_params"]["max_new_tokens"] = 0
-    '''
     try:
         if server_args.disaggregation_mode == "null":
             res = requests.post(
@@ -1046,7 +1045,6 @@ def _execute_server_warmup(
         logger.error(f"Initialization failed. warmup error: {last_traceback}")
         kill_process_tree(os.getpid())
         return False
-    '''
 
     # Debug print
     # logger.info(f"warmup request returns: {res.json()=}")
