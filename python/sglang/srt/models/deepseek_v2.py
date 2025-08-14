@@ -1184,7 +1184,7 @@ class DeepseekV2AttentionMLA(nn.Module):
         k_nope = kv[..., : self.qk_nope_head_dim]
         v = kv[..., self.qk_nope_head_dim :]
         k_pe = latent_cache[:, :, self.kv_lora_rank :]
-        q_pe, k_pe = self.rotary_emb(positions, q_pe, k_pe)
+        q_pe, k_pe = self.rotary_emb(positions, q_pe, k_pe, layer_id=self.layer_id)
         q[..., self.qk_nope_head_dim :] = q_pe
         k = torch.empty_like(q)
         k[..., : self.qk_nope_head_dim] = k_nope
@@ -1290,7 +1290,7 @@ class DeepseekV2AttentionMLA(nn.Module):
             q_nope_out = torch.bmm(q_nope.transpose(0, 1), self.w_kc)
 
         q_nope_out = q_nope_out.transpose(0, 1)
-        q_pe, k_pe = self.rotary_emb(positions, q_pe, k_pe)
+        q_pe, k_pe = self.rotary_emb(positions, q_pe, k_pe, layer_id=self.layer_id)
 
         return q_pe, k_pe, q_nope_out, k_nope, forward_batch, zero_allocator
 
