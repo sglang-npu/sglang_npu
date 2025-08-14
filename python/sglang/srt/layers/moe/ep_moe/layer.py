@@ -400,7 +400,7 @@ class DeepEPMoE(EPMoE):
             else:
                 hidden_states = self.moe_impl(dispatch_output)
                 if alpha != 1.0:
-                    hidden_states *= alpha399
+                    hidden_states *= alpha
         hidden_states = self.combine(
             hidden_states,
             dispatch_output.topk_idx,
