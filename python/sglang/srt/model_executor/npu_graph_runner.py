@@ -93,4 +93,3 @@ class NPUGraphRunner(CudaGraphRunner):
         thread.start()
         self.graphs[self.bs].replay()
         thread.join()
-
