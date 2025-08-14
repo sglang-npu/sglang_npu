@@ -404,25 +404,134 @@ class AscendAttnBackend(AttentionBackend):
                     extend_prefix_lens: {forward_batch.extend_prefix_lens_cpu}"
             )
         else:
-            attn_output = torch.empty(
-                (q.shape[0], layer.tp_q_head_num, layer.v_head_dim),
-                device=q.device,
-                dtype=q.dtype,
-            )
-            max_s = max(self.forward_metadata.seq_lens_cpu_int)
-            mask = self.attn_mask_builder.get_attn_mask(max_s, q.dtype, q.device)
-            torch_npu._npu_flash_attention(
-                query=q,
-                key=k,
-                value=v,
-                mask=mask,
-                seq_len=self.forward_metadata.seq_lens_cpu_int,
-                scale_value=layer.scaling,
-                num_heads=layer.tp_q_head_num,
-                num_kv_heads=layer.tp_k_head_num,
-                out=attn_output,
-            )
-            attn_output = attn_output.reshape(-1, layer.tp_q_head_num, layer.v_head_dim)
+
+            cp_size = get_context_model_parallel_world_size()
+            cp_rank = get_context_model_parallel_rank()
+            
+            if cp_size > 1:
+                num_tokens = q.shape[0]
+                #q [bs/cp, q_head, qk_dim(nope+rope)]
+                #k [bs/cp, 1, qk_dim(nope+rope)]
+                #v [bs/cp, 1, v_dim(nope)]
+
+                k_ = k.view(-1, layer.tp_k_head_num, layer.qk_head_dim)
+                v_ = v.view(-1, layer.tp_k_head_num, layer.v_head_dim)
+
+                k_ = context_model_parallel_all_gather(k_, dim=0)
+                v_ = context_model_parallel_all_gather(v_, dim=0)
+
+                def ring_split(mtx, cp_size, num_head, head_dim, seq_lens):
+                    front_part = []
+                    back_part = []
+
+                    mtx = mtx.reshape(cp_size, -1, num_head, head_dim)
+
+                    last = 0
+                    for seq_len in seq_lens:
+                        assert seq_len % 2 == 0                 
+                        front_part.append(mtx[:, last : last + seq_len // 2, :, :])
+                        back_part.append(mtx[:, last + seq_len // 2 : last + seq_len, :, :])
+                        last += seq_len
+
+                    front_tensor = torch.cat(front_part, dim=1).unsqueeze(1)
+                    back_tensor = torch.cat(back_part, dim=1).unsqueeze(1)
+
+                    ret = torch.cat([front_tensor, back_tensor], dim=1)
+                    return ret
+
+                q_ = ring_split(q, 1, layer.tp_q_head_num, layer.qk_head_dim, self.forward_metadata.seq_lens_cpu_int.seq_lens).squeeze(0)
+                k_ = ring_split(k_, cp_size, layer.tp_k_head_num, layer.qk_head_dim, self.forward_metadata.seq_lens_cpu_int.seq_lens)
+                v_ = ring_split(v_, cp_size, layer.tp_k_head_num, layer.v_head_dim, self.forward_metadata.seq_lens_cpu_int.seq_lens)
+                
+                q_idxs = [cp_rank, cp_size * 2 - cp_rank - 1]
+
+                out = []
+
+                for q_i in range(len(q_idxs)):
+                    q_idx = q_idxs[q_i]
+                    q_nope, q_rope = torch.split(q_[q_i, :, :, :], self.kv_lora_rank, dim=-1)
+                    prev_out = None
+                    prev_lse = None
+
+                    go_output = torch.empty(
+                        [num_tokens // 2, layer.tp_q_head_num, self.kv_lora_rank],
+                        dtype=q.dtype,
+                        device=q.device,
+                    )
+                    lse_output = torch.empty(
+                        [num_tokens // 2, layer.tp_q_head_num, 1],
+                        dtype=q.dtype,
+                        device=q.device
+                    )
+
+                    for ring_idx in range(cp_size):
+                        kv_idxs = [ring_idx, cp_size * 2 - ring_idx -1]
+                        for kv_i in range(len(kv_idxs)):
+                            kv_idx = kv_idxs[kv_i]
+                            
+                            if q_idx < kv_idx:
+                                continue
+                            
+                            k_nope, k_rope = torch.split(k_[ring_idx, kv_i, :, :, :], self.kv_lora_rank, dim=-1)
+                            value = v_[ring_idx][kv_i]
+                            max_s = max(self.forward_metadata.seq_lens_cpu_int)
+                            mask = self.attn_mask_builder.get_attn_mask(max_s, q.dtype, q.device)
+                            
+                            torch_npu.atb.ring_mla(
+                                q_nope,
+                                q_rope,
+                                k_nope,
+                                k_rope,
+                                value,
+                                mask,
+                                self.forward_metadata.seq_lens_cpu_int // 2,
+                                head_num=layer.tp_q_head_num,
+                                kv_head_num=layer.tp_k_head_num,
+                                pre_out=prev_out,
+                                prev_lse=prev_lse,
+                                qk_scale=layer.scaling,
+                                mask_type='mask_type_triu' if q_idx == kv_idx else 'no_mask',
+                                calc_type='calc_type_first_ring' if prev_out is None else 'calc_type_default',
+                                output=go_output,
+                                softmax_lse=lse_output,
+                            )
+
+                            prev_out = go_output.clone()
+                            prev_lse = lse_output.clone()
+                    out.append(go_output)
+
+                def ring_concat(out, seq_lens):
+                    ret = []
+                    last = 0
+                    for seq_len in seq_lens:
+                        assert seq_len % 2 == 0
+                        for tensor in out:
+                            ret.append(tensor[last:last + seq_len // 2, :, :])
+                        last += seq_len // 2
+                    return torch.cat(ret, dim=0)
+
+                attn_output = ring_concat(out, self.forward_metadata.seq_lens_cpu_int)
+                attn_output = attn_output.reshape(num_tokens, layer.tp_q_head_num * layer.v_head_dim)
+            else:
+                attn_output = torch.empty(
+                    (q.shape[0], layer.tp_q_head_num, layer.v_head_dim),
+                    device=q.device,
+                    dtype=q.dtype,
+                )
+                max_s = max(self.forward_metadata.seq_lens_cpu_int)
+                mask = self.attn_mask_builder.get_attn_mask(max_s, q.dtype, q.device)
+                torch_npu._npu_flash_attention(
+                    query=q,
+                    key=k,
+                    value=v,
+                    mask=mask,
+                    seq_len=self.forward_metadata.seq_lens_cpu_int,
+                    scale_value=layer.scaling,
+                    num_heads=layer.tp_q_head_num,
+                    num_kv_heads=layer.tp_k_head_num,
+                    out=attn_output,
+                )
+                attn_output = attn_output.reshape(-1, layer.tp_q_head_num, layer.v_head_dim)
             return attn_output
 
     def forward_decode(
