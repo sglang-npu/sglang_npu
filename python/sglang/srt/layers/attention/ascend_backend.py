@@ -123,9 +123,9 @@ def calc_attention(
     scale,
 ):
     q_head = query.shape[1]
-    key = key.repeat(1, q_head, 1)
+    #key = key.repeat(1, q_head, 1)
     key = key.permute(1, 2, 0)
-    value = value.repeat(1, q_head, 1)
+    #value = value.repeat(1, q_head, 1)
     value = value.transpose(0, 1)
     query = query.transpose(0, 1)
     qk = torch.bmm(query, key) 
@@ -449,12 +449,12 @@ class AscendAttnBackend(AttentionBackend):
 
                 for q_i in range(len(q_idxs)):
                     q_idx = q_idxs[q_i]
-                    q_nope, q_rope = torch.split(q_[q_i, :, :, :], layer.qk_head_dim, dim=-1)
+                    q_nope, q_rope = torch.split(q_[q_i, :, :, :], layer.v_head_dim, dim=-1)
                     prev_out = None
                     prev_lse = None
 
                     go_output = torch.empty(
-                        [num_tokens // 2, layer.tp_q_head_num, self.v_head_dim],
+                        [num_tokens // 2, layer.tp_q_head_num, layer.v_head_dim],
                         dtype=q.dtype,
                         device=q.device,
                     )
@@ -472,12 +472,13 @@ class AscendAttnBackend(AttentionBackend):
                             if q_idx < kv_idx:
                                 continue
                             
-                            k_nope, k_rope = torch.split(k_[ring_idx, kv_i, :, :, :], self.v_head_dim, dim=-1)
+                            k_nope, k_rope = torch.split(k_[ring_idx, kv_i, :, :, :], layer.v_head_dim, dim=-1)
                             value = v_[ring_idx][kv_i]
                             max_s = max(self.forward_metadata.seq_lens_cpu_int)
                             mask = self.attn_mask_builder.get_attn_mask(max_s, q.dtype, q.device)
                             
-                            torch_npu.atb.ring_mla(
+                            go_output, lse_output = ring_mla(
+                            #torch_npu.atb.ring_mla(
                                 q_nope,
                                 q_rope,
                                 k_nope,
@@ -492,8 +493,8 @@ class AscendAttnBackend(AttentionBackend):
                                 qk_scale=layer.scaling,
                                 mask_type='mask_type_triu' if q_idx == kv_idx else 'no_mask',
                                 calc_type='calc_type_first_ring' if prev_out is None else 'calc_type_default',
-                                output=go_output,
-                                softmax_lse=lse_output,
+                                #output=go_output,
+                                #softmax_lse=lse_output,
                             )
 
                             prev_out = go_output.clone()
