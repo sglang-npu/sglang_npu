@@ -415,10 +415,10 @@ class AscendAttnBackend(AttentionBackend):
                 #v [bs/cp, 1, v_dim(nope)]
 
                 k_ = k.view(-1, layer.tp_k_head_num, layer.qk_head_dim)
-                v_ = v.view(-1, layer.tp_k_head_num, layer.v_head_dim)
+                #v_ = v.view(-1, layer.tp_k_head_num, layer.v_head_dim)
 
                 k_ = context_model_parallel_all_gather(k_, dim=0)
-                v_ = context_model_parallel_all_gather(v_, dim=0)
+                v_ = k_[:, :, :layer.v_head_dim]
 
                 def ring_split(mtx, cp_size, num_head, head_dim, seq_lens):
                     front_part = []
@@ -439,9 +439,9 @@ class AscendAttnBackend(AttentionBackend):
                     ret = torch.cat([front_tensor, back_tensor], dim=1)
                     return ret
 
-                q_ = ring_split(q, 1, layer.tp_q_head_num, layer.qk_head_dim, self.forward_metadata.seq_lens_cpu_int.seq_lens).squeeze(0)
-                k_ = ring_split(k_, cp_size, layer.tp_k_head_num, layer.qk_head_dim, self.forward_metadata.seq_lens_cpu_int.seq_lens)
-                v_ = ring_split(v_, cp_size, layer.tp_k_head_num, layer.v_head_dim, self.forward_metadata.seq_lens_cpu_int.seq_lens)
+                q_ = ring_split(q, 1, layer.tp_q_head_num, layer.qk_head_dim, self.forward_metadata.seq_lens_cpu_int).squeeze(0)
+                k_ = ring_split(k_, cp_size, layer.tp_k_head_num, layer.qk_head_dim, self.forward_metadata.seq_lens_cpu_int)
+                v_ = ring_split(v_, cp_size, layer.tp_k_head_num, layer.v_head_dim, self.forward_metadata.seq_lens_cpu_int)
                 
                 q_idxs = [cp_rank, cp_size * 2 - cp_rank - 1]
 
@@ -449,12 +449,12 @@ class AscendAttnBackend(AttentionBackend):
 
                 for q_i in range(len(q_idxs)):
                     q_idx = q_idxs[q_i]
-                    q_nope, q_rope = torch.split(q_[q_i, :, :, :], self.kv_lora_rank, dim=-1)
+                    q_nope, q_rope = torch.split(q_[q_i, :, :, :], layer.qk_head_dim, dim=-1)
                     prev_out = None
                     prev_lse = None
 
                     go_output = torch.empty(
-                        [num_tokens // 2, layer.tp_q_head_num, self.kv_lora_rank],
+                        [num_tokens // 2, layer.tp_q_head_num, self.v_head_dim],
                         dtype=q.dtype,
                         device=q.device,
                     )
@@ -472,7 +472,7 @@ class AscendAttnBackend(AttentionBackend):
                             if q_idx < kv_idx:
                                 continue
                             
-                            k_nope, k_rope = torch.split(k_[ring_idx, kv_i, :, :, :], self.kv_lora_rank, dim=-1)
+                            k_nope, k_rope = torch.split(k_[ring_idx, kv_i, :, :, :], self.v_head_dim, dim=-1)
                             value = v_[ring_idx][kv_i]
                             max_s = max(self.forward_metadata.seq_lens_cpu_int)
                             mask = self.attn_mask_builder.get_attn_mask(max_s, q.dtype, q.device)
