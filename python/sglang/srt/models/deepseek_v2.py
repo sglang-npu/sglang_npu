@@ -643,7 +643,7 @@ class DeepseekV2MoE(nn.Module):
                 topk_weights=topk_weights,
                 forward_batch=forward_batch,
                 shared_experts=self._forward_shared_experts,
-                alpha = self.routed_scaling_factor,
+                alpha=self.routed_scaling_factor,
             )
 
         if self.moe_shared_expert_rank_num == 0:
