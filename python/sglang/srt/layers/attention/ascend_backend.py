@@ -292,7 +292,7 @@ class AscendAttnBackend(AttentionBackend):
             )
             return output.view(num_tokens, layer.tp_q_head_num * layer.v_head_dim)
         else:
-            # When kv separation, should update head_dim and v_head_dim.
+            # When kv separation, head_dim needs to be split into 512 and 64.
             head_dim = layer.v_head_dim
             v_head_dim = layer.head_dim - layer.v_head_dim
 
