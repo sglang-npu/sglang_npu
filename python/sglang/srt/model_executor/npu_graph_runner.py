@@ -66,7 +66,7 @@ class NPUGraphRunner(CudaGraphRunner):
 
     def _capture_graph(self, graph, stream, run_once_fn):
         logger.warning(
-            f"There are some issues with both cuda graph enabled and tp > 4, try to disable cuda graph if you have encountered any, or set tp <= 4."
+            f"When the MLA model has both cuda graph and head_num < 32 for each tp, try to disable the cuda graph or change the attn_tp_size."
         )
         if get_global_graph_memory_pool() is None:
             set_global_graph_memory_pool(torch.npu.graph_pool_handle())
@@ -93,3 +93,4 @@ class NPUGraphRunner(CudaGraphRunner):
         thread.start()
         self.graphs[self.bs].replay()
         thread.join()
+
