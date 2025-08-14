@@ -30,6 +30,7 @@ class ForwardMetadata:
     # seq len inputs
     extend_seq_lens_cpu_int: Optional[torch.Tensor] = None
     seq_lens_cpu_int: Optional[torch.Tensor] = None
+    seq_lens_cpu_list_cumsum: Optional[List[int]] = None
 
 
 def _generate_attn_mask(max_seq_len, dtype):
@@ -107,7 +108,9 @@ class AscendAttnBackend(AttentionBackend):
                 forward_batch.extend_seq_lens.cpu().int()
             )
         self.forward_metadata.seq_lens_cpu_int = forward_batch.seq_lens_cpu.int()
-
+        self.forward_metadata.seq_lens_cpu_list_cumsum = torch.cumsum(
+            forward_batch.seq_lens_cpu, dim=0
+        ).tolist()
         self.graph_mode = False
 
     def init_cuda_graph_state(self, max_bs: int, max_num_tokens: int):
@@ -214,25 +217,38 @@ class AscendAttnBackend(AttentionBackend):
                     extend_prefix_lens: {forward_batch.extend_prefix_lens_cpu}"
             )
         else:
-            attn_output = torch.empty(
-                (q.shape[0], layer.tp_q_head_num, layer.v_head_dim),
-                device=q.device,
-                dtype=q.dtype,
+            mask = self.attn_mask_builder.get_attn_mask(2048, q.dtype, q.device).to(
+                torch.int8
             )
-            max_s = max(self.forward_metadata.seq_lens_cpu_int)
-            mask = self.attn_mask_builder.get_attn_mask(max_s, q.dtype, q.device)
-            torch_npu._npu_flash_attention(
-                query=q,
-                key=k,
-                value=v,
-                mask=mask,
-                seq_len=self.forward_metadata.seq_lens_cpu_int,
-                scale_value=layer.scaling,
+            num_token_padding = q.shape[0]
+            q, k, v = [
+                data[: forward_batch.num_token_non_padded_cpu] for data in [q, k, v]
+            ]
+            attn_output, _ = torch_npu.npu_fused_infer_attention_score(
+                q,
+                k,
+                v,
+                atten_mask=mask,
+                sparse_mode=3,
+                actual_seq_lengths=self.forward_metadata.seq_lens_cpu_list_cumsum,
+                actual_seq_lengths_kv=self.forward_metadata.seq_lens_cpu_list_cumsum,
                 num_heads=layer.tp_q_head_num,
-                num_kv_heads=layer.tp_k_head_num,
-                out=attn_output,
+                input_layout="TND",
+                scale=layer.scaling,
+                next_tokens=0,
             )
             attn_output = attn_output.reshape(-1, layer.tp_q_head_num, layer.v_head_dim)
+            if num_token_padding != forward_batch.num_token_non_padded_cpu:
+                attn_output = torch.cat(
+                    [
+                        attn_output,
+                        attn_output.new_zeros(
+                            num_token_padding - attn_output.shape[0],
+                            *attn_output.shape[1:],
+                        ),
+                    ],
+                    dim=0,
+                )
             return attn_output
 
     def forward_decode_graph(
