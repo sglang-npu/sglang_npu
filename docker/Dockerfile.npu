@@ -1,4 +1,4 @@
-FROM quay.io/ascend/cann:8.2.rc1.alpha003-a3-ubuntu22.04-py3.11
+FROM quay.io/ascend/cann:8.2.rc1-a3-ubuntu22.04-py3.11
 
 WORKDIR /workspace
 
