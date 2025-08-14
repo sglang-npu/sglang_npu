@@ -182,6 +182,10 @@ class ExpertLocationMetadata:
         model_config_for_expert_location = (
             ModelConfigForExpertLocation.from_model_config(model_config)
         )
+
+        if model_config_for_expert_location is None:
+            return None
+
         num_physical_experts = (
             model_config_for_expert_location.num_logical_experts
             + server_args.ep_num_redundant_experts
