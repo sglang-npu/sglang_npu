@@ -65,6 +65,9 @@ class NPUGraphRunner(CudaGraphRunner):
             run_once_fn()
 
     def _capture_graph(self, graph, stream, run_once_fn):
+        logger.warning(
+            f"When the MLA model has both cuda graph and head_num < 32 for each tp, try to disable the cuda graph or change the attn_tp_size."
+        )
         if get_global_graph_memory_pool() is None:
             set_global_graph_memory_pool(torch.npu.graph_pool_handle())
         # Set graph pool id globally to be able to use symmetric memory
