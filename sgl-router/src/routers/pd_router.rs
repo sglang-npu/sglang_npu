@@ -326,8 +326,10 @@ impl PDRouter {
             worker_loads,
             load_monitor_handle,
             http_client,
-            _prefill_health_checker: Some(prefill_health_checker),
-            _decode_health_checker: Some(decode_health_checker),
+            // _prefill_health_checker: Some(prefill_health_checker),
+            // _decode_health_checker: Some(decode_health_checker),
+            _prefill_health_checker: None,
+            _decode_health_checker: None,
         })
     }
 
