@@ -309,10 +309,10 @@ impl PDRouter {
         let decode_workers = Arc::new(RwLock::new(decode_workers));
 
         // Start health checkers for both worker pools
-        let prefill_health_checker =
-            crate::core::start_health_checker(Arc::clone(&prefill_workers), interval_secs);
-        let decode_health_checker =
-            crate::core::start_health_checker(Arc::clone(&decode_workers), interval_secs);
+        // let prefill_health_checker =
+        //     crate::core::start_health_checker(Arc::clone(&prefill_workers), interval_secs);
+        // let decode_health_checker =
+        //     crate::core::start_health_checker(Arc::clone(&decode_workers), interval_secs);
 
         Ok(PDRouter {
             prefill_workers,
