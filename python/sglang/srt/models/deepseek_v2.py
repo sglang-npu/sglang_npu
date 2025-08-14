@@ -646,7 +646,7 @@ class DeepseekV2MoE(nn.Module):
                 alpha = self.routed_scaling_factor,
             )
 
-        if self.moe_shared_expert_rank_num  == 0:
+        if self.moe_shared_expert_rank_num == 0:
             if shared_output is not None:
                 x = shared_output
                 x.add_(final_hidden_states, alpha=self.routed_scaling_factor)
