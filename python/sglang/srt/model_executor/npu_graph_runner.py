@@ -65,6 +65,9 @@ class NPUGraphRunner(CudaGraphRunner):
             run_once_fn()
 
     def _capture_graph(self, graph, stream, run_once_fn):
+        logger.warning(
+            f"There are some issues with both cuda graph enabled and tp > 4, try to disable cuda graph if you have encountered any, or set tp <= 4."
+        )
         if get_global_graph_memory_pool() is None:
             set_global_graph_memory_pool(torch.npu.graph_pool_handle())
         # Set graph pool id globally to be able to use symmetric memory
