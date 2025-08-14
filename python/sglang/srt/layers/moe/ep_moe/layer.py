@@ -500,7 +500,14 @@ class DeepEPMoE(EPMoE):
             # in forward_aiter, we skip token permutation and unpermutation, which have been fused inside aiter kernel
             return self.forward_aiter(dispatch_output)
         if _is_npu:
-            return self.forward_npu(dispatch_output)
+            if dispatch_output.format.is_deepep_normal():
+                return self.forward_npu_normal(dispatch_output)
+            elif dispatch_output.format.is_deepep_ll():
+                return self.forward_npu_ll(dispatch_output)
+            else:
+                raise ValueError(
+                    f"Dispatch output format {dispatch_output.format} is not supported"
+                )
         if dispatch_output.format.is_deepep_normal():
             assert deep_gemm_wrapper.ENABLE_JIT_DEEPGEMM and self.use_fp8_w8a8
             return self.forward_deepgemm_contiguous(dispatch_output)
@@ -765,7 +772,57 @@ class DeepEPMoE(EPMoE):
 
         return down_output
 
-    def forward_npu(
+    def forward_npu_normal(
+        self,
+        dispatch_output: DeepEPNormalOutput,
+    ):
+        if TYPE_CHECKING:
+            assert isinstance(dispatch_output, DeepEPNormalOutput)
+        hidden_states, topk_idx, topk_weights, num_recv_tokens_per_expert = dispatch_output
+
+        assert self.quant_method is not None
+        assert self.activation == "silu"
+
+        group_list = torch.tensor(num_recv_tokens_per_expert, dtype=torch.int64).to(hidden_states.device)
+
+        # NOTE: Ascend's Dispatch & Combine does not support FP16
+        output_dtype = torch.bfloat16
+
+        import torch_npu
+        # gmm1: gate_up_proj
+        hidden_states = torch_npu.npu_grouped_matmul(
+            x=[hidden_states],
+            weight=[self.w13_weight],
+            scale=[self.w13_weight_scale.to(output_dtype)],
+            per_token_scale=[per_token_scale],
+            split_item=2,
+            group_list_type=0,
+            group_type=0,
+            group_list=group_list,
+            output_dtype=output_dtype,
+        )[0]
+
+        # act_fn: swiglu
+        hidden_states = torch_npu.npu_swiglu(hidden_states)
+
+        hidden_states, per_token_scale = torch_npu.npu_dynamic_quant(hidden_states)
+
+        # gmm2: down_proj
+        hidden_states = torch_npu.npu_grouped_matmul(
+            x=[hidden_states],
+            weight=[self.w2_weight],
+            scale=[self.w2_weight_scale.to(output_dtype)],
+            per_token_scale=[per_token_scale],
+            split_item=2,
+            group_list_type=0,
+            group_type=0,
+            group_list=group_list,
+            output_dtype=output_dtype,
+        )[0]
+
+        return hidden_states
+
+    def forward_npu_ll(
         self,
         dispatch_output: DeepEPLLOutput,
     ):
