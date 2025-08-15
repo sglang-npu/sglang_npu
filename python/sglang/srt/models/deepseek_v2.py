@@ -52,6 +52,7 @@ from sglang.srt.layers.dp_attention import (
     get_attention_tp_rank,
     get_attention_tp_size,
     get_local_attention_dp_size,
+    attn_tp_all_gather_into_tensor,
 )
 from sglang.srt.layers.layernorm import RMSNorm
 from sglang.srt.layers.linear import (
@@ -1067,12 +1068,14 @@ class DeepseekV2AttentionMLA(nn.Module):
         hidden_states: torch.Tensor,
         forward_batch: ForwardBatch,
         zero_allocator: BumpAllocator,
+        layer_scatter_modes: LayerScatterModes,
     ):
         s = self.forward_prepare(
             positions=positions,
             hidden_states=hidden_states,
             forward_batch=forward_batch,
             zero_allocator=zero_allocator,
+            layer_scatter_modes=layer_scatter_modes,
         )
         return self.forward_core(s)
 
@@ -1082,6 +1085,7 @@ class DeepseekV2AttentionMLA(nn.Module):
         hidden_states: torch.Tensor,
         forward_batch: ForwardBatch,
         zero_allocator: BumpAllocator,
+        layer_scatter_modes: LayerScatterModes
     ):
         if self.attn_mha.kv_b_proj is None:
             self.attn_mha.kv_b_proj = self.kv_b_proj
@@ -1096,7 +1100,7 @@ class DeepseekV2AttentionMLA(nn.Module):
 
         if attn_forward_method == AttnForwardMethod.MHA:
             inner_state = self.forward_normal_prepare(
-                positions, hidden_states, forward_batch, zero_allocator
+                positions, hidden_states, forward_batch, zero_allocator, layer_scatter_modes,
             )
         elif attn_forward_method == AttnForwardMethod.MHA_CHUNKED_KV:
             inner_state = self.forward_normal_chunked_kv_prepare(
@@ -1156,18 +1160,43 @@ class DeepseekV2AttentionMLA(nn.Module):
         else:
             raise NotImplementedError
 
+    def scattered_to_tp_attn_full(
+        self,
+        hidden_states: torch.Tensor,
+        forward_batch: ForwardBatch,
+    ) -> torch.Tensor:
+        hidden_states, local_hidden_states = (
+            torch.empty(
+                (forward_batch.input_ids.shape[0],
+                hidden_states.shape[1]),
+                dtype=hidden_states.dtype,
+                device=hidden_states.device,
+            ),
+            hidden_states,
+        )
+        self.scattered_to_tp_attn_full(hidden_states, local_hidden_states.contiguous())
+        return hidden_states
+
     def forward_normal_prepare(
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
         forward_batch: ForwardBatch,
         zero_allocator: BumpAllocator,
+        layer_scatter_modes: LayerScatterModes,
     ):
         if self.q_lora_rank is not None:
             q, latent_cache = self.fused_qkv_a_proj_with_mqa(hidden_states)[0].split(
                 [self.q_lora_rank, self.kv_lora_rank + self.qk_rope_head_dim], dim=-1
             )
             q = self.q_a_layernorm(q)
+            if (int(os.getenv("ENABLE_MLA_AG_AFTER_QLORA", "0")) == 1
+                and layer_scatter_modes.layer_input_mode == ScatterMode.SCATTERED
+                and layer_scatter_modes.attn_mode == ScatterMode.TP_ATTN_FULL
+            ):
+                q = self.scattered_to_tp_attn_full(q, forward_batch)
+                latent_cache = self.scattered_to_tp_attn_full(latent_cache, forward_batch)
+
             q = self.q_b_proj(q)[0].view(-1, self.num_local_heads, self.qk_head_dim)
         else:
             q = self.q_proj(hidden_states)[0].view(
@@ -1813,6 +1842,8 @@ class DeepseekV2DecoderLayer(nn.Module):
             alt_stream=alt_stream,
         )
 
+        if not hasattr(config, "q_lora_rank"):
+            os.environ("ENABLE_MLA_AG_AFTER_QLORA") = "0"
         self.is_layer_sparse = self._is_layer_sparse(layer_id, is_nextn=is_nextn)
         is_previous_layer_sparse = self._is_layer_sparse(layer_id - 1, is_nextn=False)
 
@@ -1906,6 +1937,7 @@ class DeepseekV2DecoderLayer(nn.Module):
             hidden_states=hidden_states,
             forward_batch=forward_batch,
             zero_allocator=zero_allocator,
+            layer_scatter_modes=self.layer_scatter_modes,
         )
 
         hidden_states, residual = self.layer_communicator.prepare_mlp(
