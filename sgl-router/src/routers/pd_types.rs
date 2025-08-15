@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 lazy_static::lazy_static! {
     static ref ROOM_COUNTERS: DashMap<String, AtomicU64> = DashMap::new();
+    static ref BASES: DashMap<String, u64> = DashMap::new();
 }
 
 // Custom error type for PD router operations
@@ -212,13 +213,25 @@ impl Bootstrap for GenerateReqInput {
         self.bootstrap_room = Some(bootstrap_room);
     }
     fn next_room_id(&self, hostname: &String) -> u64 {
-        let counter = ROOM_COUNTERS
-            .entry(hostname.to_string())
+        // let counter = ROOM_COUNTERS
+        //     .entry(hostname.to_string())
+        //     .or_insert_with(|| {
+        //         info!("Created new counter for hostname: {}", hostname);
+        //         AtomicU64::new(0)
+        //     });
+        // let room_id = counter.fetch_add(1, Ordering::Relaxed) % 16385;
+        let base = *BASES.entry(hostname.to_string())
             .or_insert_with(|| {
-                info!("Created new counter for hostname: {}", hostname);
-                AtomicU64::new(0)
+                let new_base = BASES.len() as u64 * 10000;
+                info!("Allocated new range [{}, {}) for {}",
+                    new_base, new_base + 10000, hostname);
+                new_base
             });
-        let room_id = counter.fetch_add(1, Ordering::Relaxed) % 16385;
+        let offset = ROOM_COUNTERS
+            .entry(hostname.to_string())
+            .or_insert_with(|| AtomicU64::new(0))
+            .fetch_add(1, Ordering::Relaxed);
+        let room_id = base + offset % 10000;
         info!("Generated room_id: {} for hostname: {}", room_id, hostname);
         room_id
     }
