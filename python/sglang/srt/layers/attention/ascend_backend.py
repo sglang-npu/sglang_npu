@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional
 
+import numpy as np
 import torch
 import torch_npu
 from torch.nn.functional import scaled_dot_product_attention
@@ -11,7 +12,7 @@ from sglang.srt.configs.model_config import AttentionArch
 from sglang.srt.layers.attention.base_attn_backend import AttentionBackend
 from sglang.srt.layers.attention.torch_native_backend import TorchNativeAttnBackend
 from sglang.srt.layers.radix_attention import AttentionType
-from sglang.srt.model_executor.forward_batch_info import ForwardBatch
+from sglang.srt.model_executor.forward_batch_info import ForwardBatch, ForwardMode
 from sglang.srt.utils import get_bool_env_var
 
 if TYPE_CHECKING:
@@ -92,14 +93,21 @@ class AscendAttnBackend(AttentionBackend):
         self.max_context_len = model_runner.model_config.context_len
         self.req_to_token = model_runner.req_to_token_pool.req_to_token
         self.graph_mode = False
+        self.speculative_num_draft_tokens = (
+            model_runner.server_args.speculative_num_draft_tokens
+        )
+        self.mtp_mask = torch.tril(torch.ones(2048, 2048, dtype=torch.bool)).npu()
+        self.mtp_mask = ~self.mtp_mask
 
     def init_forward_metadata(self, forward_batch: ForwardBatch):
         """Init the metadata for a forward pass."""
         self.forward_metadata = ForwardMetadata()
-
+        seq_lens_max = forward_batch.seq_lens.max()
+        if forward_batch.forward_mode.is_target_verify():
+            seq_lens_max += self.speculative_num_draft_tokens
         self.forward_metadata.block_tables = (
             forward_batch.req_to_token_pool.req_to_token[
-                forward_batch.req_pool_indices, : forward_batch.seq_lens.max()
+                forward_batch.req_pool_indices, :seq_lens_max
             ][:, :: self.page_size]
             // self.page_size
         )
@@ -111,6 +119,9 @@ class AscendAttnBackend(AttentionBackend):
         self.forward_metadata.seq_lens_cpu_list_cumsum = torch.cumsum(
             forward_batch.seq_lens_cpu, dim=0
         ).tolist()
+        if forward_batch.forward_mode.is_target_verify():
+            self.forward_metadata.seq_lens_cpu_int += self.speculative_num_draft_tokens
+
         self.graph_mode = False
 
     def init_cuda_graph_state(self, max_bs: int, max_num_tokens: int):
@@ -180,6 +191,13 @@ class AscendAttnBackend(AttentionBackend):
         forward_batch: ForwardBatch,
         save_kv_cache=True,
     ):
+        if (
+            forward_batch.forward_mode.is_target_verify()
+            or forward_batch.forward_mode.is_draft_extend()
+        ):
+            if _use_mlapo:
+                save_kv_cache = False
+            return self.forward_mtp(q, k, v, layer, forward_batch, save_kv_cache)
         if save_kv_cache:
             forward_batch.token_to_kv_pool.set_kv_buffer(
                 layer, forward_batch.out_cache_loc, k, v
@@ -250,6 +268,110 @@ class AscendAttnBackend(AttentionBackend):
                     dim=0,
                 )
             return attn_output
+
+    def forward_mtp(
+        self,
+        q,
+        k,
+        v,
+        layer: RadixAttention,
+        forward_batch: ForwardBatch,
+        save_kv_cache: bool,
+    ):
+        if save_kv_cache:
+            if self.use_mla:
+                cache_kv = k.view(-1, layer.tp_k_head_num, layer.head_dim)
+                k = cache_kv[:, :, : layer.v_head_dim]
+                v = cache_kv[:, :, layer.v_head_dim :]
+            forward_batch.token_to_kv_pool.set_kv_buffer(
+                layer, forward_batch.out_cache_loc, k, v
+            )
+        # When kv separation, head_dim needs to be split into 512 and 64.
+        head_dim = layer.v_head_dim
+        v_head_dim = layer.head_dim - layer.v_head_dim
+        c_kv, k_rope = forward_batch.token_to_kv_pool.get_kv_buffer(layer.layer_id)
+        k_rope_cache = k_rope.view(-1, layer.tp_k_head_num, self.page_size, v_head_dim)
+        c_kv_cache = c_kv.view(-1, layer.tp_v_head_num, self.page_size, head_dim)
+        q = q.contiguous()
+        q_nope = q[:, :, : layer.v_head_dim].contiguous()
+        q_rope = q[:, :, layer.v_head_dim :].contiguous()
+        if not self.graph_mode:
+            num_token_padding = q.shape[0]
+            q_nope = q_nope[: forward_batch.num_token_non_padded_cpu]
+            q_rope = q_rope[: forward_batch.num_token_non_padded_cpu]
+        if self.forward_metadata.seq_lens_cpu_int is None:
+            actual_seq_lengths_kv = self.forward_metadata.seq_lens_cpu_list
+        else:
+            actual_seq_lengths_kv = (
+                self.forward_metadata.seq_lens_cpu_int.cpu().int().tolist()
+            )
+        if forward_batch.forward_mode.is_target_verify():
+            actual_seq_lengths = np.arange(
+                self.speculative_num_draft_tokens,
+                self.speculative_num_draft_tokens + q_nope.shape[0],
+                self.speculative_num_draft_tokens,
+            )
+        else:
+            actual_seq_lengths = (
+                np.array(forward_batch.extend_seq_lens_cpu).cumsum().tolist()
+            )
+        workspace = torch_npu._npu_fused_infer_attention_score_get_max_workspace(
+            q_nope,
+            c_kv_cache,
+            c_kv_cache,
+            query_rope=q_rope,
+            key_rope=k_rope_cache,
+            num_heads=layer.tp_q_head_num,
+            num_key_value_heads=layer.tp_k_head_num,
+            input_layout="TND",
+            scale=layer.scaling,
+            antiquant_mode=0,
+            antiquant_scale=None,
+            block_table=self.forward_metadata.block_tables,
+            block_size=self.page_size,
+            sparse_mode=3,
+            atten_mask=self.mtp_mask,
+            actual_seq_lengths=actual_seq_lengths,
+            actual_seq_lengths_kv=actual_seq_lengths_kv,
+        )
+        attn_output = torch.zeros_like(q_nope, dtype=q.dtype, device=q.device)
+        softmax_lse = torch.empty(1, dtype=q.dtype, device=q.device)
+        torch_npu.npu_fused_infer_attention_score.out(
+            q_nope,
+            c_kv_cache,
+            c_kv_cache,
+            query_rope=q_rope,
+            key_rope=k_rope_cache,
+            num_heads=layer.tp_q_head_num,
+            num_key_value_heads=layer.tp_k_head_num,
+            input_layout="TND",
+            scale=layer.scaling,
+            antiquant_mode=0,
+            antiquant_scale=None,
+            block_table=self.forward_metadata.block_tables,
+            block_size=self.page_size,
+            sparse_mode=3,
+            atten_mask=self.mtp_mask,
+            actual_seq_lengths=actual_seq_lengths,
+            actual_seq_lengths_kv=actual_seq_lengths_kv,
+            workspace=workspace,
+            out=[attn_output, softmax_lse],
+        )
+        attn_output = attn_output.view(-1, layer.tp_q_head_num * layer.v_head_dim)
+        if (
+            not self.graph_mode
+            and forward_batch.num_token_non_padded_cpu != num_token_padding
+        ):
+            attn_output = torch.cat(
+                [
+                    attn_output,
+                    attn_output.new_zeros(
+                        num_token_padding - attn_output.shape[0], *attn_output.shape[1:]
+                    ),
+                ],
+                dim=0,
+            )
+        return attn_output
 
     def forward_decode_graph(
         self,
@@ -450,3 +572,71 @@ class AscendAttnBackend(AttentionBackend):
             )
 
             return attn_output.view(num_tokens, layer.tp_q_head_num * self.kv_lora_rank)
+
+
+class AscendAttnMultiStepDraftBackend:
+    """
+    Wrap multiple Ascend attention backends as one for multiple consecutive
+    draft decoding steps
+    """
+
+    def __init__(
+        self,
+        model_runner: ModelRunner,
+        topk: int,
+        speculative_num_steps: int,
+    ):
+        self.topk = topk
+        self.speculative_num_steps = speculative_num_steps
+
+        self.attn_backends = []
+        for _ in range(self.speculative_num_steps):
+            self.attn_backends.append(AscendAttnBackend(model_runner))
+
+    def common_template(self, forward_batch: ForwardBatch, call_fn: int):
+        assert forward_batch.spec_info is not None
+
+        for i in range(self.speculative_num_steps - 1):
+            call_fn(i, forward_batch)
+
+    def init_forward_metadata(self, forward_batch: ForwardBatch):
+        def call_fn(i, forward_batch):
+            assert forward_batch.spec_info is not None
+            self.attn_backends[i].init_forward_metadata(forward_batch)
+
+        self.common_template(forward_batch, call_fn)
+
+    def init_cuda_graph_state(self, max_bs, max_num_tokens):
+        for i in range(self.speculative_num_steps):
+            self.attn_backends[i].init_cuda_graph_state(max_bs, max_num_tokens)
+
+    def init_forward_metadata_capture_cuda_graph(self, forward_batch: ForwardBatch):
+        def call_fn(i, forward_batch):
+            self.attn_backends[i].init_forward_metadata_capture_cuda_graph(
+                forward_batch.batch_size,
+                forward_batch.batch_size * self.topk,
+                forward_batch.req_pool_indices,
+                forward_batch.seq_lens,
+                encoder_lens=None,
+                forward_mode=ForwardMode.DECODE,
+                spec_info=forward_batch.spec_info,
+            )
+
+        self.common_template(forward_batch, call_fn)
+
+    def init_forward_metadata_replay_cuda_graph(
+        self, forward_batch: ForwardBatch, bs: int
+    ):
+        def call_fn(i, forward_batch):
+            self.attn_backends[i].init_forward_metadata_replay_cuda_graph(
+                bs,
+                forward_batch.req_pool_indices,
+                forward_batch.seq_lens,
+                seq_lens_sum=-1,
+                encoder_lens=None,
+                forward_mode=ForwardMode.DECODE,
+                spec_info=forward_batch.spec_info,
+                seq_lens_cpu=None,
+            )
+
+        self.common_template(forward_batch, call_fn)

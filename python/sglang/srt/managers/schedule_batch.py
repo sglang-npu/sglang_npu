@@ -64,7 +64,7 @@ from sglang.srt.model_executor.forward_batch_info import CaptureHiddenMode, Forw
 from sglang.srt.sampling.sampling_batch_info import SamplingBatchInfo
 from sglang.srt.sampling.sampling_params import SamplingParams
 from sglang.srt.server_args import ServerArgs
-from sglang.srt.utils import flatten_nested_list, support_triton
+from sglang.srt.utils import flatten_nested_list, is_cuda, is_npu, support_triton
 
 if TYPE_CHECKING:
     from sglang.srt.configs.model_config import ModelConfig
@@ -885,7 +885,10 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
     has_grammar: bool = False
 
     # Device
-    device: str = "cuda"
+    if is_npu():
+        device: str = "npu"
+    else:
+        device: str = "cuda"
 
     # Speculative decoding
     spec_algorithm: SpeculativeAlgorithm = None
