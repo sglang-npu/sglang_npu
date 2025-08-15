@@ -274,8 +274,8 @@ class AscendAttnBackend(AttentionBackend):
         if forward_batch.forward_mode.is_target_verify():
             sparse_mode = self.sparse_mode
             atten_mask = self.mtp_mask
-            q_nope = q.reshape(-1, layer.tp_q_head_num, 2, layer.head_dim)
-            q_rope = q_rope.reshape(-1, layer.tp_q_head_num, 2, layer.v_head_dim)
+            q_nope = q.view(-1, layer.tp_q_head_num, 2, layer.head_dim)
+            q_rope = q_rope.view(-1, layer.tp_q_head_num, 2, layer.v_head_dim)
             workspace = torch_npu._npu_fused_infer_attention_score_get_max_workspace(
                 q_nope,
                 c_kv_cache,

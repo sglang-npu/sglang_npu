@@ -59,7 +59,10 @@ def build_tree_efficient_native(
     cum_seq_len = torch.cumsum(verified_seq_len * draft_token_num, dim=0)
     cum_seq_len = torch.cat((torch.tensor([0], device=parent_list.device), cum_seq_len))
     cum_seq_len = cum_seq_len[:-1]
-    seq_tree_idx = draft_token_num * draft_token_num * bs_range + cum_seq_len
+    seq_tree_idx = (
+        draft_token_num * draft_token_num * torch.arange(bs, device=parent_list.device)
+        + cum_seq_len
+    )
 
     # Batch processing for tree mask
     if tree_mask_mode == TreeMaskMode.FULL_MASK:
