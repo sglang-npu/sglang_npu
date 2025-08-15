@@ -109,7 +109,7 @@ class TestAscend_DISAGGREGATION_DEEPEP(CustomTestCase):
             "--dp-size",
             4,
             "--mem-fraction-static",
-            0.9,
+            0.8,
             "--attention-backend",
             "ascend",
             "--quantization",

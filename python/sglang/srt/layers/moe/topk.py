@@ -185,8 +185,9 @@ class TopK(CustomOp):
         expert_location_dispatch_info: Optional[ExpertLocationDispatchInfo] = None,
     ) -> TopKOutput:
         if self.use_triton_kernels:
+            # renormalize=True is equivalent to sm_first=False
             routing_data, gather_idx, scatter_idx = routing(
-                router_logits, self.top_k, self.renormalize
+                router_logits, self.top_k, sm_first=not self.renormalize
             )
             return TritonKernelTopKOutput(routing_data, gather_idx, scatter_idx)
         else:
@@ -245,7 +246,7 @@ class TopK(CustomOp):
         # NOTE: now npu_moe_gating_top_k can only support `group_count=256` pattern
         if global_num_experts == 256:
             router_logits = router_logits.to(torch.float32)
-            return torch_npu.npu_moe_gating_top_k(
+            topk_weights, topk_ids, _ = torch_npu.npu_moe_gating_top_k(
                 router_logits,
                 k=self.top_k,
                 bias=self.correction_bias.to(torch.float32),
@@ -257,6 +258,14 @@ class TopK(CustomOp):
                 routed_scaling_factor=1,
                 eps=float(1e-20),
             )
+            if expert_location_dispatch_info is not None:
+                topk_ids = topk_ids_logical_to_physical(
+                    topk_ids, expert_location_dispatch_info
+                )
+            get_global_expert_distribution_recorder().on_select_experts(
+                topk_ids=topk_ids
+            )
+            return topk_weights, topk_ids, _
         else:
             torch_native = True
             return select_experts(
@@ -398,7 +407,13 @@ def grouped_topk_gpu(
         .reshape(num_token, -1)
     )  # [n, e]
     tmp_scores = scores.masked_fill(~score_mask.bool(), 0.0)  # [n, e]
-    topk_weights, topk_ids = torch.topk(tmp_scores, k=topk, dim=-1, sorted=False)
+    # TODO: NPU can't support directly evaluating a comparison for now
+    topk_weights, topk_ids = torch.topk(
+        tmp_scores,
+        k=topk,
+        dim=-1,
+        sorted=(True if num_fused_shared_experts > 0 else False),
+    )
     if num_fused_shared_experts:
         topk_ids[:, -1] = torch.randint(
             low=num_experts,
@@ -487,7 +502,13 @@ def biased_grouped_topk_impl(
     tmp_scores = scores_for_choice.masked_fill(
         ~score_mask.bool(), float("-inf")
     )  # [n, e]
-    _, topk_ids = torch.topk(tmp_scores, k=topk, dim=-1, sorted=False)
+    # TODO: NPU can't support directly evaluating a comparison for now
+    _, topk_ids = torch.topk(
+        tmp_scores,
+        k=topk,
+        dim=-1,
+        sorted=(True if num_fused_shared_experts > 0 else False),
+    )
     topk_weights = scores.gather(1, topk_ids)
 
     if num_fused_shared_experts:
