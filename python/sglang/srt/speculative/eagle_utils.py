@@ -39,6 +39,7 @@ if is_cuda():
 elif is_hip():
     from sgl_kernel import fast_topk, verify_tree_greedy
 elif is_npu():
+    tensor_zero = None
     tensor_one = None
 
 
@@ -830,16 +831,29 @@ def assign_req_to_token_pool_native(
     out_cache_loc: torch.Tensor,
     bs: int,
 ):
-    out_cache_loc_length = end_offset - start_offset
-    token_pool = req_to_token[req_pool_indices]
-    out_cache_loc_cumsum_length = torch.cumsum(out_cache_loc_length, dim=0)
-    out_cache_loc_start_idx = torch.cat(
-        (torch.tensor([0], device=req_to_token.device), out_cache_loc_cumsum_length)
+    device = req_to_token.device
+    global tensor_zero
+    if tensor_zero is None:
+        tensor_zero = torch.tensor([0], device=device, dtype=torch.int32)
+    bs_range = torch.arange(bs, device=device, dtype=torch.int32)
+    lengths = end_offset - start_offset
+    total_length = lengths.sum()
+    cumsum_lengths = torch.cat(
+        [tensor_zero, torch.cumsum(lengths, dim=0)[:-1].to(dtype=torch.int32)]
     )
-    for i in range(bs):
-        token_pool[i][start_offset[i] : end_offset[i]] = out_cache_loc[
-            out_cache_loc_start_idx[i] : out_cache_loc_cumsum_length[i]
-        ]
+
+    row_indices = torch.repeat_interleave(bs_range, lengths)
+    repeat_cumsum = torch.repeat_interleave(cumsum_lengths, lengths)
+    arange_total = torch.arange(total_length, device=device, dtype=torch.int32)
+    offsets = arange_total - repeat_cumsum
+
+    col_indices = (
+        torch.repeat_interleave(start_offset.to(dtype=torch.int32), lengths) + offsets
+    )
+    src_indices = torch.repeat_interleave(cumsum_lengths, lengths) + offsets
+
+    token_pool = req_to_token[req_pool_indices]
+    token_pool[row_indices, col_indices] = out_cache_loc[src_indices]
     req_to_token[req_pool_indices] = token_pool
 
 
@@ -1380,16 +1394,19 @@ def verify_tree_greedy_native(
         if tensor_one is None:
             tensor_one = torch.tensor([1], device=candidates.device)
         comparison_result = candidates[:, 1] == target_predict[:, 0]
-        _comparison_result = ~comparison_result
-        target_predict[:, 1][_comparison_result] = 0
-        predicts = torch.cat((target_predict.view(-1), tensor_one))
+
+        target_predict_view = target_predict[:, 1]
+        target_predict_view[~comparison_result] = 0
+
+        target_predict_flatten = target_predict.flatten()
+        predicts = torch.cat([target_predict_flatten, tensor_one])
 
         accept_index = torch.arange(
-            0, num_draft_tokens * batch_size, device=candidates.device
+            0, num_draft_tokens * batch_size, device=candidates.device, dtype=torch.long
         ).reshape(batch_size, num_draft_tokens)
-        accept_index[:, 1][_comparison_result] = -1
+        accept_index[~comparison_result, 1] = -1
 
-        accept_token_num = comparison_result.to(dtype=torch.int)
+        accept_token_num = comparison_result.int()
         return predicts, accept_index, accept_token_num
 
     # BFS
