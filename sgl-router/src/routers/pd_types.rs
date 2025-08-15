@@ -220,9 +220,10 @@ impl Bootstrap for GenerateReqInput {
         //         AtomicU64::new(0)
         //     });
         // let room_id = counter.fetch_add(1, Ordering::Relaxed) % 16385;
+        let len = BASES.len();
         let base = *BASES.entry(hostname.to_string())
             .or_insert_with(|| {
-                let new_base = BASES.len() as u64 * 10000;
+                let new_base = len as u64 * 10000;
                 info!("Allocated new range [{}, {}) for {}",
                     new_base, new_base + 10000, hostname);
                 new_base
