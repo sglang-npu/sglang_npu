@@ -1843,7 +1843,7 @@ class DeepseekV2DecoderLayer(nn.Module):
         )
 
         if not hasattr(config, "q_lora_rank"):
-            os.environ("ENABLE_MLA_AG_AFTER_QLORA") = "0"
+            os.environ["ENABLE_MLA_AG_AFTER_QLORA"] = "0"
         self.is_layer_sparse = self._is_layer_sparse(layer_id, is_nextn=is_nextn)
         is_previous_layer_sparse = self._is_layer_sparse(layer_id - 1, is_nextn=False)
 
