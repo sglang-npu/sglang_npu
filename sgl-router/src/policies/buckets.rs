@@ -97,7 +97,7 @@ impl LoadBalancingPolicy for BucketPolicy {
         let is_imbalanced = abs_diff > self.config.balance_abs_threshold && max_load as f32 > rel_threshold;
         info!("Current PD instance status | is_imbalanced={}", is_imbalanced);
         let prefill_url = if is_imbalanced {
-            info!("select prefill instance by Load Balance policy");
+            info!("select prefill instance by Load Balance policy with char_count {}", char_count);
             let min_url = chars_per_url_snapshot
                 .iter()
                 .min_by_key(|(_, &chars)| chars)
@@ -110,7 +110,7 @@ impl LoadBalancingPolicy for BucketPolicy {
                 });
             min_url
         } else {
-            info!("select prefill instance by Bucket policy");
+            info!("select prefill instance by Bucket policy with char_count {}", char_count);
             if choiced_url_snapshot.is_empty() {
                 let prefill_idx = rand::random::<usize>() % prefill_list.len();
                 let selected_url = prefill_list[prefill_idx].url();
