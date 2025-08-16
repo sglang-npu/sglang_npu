@@ -1177,7 +1177,7 @@ class DeepseekV2AttentionMLA(nn.Module):
             ),
             hidden_states,
         )
-        self.scattered_to_tp_attn_full(hidden_states, local_hidden_states.contiguous())
+        attn_tp_all_gather_into_tensor(hidden_states, local_hidden_states.contiguous())
         return hidden_states
 
     def forward_normal_prepare(
