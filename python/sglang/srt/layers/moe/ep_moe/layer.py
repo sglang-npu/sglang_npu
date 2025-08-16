@@ -765,10 +765,7 @@ class DeepEPMoE(EPMoE):
 
         return hidden_states
 
-    def forward_npu_normal(
-        self,
-        dispatch_output: DeepEPNormalOutput
-    ):
+    def forward_npu_normal(self, dispatch_output: DeepEPNormalOutput):
         if TYPE_CHECKING:
             assert isinstance(dispatch_output, DeepEPNormalOutput)
         hidden_states, _, _, num_recv_tokens_per_expert = dispatch_output
@@ -776,7 +773,9 @@ class DeepEPMoE(EPMoE):
         assert self.activation == "silu"
 
         output_dtype = torch.bfloat16
-        group_list = torch.tensor(num_recv_tokens_per_expert, dtype=torch.int64).to(hidden_states.device)
+        group_list = torch.tensor(num_recv_tokens_per_expert, dtype=torch.int64).to(
+            hidden_states.device
+        )
 
         return self.forward_npu_common(
             hidden_states=hidden_states,
@@ -786,10 +785,7 @@ class DeepEPMoE(EPMoE):
             gmm1_mode="normal",
         )
 
-    def forward_npu_ll(
-        self,
-        dispatch_output: DeepEPLLOutput
-    ):
+    def forward_npu_ll(self, dispatch_output: DeepEPLLOutput):
         if TYPE_CHECKING:
             assert isinstance(dispatch_output, AscendDeepEPLLOutput)
         hidden_states, _, _, _, seg_indptr, _ = dispatch_output
@@ -809,6 +805,7 @@ class DeepEPMoE(EPMoE):
             gmm1_mode="ll",
             pertoken_scale=pertoken_scale,
         )
+
 
 class FlashInferEPMoE(EPMoE):
     def __init__(self, *args, **kwargs):
