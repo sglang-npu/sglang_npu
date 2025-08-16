@@ -237,7 +237,10 @@ class W8A8Int8Config(QuantizationConfig):
 
     @classmethod
     def get_config_filenames(cls) -> List[str]:
-        return ["quant_model_description.json"]
+        filenames = []
+        if _is_npu:
+            filenames.append("quant_model_description.json")
+        return filenames
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> W8A8Int8Config:
@@ -551,7 +554,7 @@ class NPU_W8A8LinearMethodImpl:
     def get_pertensor_param(params_dtype: torch.dtype) -> Dict[str, Any]:
         params_dict = {}
         params_dict["input_scale"] = torch.empty(1, dtype=params_dtype)
-        params_dict["input_offset"] = torch.empty(1, dtype=torch.int8)
+        params_dict["input_offset"] = torch.empty(1, dtype=params_dtype)
         return params_dict
 
     @staticmethod
@@ -579,11 +582,11 @@ class NPU_W8A8LinearMethodImpl:
         if original_dtype != torch.int8:
             x = torch_npu.npu_quantize(
                 x,
-                layer.aclnn_input_scale,
+                layer.aclnn_input_scale_reciprocal,
                 layer.aclnn_input_offset,
                 torch.qint8,
                 -1,
-                True,
+                False,
             )
         # Only fuse bias add into GEMM for rank 0 (this ensures that
         # bias will not get added more than once in Attention TP>1 case)
@@ -602,6 +605,10 @@ class NPU_W8A8LinearMethodImpl:
     def process_weights_after_loading(self, layer):
         expanding_factor = layer.weight.data.shape[1]
         layer.aclnn_input_scale = torch.nn.Parameter(
+            layer.input_scale.data.repeat(expanding_factor).to(device="npu"),
+            requires_grad=False,
+        )
+        layer.aclnn_input_scale_reciprocal = 1 / torch.nn.Parameter(
             layer.input_scale.data.repeat(expanding_factor).to(device="npu"),
             requires_grad=False,
         )
