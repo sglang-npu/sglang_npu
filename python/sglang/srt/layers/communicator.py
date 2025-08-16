@@ -12,6 +12,7 @@
 # limitations under the License.
 # ==============================================================================
 
+import os
 from dataclasses import dataclass
 from enum import Enum, auto
 from functools import partial
@@ -287,6 +288,8 @@ class CommunicateSimpleFn:
         if (input_mode == ScatterMode.SCATTERED) and (
             output_mode == ScatterMode.TP_ATTN_FULL
         ):
+            if int(os.getenv("ENABLE_MLA_AG_AFTER_QLORA", "0")) == 1:
+                return CommunicateSimpleFn._trivial
             return CommunicateSimpleFn._scattered_to_tp_attn_full
 
         raise NotImplementedError(f"{input_mode=} {output_mode=}")
