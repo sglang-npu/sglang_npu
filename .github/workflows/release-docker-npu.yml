@@ -60,7 +60,7 @@ jobs:
           # TODO: need add x86 platforms support when memfabric is ready
           platforms: linux/arm64
           tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/sglang:test_${{ matrix.cann_version }}_${{ matrix.device_type }}
-          push: false
+          push: true
           provenance: false
           build-args: |
             CANN_VERSION=${{ matrix.cann_version }}
