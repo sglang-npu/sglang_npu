@@ -419,7 +419,7 @@ class _DeepEPDispatcherImplNormal(_DeepEPDispatcherImplBase):
         topk_idx: torch.Tensor,
         topk_weights: torch.Tensor,
     ):
-        if deep_gemm_wrapper.ENABLE_JIT_DEEPGEMM or _use_aiter:
+        if deep_gemm_wrapper.ENABLE_JIT_DEEPGEMM or _use_aiter or _is_npu:
             output = hidden_states
         else:
             if hidden_states.shape[0] > 0:

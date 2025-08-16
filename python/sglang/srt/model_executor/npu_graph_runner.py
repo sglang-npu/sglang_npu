@@ -65,6 +65,9 @@ class NPUGraphRunner(CudaGraphRunner):
             run_once_fn()
 
     def _capture_graph(self, graph, stream, run_once_fn):
+        logger.warning(
+            f"When the MLA model has both cuda graph and head_num < 32 for each tp, try to disable the cuda graph or change the attn_tp_size."
+        )
         if get_global_graph_memory_pool() is None:
             set_global_graph_memory_pool(torch.npu.graph_pool_handle())
         # Set graph pool id globally to be able to use symmetric memory
@@ -84,8 +87,13 @@ class NPUGraphRunner(CudaGraphRunner):
         )
 
     def _update_and_replay(self, forward_batch: ForwardBatch):
-        seq_lens = forward_batch.seq_lens.cpu().tolist() + [0] * (self.bs - self.raw_bs)
-
+        if forward_batch.forward_mode.is_target_verify():
+            seq_lens_cpu = forward_batch.seq_lens.cpu() + self.num_tokens_per_bs
+            seq_lens = seq_lens_cpu.tolist() + [0] * (self.bs - self.raw_bs)
+        else:
+            seq_lens = forward_batch.seq_lens.cpu().tolist() + [0] * (
+                self.bs - self.raw_bs
+            )
         thread = threading.Thread(target=self.replay_update, args=(seq_lens,))
         thread.start()
         self.graphs[self.bs].replay()

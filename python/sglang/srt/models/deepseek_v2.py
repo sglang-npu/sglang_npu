@@ -1225,13 +1225,18 @@ class DeepseekV2AttentionMLA(nn.Module):
         k[..., : self.qk_nope_head_dim] = k_nope
         k[..., self.qk_nope_head_dim :] = k_pe
 
-        latent_cache[:, :, : self.kv_lora_rank] = kv_a.unsqueeze(1)
-        latent_cache[:, :, self.kv_lora_rank :] = k_pe
+        if _is_npu:
+            forward_batch.token_to_kv_pool.set_kv_buffer(
+                self.attn_mha, forward_batch.out_cache_loc, kv_a.unsqueeze(1), k_pe
+            )
+        else:
+            latent_cache[:, :, : self.kv_lora_rank] = kv_a.unsqueeze(1)
+            latent_cache[:, :, self.kv_lora_rank :] = k_pe
 
-        # Save latent cache
-        forward_batch.token_to_kv_pool.set_kv_buffer(
-            self.attn_mha, forward_batch.out_cache_loc, latent_cache, None
-        )
+            # Save latent cache
+            forward_batch.token_to_kv_pool.set_kv_buffer(
+                self.attn_mha, forward_batch.out_cache_loc, latent_cache, None
+            )
 
         return q, k, v, forward_batch
 
@@ -1337,14 +1342,9 @@ class DeepseekV2AttentionMLA(nn.Module):
                 q_nope_out, k_nope, k_nope, forward_batch, q_rope=q_pe, k_rope=k_pe
             )
         else:
-            if _use_mlapo:
-                q, k = q_nope_out, None
-            else:
-                q = torch.cat([q_nope_out, q_pe], dim=-1)
-                k = torch.cat([k_nope, k_pe], dim=-1)
-            attn_output = self.attn_mqa(
-                q, k, k_nope, forward_batch, save_kv_cache=(not _use_mlapo)
-            )
+            q = torch.cat([q_nope_out, q_pe], dim=-1)
+            k = torch.cat([k_nope, k_pe], dim=-1)
+            attn_output = self.attn_mqa(q, k, k_nope, forward_batch)
         attn_output = attn_output.view(-1, self.num_local_heads, self.kv_lora_rank)
 
         if self.use_deep_gemm_bmm:
@@ -2683,8 +2683,12 @@ class DeepseekV2ForCausalLM(nn.Module):
         del self.lm_head.weight
         self.model.embed_tokens.weight = embed
         self.lm_head.weight = head
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
+        if _is_npu:
+            torch.npu.empty_cache()
+            torch.npu.synchronize()
+        elif _is_cuda:
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
 
     @classmethod
     def get_model_config_for_expert_location(cls, config):

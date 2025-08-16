@@ -84,7 +84,9 @@ class NPU_FusedMLAPreprocess(nn.Module):
             device=hidden_states.device,
         )
         self.quantScale0 = self.fused_qkv_a_proj_with_mqa.input_scale
-        self.quantOffset0 = self.fused_qkv_a_proj_with_mqa.input_offset
+        self.quantOffset0 = self.fused_qkv_a_proj_with_mqa.input_offset.to(
+            dtype=torch.int8
+        )
 
         # matmul_0 weight [7168, 2112]
         fused_qkv_a_proj_with_mqa_weight_q = self.fused_qkv_a_proj_with_mqa.weight.data[
@@ -180,7 +182,7 @@ class NPU_FusedMLAPreprocess(nn.Module):
         self.gamma1 = self.q_a_layernorm.weight
         self.beta1 = self.q_a_layernorm.bias
         self.quantScale1 = self.q_b_proj.input_scale
-        self.quantOffset1 = self.q_b_proj.input_offset
+        self.quantOffset1 = self.q_b_proj.input_offset.to(dtype=torch.int8)
 
         # matmul_1 weight [1536, num_head * 192]
         q_b_proj_weight = self.q_b_proj.weight.data.clone()
@@ -227,7 +229,7 @@ class NPU_FusedMLAPreprocess(nn.Module):
         # matmulEin
         self.wuk = self.w_kc
         # reshape_and_cache
-        self.kvCache, self.slotmapping = None, None
+        self.kvCache, self.kvCacheRope, self.slotmapping = None, None, None
 
     def get_sin_cos(self, positions):
         global global_cos, global_sin
@@ -241,9 +243,9 @@ class NPU_FusedMLAPreprocess(nn.Module):
         return global_cos, global_sin
 
     def get_kv_cache_and_cache_idx(self, forward_batch):
-        k_cache = forward_batch.token_to_kv_pool.get_key_buffer(self.layer_id)
-        slot_mapping = forward_batch.out_cache_loc
-        return k_cache, slot_mapping
+        k_cache, v_cache = forward_batch.token_to_kv_pool.get_kv_buffer(self.layer_id)
+        slot_mapping = forward_batch.out_cache_loc.to(dtype=torch.int32)
+        return k_cache, v_cache, slot_mapping
 
     def forward(self, positions, hidden_states, forward_batch, zero_allocator):
         input_dtype = hidden_states.dtype
@@ -253,10 +255,17 @@ class NPU_FusedMLAPreprocess(nn.Module):
             self.dtype = hidden_states.dtype
 
         self.cos, self.sin = self.get_sin_cos(positions)
-        self.kvCache, self.slotmapping = self.get_kv_cache_and_cache_idx(forward_batch)
+        self.kvCache, self.kvCacheRope, self.slotmapping = (
+            self.get_kv_cache_and_cache_idx(forward_batch)
+        )
 
-        q_node_out = torch.zeros(
+        q_nope_out = torch.zeros(
             (hidden_states.shape[0], self.w_kc.shape[0], self.kvCache.shape[-1]),
+            dtype=input_dtype,
+            device=hidden_states.device,
+        )
+        q_rope_out = torch.zeros(
+            (hidden_states.shape[0], self.w_kc.shape[0], self.kvCacheRope.shape[-1]),
             dtype=input_dtype,
             device=hidden_states.device,
         )
@@ -276,7 +285,7 @@ class NPU_FusedMLAPreprocess(nn.Module):
             self.sin,
             self.wuk,
             self.kvCache,
-            None,
+            self.kvCacheRope,
             self.slotmapping,
             quant_scale0=self.quantScale0,
             quant_offset0=self.quantOffset0,
@@ -284,18 +293,18 @@ class NPU_FusedMLAPreprocess(nn.Module):
             quant_scale1=self.quantScale1,
             quant_offset1=self.quantOffset1,
             bias1=self.bias1,
-            cache_mode="kv_cache",
+            cache_mode="krope_ctkv",
             quant_mode="per_tensor_quant_asymm",
-            q_out0=q_node_out,
+            q_out0=q_nope_out,
             kv_cache_out0=self.kvCache,
-            q_out1=None,
-            kv_cache_out1=None,
+            q_out1=q_rope_out,
+            kv_cache_out1=self.kvCacheRope,
         )
         return (
-            None,
-            None,
-            q_node_out,
-            None,
+            q_rope_out,
+            self.kvCacheRope,
+            q_nope_out,
+            self.kvCache,
             forward_batch,
             zero_allocator,
         )
