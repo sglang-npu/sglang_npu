@@ -34,20 +34,25 @@ from sglang.srt.speculative.eagle_draft_cuda_graph_runner import (
 from sglang.srt.speculative.eagle_draft_extend_cuda_graph_runner import (
     EAGLEDraftExtendCudaGraphRunner,
 )
+from sglang.srt.speculative.eagle_draft_extend_npu_graph_runner import (
+    EAGLEDraftExtendNpuGraphRunner,
+)
+from sglang.srt.speculative.eagle_draft_npu_graph_runner import EAGLEDraftNpuGraphRunner
 from sglang.srt.speculative.eagle_utils import (
     EagleDraftInput,
     EagleVerifyInput,
     EagleVerifyOutput,
     assign_draft_cache_locs,
-    fast_topk,
     generate_token_bitmask,
     select_top_k_tokens,
 )
 from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
 from sglang.srt.utils import (
     empty_context,
+    fast_topk,
     get_available_gpu_memory,
     is_cuda,
+    is_npu,
     next_power_of_2,
 )
 
@@ -251,6 +256,20 @@ class EAGLEWorker(TpModelWorker):
                 self.topk,
                 self.speculative_num_steps,
             )
+        elif self.server_args.attention_backend == "ascend":
+            from sglang.srt.layers.attention.ascend_backend import (
+                AscendAttnBackend,
+                AscendAttnMultiStepDraftBackend,
+            )
+
+            self.draft_attn_backend = AscendAttnMultiStepDraftBackend(
+                self.draft_model_runner,
+                self.topk,
+                self.speculative_num_steps,
+            )
+            self.draft_extend_attn_backend = AscendAttnBackend(
+                self.draft_model_runner,
+            )
         else:
             raise ValueError(
                 f"EAGLE is not supported in attention backend {self.server_args.attention_backend}"
@@ -272,7 +291,11 @@ class EAGLEWorker(TpModelWorker):
         logger.info(
             f"Capture draft cuda graph begin. This can take up to several minutes. avail mem={before_mem:.2f} GB"
         )
-        self.cuda_graph_runner = EAGLEDraftCudaGraphRunner(self)
+        self.cuda_graph_runner = (
+            EAGLEDraftCudaGraphRunner(self)
+            if not is_npu()
+            else EAGLEDraftNpuGraphRunner(self)
+        )
         after_mem = get_available_gpu_memory(self.device, self.gpu_id)
         logger.info(
             f"Capture draft cuda graph end. Time elapsed: {time.perf_counter() - tic:.2f} s. mem usage={(before_mem - after_mem):.2f} GB. avail mem={after_mem:.2f} GB."
@@ -285,8 +308,10 @@ class EAGLEWorker(TpModelWorker):
             logger.info(
                 f"Capture draft extend cuda graph begin. This can take up to several minutes. avail mem={before_mem:.2f} GB"
             )
-            self.cuda_graph_runner_for_draft_extend = EAGLEDraftExtendCudaGraphRunner(
-                self
+            self.cuda_graph_runner_for_draft_extend = (
+                EAGLEDraftExtendCudaGraphRunner(self)
+                if not is_npu()
+                else EAGLEDraftExtendNpuGraphRunner(self)
             )
             after_mem = get_available_gpu_memory(self.device, self.gpu_id)
             logger.info(
@@ -933,7 +958,7 @@ def load_token_map(token_map_path: str) -> List[int]:
     return torch.tensor(hot_token_id, dtype=torch.int64)
 
 
-@torch.compile(dynamic=True)
+@torch.compile(dynamic=True, disable=is_npu())
 def get_last_loc_large_page_size_top_k_1(
     req_to_token: torch.Tensor,
     req_pool_indices: torch.Tensor,
