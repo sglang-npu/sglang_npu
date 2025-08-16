@@ -416,7 +416,14 @@ class DeepEPMoE(EPMoE):
             # in forward_aiter, we skip token permutation and unpermutation, which have been fused inside aiter kernel
             return self.forward_aiter(dispatch_output)
         if _is_npu:
-            return self.forward_npu(dispatch_output)
+            if dispatch_output.format.is_deepep_normal():
+                return self.forward_npu_normal(dispatch_output)
+            elif dispatch_output.format.is_deepep_ll():
+                return self.forward_npu_ll(dispatch_output)
+            else:
+                raise ValueError(
+                    f"Dispatch output format {dispatch_output.format} is not supported"
+                )
         if dispatch_output.format.is_deepep_normal():
             assert deep_gemm_wrapper.ENABLE_JIT_DEEPGEMM and self.use_fp8_w8a8
             return self.forward_deepgemm_contiguous(dispatch_output)
@@ -681,65 +688,123 @@ class DeepEPMoE(EPMoE):
 
         return down_output
 
-    def forward_npu(
+    def forward_npu_common(
         self,
-        dispatch_output: DeepEPLLOutput,
+        hidden_states,
+        group_list,
+        group_list_type,
+        output_dtype,
+        gmm1_mode,
+        pertoken_scale=None,
     ):
-        if TYPE_CHECKING:
-            assert isinstance(dispatch_output, AscendDeepEPLLOutput)
-        hidden_states, topk_idx, topk_weights, _, seg_indptr, _ = dispatch_output
-        assert self.quant_method is not None
-        assert self.activation == "silu"
-
-        # NOTE: Ascend's Dispatch & Combine does not support FP16
-        output_dtype = torch.bfloat16
-
-        pertoken_scale = hidden_states[1]
-        hidden_states = hidden_states[0]
-
-        group_list_type = 1
-        seg_indptr = seg_indptr.to(torch.int64)
-
+        """
+        gmm1_mode:
+        "normal" -> dynamic_quant → grouped_matmul → swiglu → dynamic_quant
+        "ll"     -> grouped_matmul(int32) → dequant_swiglu_quant
+        """
         import torch_npu
 
-        # gmm1: gate_up_proj
-        hidden_states = torch_npu.npu_grouped_matmul(
-            x=[hidden_states],
-            weight=[self.w13_weight],
-            split_item=2,
-            group_list_type=group_list_type,
-            group_type=0,
-            group_list=seg_indptr,
-            output_dtype=torch.int32,
-        )[0]
+        if gmm1_mode == "normal":
+            # 1. quant
+            hidden_states, per_token_scale = torch_npu.npu_dynamic_quant(hidden_states)
+            # 2. gmm1
+            hidden_states = torch_npu.npu_grouped_matmul(
+                x=[hidden_states],
+                weight=[self.w13_weight],
+                scale=[self.w13_weight_scale.to(output_dtype)],
+                per_token_scale=[per_token_scale],
+                split_item=2,
+                group_list_type=group_list_type,
+                group_type=0,
+                group_list=group_list,
+                output_dtype=output_dtype,
+            )[0]
+            # 3. swiglu + quant
+            hidden_states = torch_npu.npu_swiglu(hidden_states)
+            hidden_states, per_token_scale = torch_npu.npu_dynamic_quant(hidden_states)
 
-        # act_fn: swiglu
-        hidden_states, swiglu_out_scale = torch_npu.npu_dequant_swiglu_quant(
-            x=hidden_states,
-            weight_scale=self.w13_weight_scale.to(torch.float32),
-            activation_scale=pertoken_scale,
-            bias=None,
-            quant_scale=None,
-            quant_offset=None,
-            group_index=seg_indptr,
-            activate_left=True,
-            quant_mode=1,
-        )
+        elif gmm1_mode == "ll":
+            assert pertoken_scale is not None, "ll need pertoken_scale"
+            # 1. gmm1
+            hidden_states = torch_npu.npu_grouped_matmul(
+                x=[hidden_states],
+                weight=[self.w13_weight],
+                split_item=2,
+                group_list_type=group_list_type,
+                group_type=0,
+                group_list=group_list,
+                output_dtype=torch.int32,
+            )[0]
+            # 2. dequant + swiglu + quant
+            hidden_states, per_token_scale = torch_npu.npu_dequant_swiglu_quant(
+                x=hidden_states,
+                weight_scale=self.w13_weight_scale.to(torch.float32),
+                activation_scale=pertoken_scale,
+                bias=None,
+                quant_scale=None,
+                quant_offset=None,
+                group_index=group_list,
+                activate_left=True,
+                quant_mode=1,
+            )
+        else:
+            raise ValueError(f"Unknown gmm1_mode: {gmm1_mode}")
 
         # gmm2: down_proj
         hidden_states = torch_npu.npu_grouped_matmul(
             x=[hidden_states],
             weight=[self.w2_weight],
             scale=[self.w2_weight_scale.to(output_dtype)],
-            per_token_scale=[swiglu_out_scale],
+            per_token_scale=[per_token_scale],
             split_item=2,
             group_list_type=group_list_type,
             group_type=0,
-            group_list=seg_indptr,
+            group_list=group_list,
             output_dtype=output_dtype,
         )[0]
 
         return hidden_states
+
+    def forward_npu_normal(self, dispatch_output: DeepEPNormalOutput):
+        if TYPE_CHECKING:
+            assert isinstance(dispatch_output, DeepEPNormalOutput)
+        hidden_states, _, _, num_recv_tokens_per_expert = dispatch_output
+        assert self.quant_method is not None
+        assert self.activation == "silu"
+
+        output_dtype = torch.bfloat16
+        group_list = torch.tensor(num_recv_tokens_per_expert, dtype=torch.int64).to(
+            hidden_states.device
+        )
+
+        return self.forward_npu_common(
+            hidden_states=hidden_states,
+            group_list=group_list,
+            group_list_type=0,
+            output_dtype=output_dtype,
+            gmm1_mode="normal",
+        )
+
+    def forward_npu_ll(self, dispatch_output: DeepEPLLOutput):
+        if TYPE_CHECKING:
+            assert isinstance(dispatch_output, AscendDeepEPLLOutput)
+        hidden_states, _, _, _, seg_indptr, _ = dispatch_output
+        assert self.quant_method is not None
+        assert self.activation == "silu"
+
+        output_dtype = torch.bfloat16
+        pertoken_scale = hidden_states[1]
+        hidden_states = hidden_states[0]
+        seg_indptr = seg_indptr.to(torch.int64)
+
+        return self.forward_npu_common(
+            hidden_states=hidden_states,
+            group_list=seg_indptr,
+            group_list_type=1,
+            output_dtype=output_dtype,
+            gmm1_mode="ll",
+            pertoken_scale=pertoken_scale,
+        )
 
 
 class FlashInferEPMoE(EPMoE):
