@@ -46,7 +46,7 @@ from sglang.srt.layers.attention.mla_preprocess import NPU_FusedMLAPreprocess
 from sglang.srt.layers.communicator import (
     LayerCommunicator,
     LayerScatterModes,
-    ScatterMode，
+    ScatterMode,
     enable_moe_dense_fully_dp,
 )
 from sglang.srt.layers.dp_attention import (
