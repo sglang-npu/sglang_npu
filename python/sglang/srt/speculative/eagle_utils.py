@@ -1389,6 +1389,7 @@ def verify_tree_greedy_native(
 ):
     batch_size, num_draft_tokens = candidates.shape
 
+    # Optimized common case for performance.
     if num_draft_tokens == 2 and accept_index.shape[1] == 2 and topk == 1:
         global tensor_one
         if tensor_one is None:

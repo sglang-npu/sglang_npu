@@ -34,6 +34,7 @@ def build_tree_efficient_native(
     bs_range = torch.arange(bs, device=parent_list.device).view(-1, 1)
     draft_token_num_range = torch.arange(draft_token_num, device=parent_list.device)
 
+    # Optimized common case for performance.
     if draft_token_num == 2 and topk == 1 and tree_mask_mode == TreeMaskMode.FULL_MASK:
         positions = verified_seq_len.repeat_interleave(draft_token_num)
         positions = (positions.view(bs, -1) + draft_token_num_range).view(-1)

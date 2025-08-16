@@ -70,7 +70,7 @@ class DeepseekModelNextN(nn.Module):
             0,
             quant_config=quant_config,
             is_nextn=True,
-            prefix=add_prefix("layers.61", prefix),
+            prefix=add_prefix("decoder", prefix),
         )
 
         self.shared_head = nn.Module()
